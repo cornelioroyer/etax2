@@ -4,10 +4,15 @@ namespace App\Models;
 
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PeriodoContable extends Model
 {
     protected $table = 'cgl_periodos';
+
+    public const ESTADO_ABIERTO = 'ABIERTO';
+
+    public const ESTADO_CERRADO = 'CERRADO';
 
     protected $fillable = [
         'compania_id',
@@ -41,7 +46,7 @@ class PeriodoContable extends Model
             [
                 'fecha_inicio' => $fecha->copy()->startOfMonth()->toDateString(),
                 'fecha_fin' => $fecha->copy()->endOfMonth()->toDateString(),
-                'estado' => 'ABIERTO',
+                'estado' => self::ESTADO_ABIERTO,
                 'created_by' => $usuario,
             ]
         );
@@ -49,6 +54,11 @@ class PeriodoContable extends Model
 
     public function estaAbierto(): bool
     {
-        return $this->estado === 'ABIERTO';
+        return $this->estado === self::ESTADO_ABIERTO;
+    }
+
+    public function cerradoPor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cerrado_por');
     }
 }
