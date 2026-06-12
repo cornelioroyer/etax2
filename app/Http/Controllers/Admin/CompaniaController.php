@@ -9,6 +9,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class CompaniaController extends Controller
@@ -85,7 +86,7 @@ class CompaniaController extends Controller
         abort_unless($request->user()->can('companias.editar'), 403);
         $this->verificarAcceso($compania);
 
-        $data = $this->validated($request);
+        $data = $this->validated($request, $compania);
         $data['updated_by'] = $request->user()->email;
 
         foreach (['logo' => 'logo_url', 'sello' => 'sello_url'] as $campo => $columna) {
@@ -135,11 +136,14 @@ class CompaniaController extends Controller
         );
     }
 
-    private function validated(Request $request): array
+    private function validated(Request $request, ?Compania $compania = null): array
     {
         $data = $request->validate([
             'nombre' => ['required', 'string', 'max:255'],
-            'ruc' => ['required', 'string', 'max:255'],
+            'ruc' => [
+                'required', 'string', 'max:255',
+                Rule::unique('core_companias', 'ruc')->ignore($compania?->id),
+            ],
             'dv' => ['required', 'string', 'max:2'],
             'firma_cartas' => ['nullable', 'string', 'max:255'],
             'direccion' => ['required', 'string'],
@@ -166,6 +170,8 @@ class CompaniaController extends Controller
             'sello' => ['nullable', 'image', 'max:2048'],
             'municipio' => ['nullable', 'string', 'max:200'],
             'clave_municipio' => ['nullable', 'string', 'max:200'],
+        ], [
+            'ruc.unique' => 'El RUC ya está registrado en otra compañía.',
         ]);
 
         $data['nombre'] = mb_strtoupper($data['nombre'], 'UTF-8');
