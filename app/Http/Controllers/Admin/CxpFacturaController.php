@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Concerns\ConCompaniaActiva;
+use App\Http\Controllers\Concerns\ExportaReporte;
 use App\Http\Controllers\Controller;
+use App\Models\Compania;
 use App\Models\Contacto;
 use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
@@ -16,12 +18,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Response;
 
 class CxpFacturaController extends Controller
 {
     use ConCompaniaActiva;
+    use ExportaReporte;
 
-    public function index(Request $request): View
+    public function index(Request $request): View|Response
     {
         $companiaId = $this->companiaActivaId($request);
 
@@ -33,7 +37,7 @@ class CxpFacturaController extends Controller
             'q' => ['nullable', 'string', 'max:100'],
         ]);
 
-        $facturas = CxpDocumento::query()
+        $consulta = CxpDocumento::query()
             ->with('proveedor')
             ->where('compania_id', $companiaId)
             ->where('tipo_documento', CxpDocumento::TIPO_FACTURA)
@@ -49,9 +53,35 @@ class CxpFacturaController extends Controller
                 });
             })
             ->orderByDesc('fecha')
-            ->orderByDesc('numero')
-            ->paginate(25)
-            ->withQueryString();
+            ->orderByDesc('numero');
+
+        if ($request->query('export')) {
+            $todas = (clone $consulta)->get();
+
+            if ($export = $this->exportarReporte($request, 'admin.exports.listado', [
+                'titulo' => 'Facturas por pagar',
+                'compania' => Compania::find($companiaId)?->nombre ?? '',
+                'subtitulo' => 'Listado al '.now()->format('d/m/Y').' — '.$todas->count().' facturas',
+                'encabezados' => [
+                    ['titulo' => 'Número'], ['titulo' => 'Fecha'], ['titulo' => 'Vence'],
+                    ['titulo' => 'Proveedor'], ['titulo' => 'Total', 'num' => true],
+                    ['titulo' => 'Saldo', 'num' => true], ['titulo' => 'Estado'],
+                ],
+                'filas' => $todas->map(fn ($f) => [
+                    $f->numero, $f->fecha->format('d/m/Y'),
+                    $f->fecha_vencimiento?->format('d/m/Y') ?? '',
+                    $f->proveedor->nombre ?? '', number_format((float) $f->total, 2),
+                    number_format((float) $f->saldo, 2), ucfirst(strtolower($f->estado)),
+                ])->all(),
+                'totales' => ['TOTAL', '', '', '',
+                    number_format((float) $todas->sum('total'), 2),
+                    number_format((float) $todas->sum('saldo'), 2), ''],
+            ], 'facturas_cxp_'.now()->format('Y-m-d'))) {
+                return $export;
+            }
+        }
+
+        $facturas = $consulta->paginate(25)->withQueryString();
 
         $saldoTotal = (float) CxpDocumento::where('compania_id', $companiaId)
             ->where('tipo_documento', CxpDocumento::TIPO_FACTURA)

@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Concerns\ConCompaniaActiva;
+use App\Http\Controllers\Concerns\ExportaReporte;
 use App\Http\Controllers\Controller;
+use App\Models\Compania;
 use App\Models\Contacto;
 use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
@@ -16,12 +18,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Response;
 
 class CxpPagoController extends Controller
 {
     use ConCompaniaActiva;
+    use ExportaReporte;
 
-    public function index(Request $request): View
+    public function index(Request $request): View|Response
     {
         $companiaId = $this->companiaActivaId($request);
 
@@ -31,7 +35,7 @@ class CxpPagoController extends Controller
             'hasta' => ['nullable', 'date'],
         ]);
 
-        $pagos = CxpDocumento::query()
+        $consulta = CxpDocumento::query()
             ->with('proveedor')
             ->where('compania_id', $companiaId)
             ->where('tipo_documento', CxpDocumento::TIPO_PAGO)
@@ -39,9 +43,30 @@ class CxpPagoController extends Controller
             ->when($filtros['desde'] ?? null, fn ($q, $desde) => $q->whereDate('fecha', '>=', $desde))
             ->when($filtros['hasta'] ?? null, fn ($q, $hasta) => $q->whereDate('fecha', '<=', $hasta))
             ->orderByDesc('fecha')
-            ->orderByDesc('numero')
-            ->paginate(25)
-            ->withQueryString();
+            ->orderByDesc('numero');
+
+        if ($request->query('export')) {
+            $todos = (clone $consulta)->get();
+
+            if ($export = $this->exportarReporte($request, 'admin.exports.listado', [
+                'titulo' => 'Pagos — CxP',
+                'compania' => Compania::find($companiaId)?->nombre ?? '',
+                'subtitulo' => 'Listado al '.now()->format('d/m/Y').' — '.$todos->count().' pagos',
+                'encabezados' => [
+                    ['titulo' => 'Número'], ['titulo' => 'Fecha'], ['titulo' => 'Proveedor'],
+                    ['titulo' => 'Total', 'num' => true], ['titulo' => 'Estado'],
+                ],
+                'filas' => $todos->map(fn ($p) => [
+                    $p->numero, $p->fecha->format('d/m/Y'), $p->proveedor->nombre ?? '',
+                    number_format((float) $p->total, 2), ucfirst(strtolower($p->estado)),
+                ])->all(),
+                'totales' => ['TOTAL', '', '', number_format((float) $todos->where('estado', '!=', CxpDocumento::ESTADO_ANULADO)->sum('total'), 2), ''],
+            ], 'pagos_cxp_'.now()->format('Y-m-d'))) {
+                return $export;
+            }
+        }
+
+        $pagos = $consulta->paginate(25)->withQueryString();
 
         $proveedores = Contacto::where('compania_id', $companiaId)
             ->whereHas('tipos', fn ($q) => $q->where('codigo', 'PROVEEDOR'))

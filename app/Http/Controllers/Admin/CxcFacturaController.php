@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Concerns\ConCompaniaActiva;
+use App\Http\Controllers\Concerns\ExportaReporte;
 use App\Http\Controllers\Controller;
+use App\Models\Compania;
 use App\Models\Contacto;
 use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
@@ -16,15 +18,17 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Response;
 
 class CxcFacturaController extends Controller
 {
     use ConCompaniaActiva;
+    use ExportaReporte;
 
     /** Tasas ITBMS de Panamá aceptadas por línea. */
     public const TASAS_ITBMS = [0, 7, 10, 15];
 
-    public function index(Request $request): View
+    public function index(Request $request): View|Response
     {
         $companiaId = $this->companiaActivaId($request);
 
@@ -36,7 +40,7 @@ class CxcFacturaController extends Controller
             'q' => ['nullable', 'string', 'max:100'],
         ]);
 
-        $facturas = CxcDocumento::query()
+        $consulta = CxcDocumento::query()
             ->with('cliente')
             ->where('compania_id', $companiaId)
             ->where('tipo_documento', CxcDocumento::TIPO_FACTURA)
@@ -52,9 +56,35 @@ class CxcFacturaController extends Controller
                 });
             })
             ->orderByDesc('fecha')
-            ->orderByDesc('numero')
-            ->paginate(25)
-            ->withQueryString();
+            ->orderByDesc('numero');
+
+        if ($request->query('export')) {
+            $todas = (clone $consulta)->get();
+
+            if ($export = $this->exportarReporte($request, 'admin.exports.listado', [
+                'titulo' => 'Facturas por cobrar',
+                'compania' => Compania::find($companiaId)?->nombre ?? '',
+                'subtitulo' => 'Listado al '.now()->format('d/m/Y').' — '.$todas->count().' facturas',
+                'encabezados' => [
+                    ['titulo' => 'Número'], ['titulo' => 'Fecha'], ['titulo' => 'Vence'],
+                    ['titulo' => 'Cliente'], ['titulo' => 'Total', 'num' => true],
+                    ['titulo' => 'Saldo', 'num' => true], ['titulo' => 'Estado'],
+                ],
+                'filas' => $todas->map(fn ($f) => [
+                    $f->numero, $f->fecha->format('d/m/Y'),
+                    $f->fecha_vencimiento?->format('d/m/Y') ?? '',
+                    $f->cliente->nombre ?? '', number_format((float) $f->total, 2),
+                    number_format((float) $f->saldo, 2), ucfirst(strtolower($f->estado)),
+                ])->all(),
+                'totales' => ['TOTAL', '', '', '',
+                    number_format((float) $todas->sum('total'), 2),
+                    number_format((float) $todas->sum('saldo'), 2), ''],
+            ], 'facturas_cxc_'.now()->format('Y-m-d'))) {
+                return $export;
+            }
+        }
+
+        $facturas = $consulta->paginate(25)->withQueryString();
 
         $clientes = $this->clientes($companiaId);
 

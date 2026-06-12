@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Concerns\ConCompaniaActiva;
+use App\Http\Controllers\Concerns\ExportaReporte;
 use App\Http\Controllers\Controller;
+use App\Models\Compania;
 use App\Models\Contacto;
 use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
@@ -16,6 +18,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Notas de crédito y débito de CxP.
@@ -31,6 +34,7 @@ use Illuminate\View\View;
 class CxpNotaController extends Controller
 {
     use ConCompaniaActiva;
+    use ExportaReporte;
 
     public const TASAS_ITBMS = [0, 7, 10, 15];
 
@@ -39,7 +43,7 @@ class CxpNotaController extends Controller
         'debito' => CxpDocumento::TIPO_NOTA_DEBITO,
     ];
 
-    public function index(Request $request): View
+    public function index(Request $request): View|Response
     {
         $companiaId = $this->companiaActivaId($request);
 
@@ -50,7 +54,7 @@ class CxpNotaController extends Controller
             'hasta' => ['nullable', 'date'],
         ]);
 
-        $notas = CxpDocumento::query()
+        $consulta = CxpDocumento::query()
             ->with('proveedor')
             ->where('compania_id', $companiaId)
             ->whereIn('tipo_documento', [CxpDocumento::TIPO_NOTA_CREDITO, CxpDocumento::TIPO_NOTA_DEBITO])
@@ -59,9 +63,33 @@ class CxpNotaController extends Controller
             ->when($filtros['desde'] ?? null, fn ($q, $desde) => $q->whereDate('fecha', '>=', $desde))
             ->when($filtros['hasta'] ?? null, fn ($q, $hasta) => $q->whereDate('fecha', '<=', $hasta))
             ->orderByDesc('fecha')
-            ->orderByDesc('numero')
-            ->paginate(25)
-            ->withQueryString();
+            ->orderByDesc('numero');
+
+        if ($request->query('export')) {
+            $todas = (clone $consulta)->get();
+
+            if ($export = $this->exportarReporte($request, 'admin.exports.listado', [
+                'titulo' => 'Notas de crédito/débito — CxP',
+                'compania' => Compania::find($companiaId)?->nombre ?? '',
+                'subtitulo' => 'Listado al '.now()->format('d/m/Y').' — '.$todas->count().' notas',
+                'encabezados' => [
+                    ['titulo' => 'Número'], ['titulo' => 'Tipo'], ['titulo' => 'Fecha'],
+                    ['titulo' => 'Proveedor'], ['titulo' => 'Total', 'num' => true],
+                    ['titulo' => 'Saldo', 'num' => true], ['titulo' => 'Estado'],
+                ],
+                'filas' => $todas->map(fn ($n) => [
+                    $n->numero,
+                    $n->tipo_documento === CxpDocumento::TIPO_NOTA_CREDITO ? 'Crédito' : 'Débito',
+                    $n->fecha->format('d/m/Y'), $n->proveedor->nombre ?? '',
+                    number_format((float) $n->total, 2), number_format((float) $n->saldo, 2),
+                    ucfirst(strtolower($n->estado)),
+                ])->all(),
+            ], 'notas_cxp_'.now()->format('Y-m-d'))) {
+                return $export;
+            }
+        }
+
+        $notas = $consulta->paginate(25)->withQueryString();
 
         return view('admin.cxp.notas.index', [
             'notas' => $notas,

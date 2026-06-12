@@ -2,12 +2,14 @@
     <x-slot name="header">
         <div class="flex items-center justify-between">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Notas de crédito / débito — CxP</h2>
-            @can('cxp.gestionar')
-                <div class="flex gap-2">
+            <div class="flex items-center gap-2">
+                <a href="{{ route('admin.cxp.notas.index', array_merge(request()->query(), ['export' => 'xlsx'])) }}" class="rounded-md border border-green-300 bg-white px-3 py-2 text-sm text-green-700 hover:bg-green-50">Excel</a>
+                <a href="{{ route('admin.cxp.notas.index', array_merge(request()->query(), ['export' => 'pdf'])) }}" class="rounded-md border border-red-300 bg-white px-3 py-2 text-sm text-red-700 hover:bg-red-50">PDF</a>
+                @can('cxp.gestionar')
                     <a href="{{ route('admin.cxp.notas.create', ['tipo' => 'credito']) }}" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">+ Nota de crédito</a>
                     <a href="{{ route('admin.cxp.notas.create', ['tipo' => 'debito']) }}" class="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700">+ Nota de débito</a>
-                </div>
-            @endcan
+                @endcan
+            </div>
         </div>
     </x-slot>
 

@@ -2,12 +2,16 @@
     <x-slot name="header">
         <div class="flex items-center justify-between">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Cobros recibidos</h2>
-            @can('cxc.gestionar')
-                <a href="{{ route('admin.cxc.cobros.create') }}"
-                   class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
-                    + Registrar cobro
-                </a>
-            @endcan
+            <div class="flex items-center gap-2">
+                <a href="{{ route('admin.cxc.cobros.index', array_merge(request()->query(), ['export' => 'xlsx'])) }}" class="rounded-md border border-green-300 bg-white px-3 py-2 text-sm text-green-700 hover:bg-green-50">Excel</a>
+                <a href="{{ route('admin.cxc.cobros.index', array_merge(request()->query(), ['export' => 'pdf'])) }}" class="rounded-md border border-red-300 bg-white px-3 py-2 text-sm text-red-700 hover:bg-red-50">PDF</a>
+                @can('cxc.gestionar')
+                    <a href="{{ route('admin.cxc.cobros.create') }}"
+                       class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
+                        + Registrar cobro
+                    </a>
+                @endcan
+            </div>
         </div>
     </x-slot>
 
