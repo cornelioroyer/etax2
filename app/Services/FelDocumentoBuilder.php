@@ -48,13 +48,17 @@ class FelDocumentoBuilder
         [$items, $totalNeto, $totalItbms] = $this->items($datos['items']);
         $totalFactura = round($totalNeto + $totalItbms, 2);
 
+        // codigoSucursalEmisor y tipoSucursal van en la raíz del DocumentoElectronico,
+        // y cliente dentro de datosTransaccion (estructura del WSDL obj v1.0).
         $documento = [
+            'codigoSucursalEmisor' => $config->codigo_sucursal ?: '0000',
+            'tipoSucursal' => '1',
             'datosTransaccion' => array_filter([
                 'tipoEmision' => '01',
                 'tipoDocumento' => '01', // factura de operación interna
                 'numeroDocumentoFiscal' => (string) $numeroFiscal,
                 'puntoFacturacionFiscal' => $config->punto_facturacion ?: '001',
-                'fechaEmision' => now()->format('Y-m-d\TH:i:sP'),
+                'fechaEmision' => now('America/Panama')->format('Y-m-d\TH:i:sP'),
                 'naturalezaOperacion' => '01', // venta
                 'tipoOperacion' => 1,          // salida
                 'destinoOperacion' => 1,       // Panamá
@@ -63,10 +67,8 @@ class FelDocumentoBuilder
                 'envioContenedor' => 1,
                 'procesoGeneracion' => 1,
                 'informacionInteres' => $datos['informacion_interes'] ?? null,
-                'codigoSucursalEmisor' => $config->codigo_sucursal ?: '0000',
-                'tipoSucursal' => '1',
+                'cliente' => $this->cliente($cliente, $datos),
             ], fn ($v) => $v !== null && $v !== ''),
-            'cliente' => $this->cliente($cliente, $datos),
             'listaItems' => ['item' => $items],
             'totalesSubTotales' => [
                 'totalPrecioNeto' => $this->n2($totalNeto),
@@ -153,6 +155,9 @@ class FelDocumentoBuilder
                 'descripcion' => $l['descripcion'],
                 'codigo' => $l['codigo'] ?? null,
                 'unidadMedida' => 'und',
+                // CPBS obligatorio para la DGI; default 81/8111 = servicios informáticos
+                'codigoCPBSAbrev' => $l['cpbs_abrev'] ?? '81',
+                'codigoCPBS' => $l['cpbs'] ?? '8111',
                 'cantidad' => $this->n($cantidad, 2),
                 'precioUnitario' => $this->n($precio, 2),
                 'precioItem' => $this->n($precioItem, 2),
