@@ -54,9 +54,14 @@
                                 $abierto = ! $periodo || $periodo->estaAbierto();
                                 $confirmarForzar = old('mes_confirmar') == $mes;
                                 $cierre = $periodo ? $cierres->get($periodo->id) : null;
+                                $inicio = $periodo?->fecha_inicio ?? \Carbon\Carbon::create($anio, $mes, 1);
+                                $fin = $periodo?->fecha_fin ?? $inicio->copy()->endOfMonth();
                             @endphp
                             <tr>
-                                <td class="px-6 py-4 font-medium text-gray-900">{{ $nombre }} {{ $anio }}</td>
+                                <td class="px-6 py-4">
+                                    <span class="font-medium text-gray-900">{{ $nombre }} {{ $anio }}</span>
+                                    <span class="block text-xs text-gray-400">{{ $inicio->format('d/m/Y') }} – {{ $fin->format('d/m/Y') }}</span>
+                                </td>
                                 <td class="px-6 py-4 text-center text-sm text-gray-700">{{ $posteados ?: '—' }}</td>
                                 <td class="px-6 py-4 text-center text-sm {{ $borradores ? 'text-amber-600 font-medium' : 'text-gray-700' }}">{{ $borradores ?: '—' }}</td>
                                 <td class="px-6 py-4">
