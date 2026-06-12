@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 class Asiento extends Model
 {
@@ -26,6 +27,8 @@ class Asiento extends Model
         'referencia',
         'estado',
         'origen_modulo',
+        'origen_tabla',
+        'origen_id',
         'total_debito',
         'total_credito',
         'usuario_id',
@@ -81,9 +84,14 @@ class Asiento extends Model
      */
     public static function siguienteNumero(int $companiaId): string
     {
+        // PostgreSQL no permite FOR UPDATE con agregados (max); usamos un
+        // advisory lock de transacción para serializar la numeración.
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            DB::statement('SELECT pg_advisory_xact_lock(hashtext(?))', ['asiento-'.$companiaId]);
+        }
+
         $ultimo = self::where('compania_id', $companiaId)
             ->where('numero', 'like', 'AS-%')
-            ->lockForUpdate()
             ->max('numero');
 
         $siguiente = $ultimo ? ((int) substr($ultimo, 3)) + 1 : 1;

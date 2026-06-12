@@ -131,6 +131,22 @@ return new class extends Migration
                 $table->unique(['asiento_id', 'linea']);
             });
         }
+        if (! Schema::hasTable('cgl_saldos')) {
+            Schema::create('cgl_saldos', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('compania_id');
+                $table->unsignedBigInteger('periodo_id');
+                $table->unsignedBigInteger('cuenta_id');
+                $table->unsignedBigInteger('contacto_id')->nullable();
+                $table->unsignedBigInteger('centro_costo_id')->nullable();
+                $table->decimal('debito', 18, 2)->default(0);
+                $table->decimal('credito', 18, 2)->default(0);
+                $table->decimal('saldo', 18, 2)->default(0);
+                $table->timestamps();
+                $table->string('created_by', 200)->nullable();
+                $table->string('updated_by', 200)->nullable();
+            });
+        }
     }
 
     public function down(): void
