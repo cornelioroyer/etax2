@@ -53,6 +53,7 @@
                                 $borradores = (int) ($asientosPorMes->get($mes)[\App\Models\Asiento::ESTADO_BORRADOR] ?? 0);
                                 $abierto = ! $periodo || $periodo->estaAbierto();
                                 $confirmarForzar = old('mes_confirmar') == $mes;
+                                $cierre = $periodo ? $cierres->get($periodo->id) : null;
                             @endphp
                             <tr>
                                 <td class="px-6 py-4 font-medium text-gray-900">{{ $nombre }} {{ $anio }}</td>
@@ -74,6 +75,11 @@
                                         @if ($periodo->cerradoPor)
                                             <span class="block text-xs">{{ $periodo->cerradoPor->name }}</span>
                                         @endif
+                                        @if ($cierre?->observacion)
+                                            <span class="block text-xs italic text-gray-400">{{ $cierre->observacion }}</span>
+                                        @endif
+                                    @elseif ($cierre && $cierre->estado === \App\Models\CierreContable::ESTADO_REABIERTO)
+                                        <span class="text-xs text-amber-600">Reabierto</span>
                                     @else
                                         —
                                     @endif
@@ -92,6 +98,8 @@
                                                         cerrar de todos modos
                                                     </label>
                                                 @endif
+                                                <input name="observacion" maxlength="500" placeholder="Observación (opcional)"
+                                                       class="w-44 rounded-md border-gray-300 text-xs shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                                 <button class="text-red-600 hover:text-red-900">Cerrar</button>
                                             </form>
                                         @else

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Asiento;
+use App\Models\CierreContable;
 use App\Models\PeriodoContable;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
@@ -30,6 +31,12 @@ class PeriodoContableController extends Controller
             ->get()
             ->keyBy('mes');
 
+        $cierres = CierreContable::query()
+            ->where('compania_id', $companiaId)
+            ->whereIn('periodo_id', $periodos->pluck('id'))
+            ->get()
+            ->keyBy('periodo_id');
+
         // Asientos posteados y borradores por mes, para mostrar actividad del período
         $asientosPorMes = Asiento::query()
             ->where('compania_id', $companiaId)
@@ -51,7 +58,7 @@ class PeriodoContableController extends Controller
             ->sortDesc()
             ->values();
 
-        return view('admin.periodos.index', compact('periodos', 'asientosPorMes', 'anio', 'anios'));
+        return view('admin.periodos.index', compact('periodos', 'cierres', 'asientosPorMes', 'anio', 'anios'));
     }
 
     /**
@@ -66,6 +73,7 @@ class PeriodoContableController extends Controller
         $data = $request->validate([
             'anio' => ['required', 'integer', 'min:2000', 'max:2100'],
             'mes' => ['required', 'integer', 'min:1', 'max:12'],
+            'observacion' => ['nullable', 'string', 'max:500'],
         ]);
 
         $usuario = $request->user();
@@ -89,12 +97,30 @@ class PeriodoContableController extends Controller
             ])->withInput(['mes_confirmar' => $periodo->mes]);
         }
 
-        $periodo->update([
-            'estado' => PeriodoContable::ESTADO_CERRADO,
-            'cerrado_por' => $usuario->id,
-            'fecha_cierre' => now(),
-            'updated_by' => $usuario->email,
-        ]);
+        DB::transaction(function () use ($periodo, $data, $usuario) {
+            $periodo->update([
+                'estado' => PeriodoContable::ESTADO_CERRADO,
+                'cerrado_por' => $usuario->id,
+                'fecha_cierre' => now(),
+                'updated_by' => $usuario->email,
+            ]);
+
+            // Registro formal del cierre en cgl_cierres (uno por compañía/período)
+            $cierre = CierreContable::firstOrNew([
+                'compania_id' => $periodo->compania_id,
+                'periodo_id' => $periodo->id,
+            ]);
+            if (! $cierre->exists) {
+                $cierre->created_by = $usuario->email;
+            }
+            $cierre->fill([
+                'estado' => CierreContable::ESTADO_CERRADO,
+                'cerrado_por' => $usuario->id,
+                'fecha_cierre' => now(),
+                'observacion' => $data['observacion'] ?? null,
+                'updated_by' => $usuario->email,
+            ])->save();
+        });
 
         return redirect()->route('admin.periodos.index', ['anio' => $periodo->anio])
             ->with('status', "Período {$periodo->anio}-".str_pad((string) $periodo->mes, 2, '0', STR_PAD_LEFT).' cerrado.');
@@ -128,6 +154,14 @@ class PeriodoContableController extends Controller
                 'fecha_cierre' => null,
                 'updated_by' => $usuario->email,
             ]);
+
+            CierreContable::where('compania_id', $periodo->compania_id)
+                ->where('periodo_id', $periodo->id)
+                ->update([
+                    'estado' => CierreContable::ESTADO_REABIERTO,
+                    'updated_by' => $usuario->email,
+                    'updated_at' => now(),
+                ]);
 
             DB::table('audit_reaperturas')->insert([
                 'periodo_id' => $periodo->id,
