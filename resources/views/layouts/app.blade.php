@@ -39,9 +39,32 @@
 
             <div :class="sidebarCollapsed ? 'lg:pl-20' : 'lg:pl-72'" class="transition-all duration-200">
                 @isset($header)
+                    @php
+                        $ruta = request()->route()?->getName() ?? '';
+                        $moduloAyuda = match(true) {
+                            str_contains($ruta, 'ventas.')       => 'ventas',
+                            str_contains($ruta, 'cxc.')          => 'cxc',
+                            str_contains($ruta, 'cxp.')          => 'cxp',
+                            str_contains($ruta, 'compras.')      => 'compras',
+                            str_contains($ruta, 'bco.') ||
+                            str_contains($ruta, 'bancos.')       => 'bancos',
+                            str_contains($ruta, 'inventario.')   => 'inventario',
+                            str_contains($ruta, 'activos.')      => 'activos',
+                            str_contains($ruta, 'caja.')         => 'caja',
+                            str_contains($ruta, 'fel.')          => 'fel',
+                            str_contains($ruta, 'asientos.') ||
+                            str_contains($ruta, 'cuentas.') ||
+                            str_contains($ruta, 'diarios.') ||
+                            str_contains($ruta, 'periodos.')     => 'contabilidad',
+                            default                              => null,
+                        };
+                    @endphp
                     <header class="border-b border-slate-200 bg-white">
-                        <div class="px-4 py-5 sm:px-6 lg:px-8">
-                            {{ $header }}
+                        <div class="flex items-center gap-3 px-4 py-5 sm:px-6 lg:px-8">
+                            <div class="min-w-0 flex-1">{{ $header }}</div>
+                            @if ($moduloAyuda)
+                                <x-help-button :module="$moduloAyuda" label="Ayuda" />
+                            @endif
                         </div>
                     </header>
                 @endisset
@@ -158,22 +181,23 @@
                 x-transition:leave-start="opacity-100"
                 x-transition:leave-end="opacity-0"
                 @click="open = false"
-                class="fixed inset-0 z-40 bg-slate-900/40 print:hidden"
+                class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm print:hidden"
                 x-cloak
             ></div>
 
-            {{-- Drawer --}}
+            {{-- Modal centrado --}}
             <div
                 x-show="open"
-                x-transition:enter="transition ease-out duration-300 transform"
-                x-transition:enter-start="translate-x-full"
-                x-transition:enter-end="translate-x-0"
-                x-transition:leave="transition ease-in duration-200 transform"
-                x-transition:leave-start="translate-x-0"
-                x-transition:leave-end="translate-x-full"
-                class="fixed inset-y-0 right-0 z-50 flex w-full max-w-sm flex-col bg-white shadow-2xl print:hidden"
+                x-transition:enter="transition ease-out duration-200"
+                x-transition:enter-start="opacity-0 scale-95 translate-y-2"
+                x-transition:enter-end="opacity-100 scale-100 translate-y-0"
+                x-transition:leave="transition ease-in duration-150"
+                x-transition:leave-start="opacity-100 scale-100 translate-y-0"
+                x-transition:leave-end="opacity-0 scale-95 translate-y-2"
+                class="fixed inset-0 z-50 flex items-center justify-center p-4 print:hidden"
                 x-cloak
             >
+            <div class="flex w-full max-w-2xl flex-col bg-white rounded-2xl shadow-2xl overflow-hidden" style="max-height: 85vh">
                 {{-- Cabecera del drawer --}}
                 <div class="flex shrink-0 items-center justify-between bg-[#0d2d5e] px-5 py-4">
                     <div>
@@ -293,11 +317,12 @@
                     </template>
                 </div>
 
-                {{-- Pie del drawer --}}
+                {{-- Pie del modal --}}
                 <div class="shrink-0 border-t border-slate-200 bg-white px-4 py-3 text-center">
-                    <p class="text-xs text-slate-500">¿No encontraste tu respuesta? Escríbenos a <a href="mailto:soporte@etax2.com" class="font-medium text-[#0d2d5e] hover:underline">soporte@etax2.com</a></p>
+                    <p class="text-xs text-slate-500">¿No encontraste tu respuesta? Escríbenos a <a href="mailto:CornelioRoyer@gmail.com" class="font-medium text-[#0d2d5e] hover:underline">CornelioRoyer@gmail.com</a></p>
                 </div>
-            </div>
+            </div>{{-- /modal-box --}}
+            </div>{{-- /modal-centering --}}
         </div>
         {{-- ── /Centro de Ayuda ──────────────────────────────────────────────── --}}
 

@@ -180,6 +180,7 @@
                 ['label' => 'Servicios estándar', 'href' => route('admin.taller.servicios.index'), 'active' => request()->routeIs('admin.taller.servicios.*'), 'show' => $can('taller.ver')],
                 ['label' => 'Checklists', 'href' => route('admin.taller.checklists.index'), 'active' => request()->routeIs('admin.taller.checklists.*'), 'show' => $can('taller.ver')],
                 ['label' => 'Técnicos', 'href' => route('admin.taller.tecnicos.index'), 'active' => request()->routeIs('admin.taller.tecnicos.*'), 'show' => $can('taller.ver')],
+                ['label' => 'Equipos', 'href' => route('admin.taller.equipos.index'), 'active' => request()->routeIs('admin.taller.equipos.*'), 'show' => $can('taller.ver')],
             ],
         ],
         [
@@ -244,7 +245,7 @@
             'show' => true,
             'active' => request()->routeIs('admin.ayuda.*'),
             'children' => [
-                ['label' => 'Centro de ayuda', 'href' => route('admin.ayuda.index'), 'active' => request()->routeIs('admin.ayuda.index'), 'show' => true],
+                ['label' => 'Centro de ayuda', 'href' => null, 'dispatch' => 'open-help', 'active' => false, 'show' => true],
             ],
         ],
     ];
@@ -323,9 +324,13 @@
                             @foreach ($children as $child)
                                 <a
                                     href="{{ $child['href'] ?? '#' }}"
-                                    @if (! $child['href']) @click.prevent @endif
+                                    @if ($child['dispatch'] ?? null)
+                                        @click.prevent="$dispatch('{{ $child['dispatch'] }}')"
+                                    @elseif (! $child['href'])
+                                        @click.prevent
+                                    @endif
                                     x-show="menuQuery === '' || '{{ Str::lower($child['label']) }}'.includes(menuQuery.toLowerCase())"
-                                    class="block rounded-md px-3 py-2 text-sm {{ $child['active'] ? 'bg-white/15 font-semibold text-white' : (($child['href'] ?? null) ? 'text-blue-200 hover:bg-white/10 hover:text-white' : 'text-blue-400/50') }}"
+                                    class="block rounded-md px-3 py-2 text-sm {{ $child['active'] ? 'bg-white/15 font-semibold text-white' : (($child['href'] ?? null) || ($child['dispatch'] ?? null) ? 'text-blue-200 hover:bg-white/10 hover:text-white' : 'text-blue-400/50') }}"
                                 >
                                     {{ $child['label'] }}
                                 </a>
