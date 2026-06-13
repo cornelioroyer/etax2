@@ -90,7 +90,7 @@
             'show' => $can('ventas.ver'),
             'children' => [
                 ['label' => 'Cotizaciones', 'href' => route('admin.ventas.cotizaciones.index'), 'active' => request()->routeIs('admin.ventas.cotizaciones.*'), 'show' => $can('ventas.ver')],
-                ['label' => 'Facturas de venta', 'href' => route('admin.cxc.facturas.index'), 'active' => request()->routeIs('admin.cxc.facturas.*'), 'show' => $can('cxc.ver')],
+                ['label' => 'Facturas de venta', 'href' => route('admin.ventas.facturas.index'), 'active' => request()->routeIs('admin.ventas.facturas.*'), 'show' => $can('ventas.ver')],
                 ['label' => 'Cobros', 'href' => route('admin.cxc.cobros.index'), 'active' => request()->routeIs('admin.cxc.cobros.*'), 'show' => $can('cxc.ver')],
                 ['label' => 'Notas C/D', 'href' => route('admin.cxc.notas.index'), 'active' => request()->routeIs('admin.cxc.notas.*'), 'show' => $can('cxc.ver')],
             ],

@@ -1,0 +1,148 @@
+<x-app-layout>
+    <x-slot name="header">
+        <div class="flex items-center justify-between">
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight">Factura {{ $factura->numero }}</h2>
+            <a href="{{ route('admin.ventas.facturas.index') }}" class="text-sm text-gray-600 hover:text-gray-900">← Volver al listado</a>
+        </div>
+    </x-slot>
+
+    <div class="py-8">
+        <div class="max-w-5xl mx-auto sm:px-6 lg:px-8 space-y-4">
+            @if (session('status'))
+                <div class="rounded-md bg-green-50 p-4 text-sm text-green-800">{{ session('status') }}</div>
+            @endif
+            @if ($errors->any())
+                <div class="rounded-md bg-red-50 p-4 text-sm text-red-800">
+                    @foreach ($errors->all() as $error)<div>{{ $error }}</div>@endforeach
+                </div>
+            @endif
+
+            {{-- Cabecera --}}
+            <div class="bg-white p-6 shadow-sm sm:rounded-lg">
+                <div class="flex flex-wrap items-start justify-between gap-4">
+                    <dl class="grid grid-cols-2 gap-x-10 gap-y-3 text-sm sm:grid-cols-3">
+                        <div>
+                            <dt class="text-gray-500">Cliente</dt>
+                            <dd class="font-medium text-gray-900">{{ $factura->cliente->nombre ?? '—' }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-gray-500">Fecha</dt>
+                            <dd class="font-medium">{{ $factura->fecha->format('d/m/Y') }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-gray-500">Vence</dt>
+                            <dd class="font-medium">{{ $factura->fecha_vencimiento?->format('d/m/Y') ?? '—' }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-gray-500">Estado</dt>
+                            <dd>@include('admin.ventas.facturas._estado', ['estado' => $factura->estado])</dd>
+                        </div>
+                        <div>
+                            <dt class="text-gray-500">Saldo</dt>
+                            <dd class="text-lg font-bold text-[#0d2d5e]">B/. {{ number_format((float) $factura->saldo, 2) }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-gray-500">Asiento</dt>
+                            <dd>
+                                @if ($factura->asiento)
+                                    <a href="{{ route('admin.asientos.show', $factura->asiento) }}" class="text-blue-700 hover:underline">{{ $factura->asiento->numero }}</a>
+                                @else —
+                                @endif
+                            </dd>
+                        </div>
+                        @if ($factura->cotizacion)
+                            <div>
+                                <dt class="text-gray-500">Cotización origen</dt>
+                                <dd>
+                                    <a href="{{ route('admin.ventas.cotizaciones.show', $factura->cotizacion) }}" class="text-blue-700 hover:underline">{{ $factura->cotizacion->numero }}</a>
+                                </dd>
+                            </div>
+                        @endif
+                        @if ($factura->cxcDocumento)
+                            <div>
+                                <dt class="text-gray-500">Documento CxC</dt>
+                                <dd>
+                                    <a href="{{ route('admin.cxc.facturas.show', $factura->cxcDocumento) }}" class="text-blue-700 hover:underline">{{ $factura->cxcDocumento->numero }}</a>
+                                    <span class="ml-1 text-xs text-gray-400">(saldo B/. {{ number_format((float) $factura->cxcDocumento->saldo, 2) }})</span>
+                                </dd>
+                            </div>
+                        @endif
+                        <div>
+                            <dt class="text-gray-500">FEL</dt>
+                            <dd>
+                                @if ($factura->fel_documento_id)
+                                    <span class="text-green-600 font-medium text-xs">Emitida</span>
+                                @else
+                                    <span class="text-gray-400 text-xs">Pendiente de envío</span>
+                                @endif
+                            </dd>
+                        </div>
+                    </dl>
+
+                    @can('ventas.gestionar')
+                        <div class="flex flex-wrap gap-2">
+                            @if (! $factura->esAnulada() && ! $factura->fel_documento_id)
+                                <form method="POST" action="{{ route('admin.ventas.facturas.anular', $factura) }}"
+                                      onsubmit="return confirm('¿Anular la factura {{ $factura->numero }}? También se anulará el asiento contable.')">
+                                    @csrf
+                                    <button class="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">
+                                        Anular
+                                    </button>
+                                </form>
+                            @endif
+                        </div>
+                    @endcan
+                </div>
+            </div>
+
+            {{-- Detalle --}}
+            <div class="bg-white shadow-sm sm:rounded-lg overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                            <tr>
+                                <th class="px-4 py-3">#</th>
+                                <th class="px-4 py-3">Descripción</th>
+                                <th class="px-4 py-3 text-right">Cant.</th>
+                                <th class="px-4 py-3 text-right">Precio</th>
+                                <th class="px-4 py-3 text-right">ITBMS</th>
+                                <th class="px-4 py-3 text-right">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            @foreach ($factura->detalle as $linea)
+                                <tr>
+                                    <td class="px-4 py-3 text-gray-500">{{ $linea->linea }}</td>
+                                    <td class="px-4 py-3">{{ $linea->descripcion }}</td>
+                                    <td class="px-4 py-3 text-right">{{ rtrim(rtrim(number_format((float) $linea->cantidad, 4), '0'), '.') }}</td>
+                                    <td class="px-4 py-3 text-right">B/. {{ number_format((float) $linea->precio_unitario, 2) }}</td>
+                                    <td class="px-4 py-3 text-right text-gray-600">
+                                        {{ $linea->impuesto?->nombre ?? 'Exento' }}
+                                        (B/. {{ number_format((float) $linea->impuesto_monto, 2) }})
+                                    </td>
+                                    <td class="px-4 py-3 text-right font-medium">B/. {{ number_format((float) $linea->total_linea, 2) }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                        <tfoot class="border-t-2 border-gray-200 text-sm">
+                            <tr>
+                                <td colspan="5" class="px-4 py-1 text-right text-gray-600">Subtotal</td>
+                                <td class="px-4 py-1 text-right">B/. {{ number_format((float) $factura->subtotal, 2) }}</td>
+                            </tr>
+                            @if ((float) $factura->itbms > 0)
+                                <tr>
+                                    <td colspan="5" class="px-4 py-1 text-right text-gray-600">ITBMS</td>
+                                    <td class="px-4 py-1 text-right">B/. {{ number_format((float) $factura->itbms, 2) }}</td>
+                                </tr>
+                            @endif
+                            <tr class="font-semibold">
+                                <td colspan="5" class="px-4 py-2 text-right text-gray-700">Total</td>
+                                <td class="px-4 py-2 text-right">B/. {{ number_format((float) $factura->total, 2) }}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</x-app-layout>

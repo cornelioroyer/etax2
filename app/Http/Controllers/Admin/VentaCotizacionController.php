@@ -8,8 +8,14 @@ use App\Http\Controllers\Controller;
 use App\Models\Compania;
 use App\Models\Contacto;
 use App\Models\TaxImpuesto;
+use App\Models\CuentaDefault;
+use App\Models\CxcDocumento;
+use App\Models\CxcDocumentoDetalle;
 use App\Models\VentaCotizacion;
 use App\Models\VentaCotizacionDetalle;
+use App\Models\VentaFactura;
+use App\Models\VentaFacturaDetalle;
+use App\Services\AsientoAutomatico;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -226,6 +232,158 @@ class VentaCotizacionController extends Controller
         $cotizacion->update(['estado' => VentaCotizacion::ESTADO_ANULADA, 'updated_by' => $request->user()->email]);
 
         return back()->with('status', "Cotización {$cotizacion->numero} anulada.");
+    }
+
+    /**
+     * Convierte la cotización en ventas_facturas + cxc_documentos + asiento.
+     * Sólo se puede facturar desde BORRADOR, ENVIADA o ACEPTADA.
+     */
+    public function facturar(Request $request, VentaCotizacion $cotizacion): RedirectResponse
+    {
+        abort_unless($cotizacion->compania_id === $this->companiaActivaId($request), 404);
+
+        if (! $cotizacion->esFacturable()) {
+            return back()->withErrors(['cotizacion' => "La cotización está {$cotizacion->estado} y no se puede facturar."]);
+        }
+
+        // Verificar que no tenga ya una factura
+        $yaFacturada = VentaFactura::where('cotizacion_id', $cotizacion->id)->exists();
+        if ($yaFacturada) {
+            return back()->withErrors(['cotizacion' => 'Esta cotización ya tiene una factura generada.']);
+        }
+
+        $data = $request->validate([
+            'fecha'             => ['required', 'date'],
+            'fecha_vencimiento' => ['nullable', 'date', 'after_or_equal:fecha'],
+        ]);
+
+        $companiaId = $cotizacion->compania_id;
+        $usuario    = $request->user();
+
+        $cuentaCxcId   = CuentaDefault::idPara($companiaId, 'CXC');
+        $cuentaItbmsId = CuentaDefault::idPara($companiaId, 'ITBMS_POR_PAGAR');
+        $cuentaVentasId = CuentaDefault::idPara($companiaId, 'VENTAS');
+
+        if (! $cuentaCxcId) {
+            return back()->withErrors(['cotizacion' => 'La compañía no tiene configurada la cuenta default CXC.']);
+        }
+
+        $cotizacion->load('detalle.impuesto');
+
+        $factura = DB::transaction(function () use ($cotizacion, $data, $companiaId, $usuario, $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId) {
+            $numero = VentaFactura::siguienteNumero($companiaId);
+
+            // 1. ventas_facturas
+            $factura = VentaFactura::create([
+                'compania_id'       => $companiaId,
+                'cliente_id'        => $cotizacion->cliente_id,
+                'numero'            => $numero,
+                'fecha'             => $data['fecha'],
+                'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
+                'subtotal'          => $cotizacion->subtotal,
+                'descuento'         => $cotizacion->descuento,
+                'itbms'             => $cotizacion->itbms,
+                'total'             => $cotizacion->total,
+                'saldo'             => $cotizacion->total,
+                'estado'            => VentaFactura::ESTADO_EMITIDA,
+                'cotizacion_id'     => $cotizacion->id,
+                'created_by'        => $usuario->email,
+            ]);
+
+            // 2. ventas_facturas_detalle
+            foreach ($cotizacion->detalle as $linea) {
+                VentaFacturaDetalle::create([
+                    'factura_id'       => $factura->id,
+                    'linea'            => $linea->linea,
+                    'descripcion'      => $linea->descripcion,
+                    'cantidad'         => $linea->cantidad,
+                    'precio_unitario'  => $linea->precio_unitario,
+                    'descuento'        => $linea->descuento,
+                    'impuesto_id'      => $linea->impuesto_id,
+                    'impuesto_monto'   => $linea->impuesto_monto,
+                    'total_linea'      => $linea->total_linea,
+                    'cuenta_ingreso_id'=> $cuentaVentasId,
+                    'created_by'       => $usuario->email,
+                ]);
+            }
+
+            // 3. cxc_documentos (para cobros y antigüedad)
+            $cxc = CxcDocumento::create([
+                'compania_id'       => $companiaId,
+                'cliente_id'        => $cotizacion->cliente_id,
+                'tipo_documento'    => CxcDocumento::TIPO_FACTURA,
+                'numero'            => $numero,
+                'fecha'             => $data['fecha'],
+                'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
+                'subtotal'          => $cotizacion->subtotal,
+                'descuento'         => 0,
+                'impuesto'          => $cotizacion->itbms,
+                'total'             => $cotizacion->total,
+                'saldo'             => $cotizacion->total,
+                'estado'            => CxcDocumento::ESTADO_PENDIENTE,
+                'created_by'        => $usuario->email,
+            ]);
+
+            foreach ($cotizacion->detalle as $linea) {
+                $base = round((float) $linea->total_linea - (float) $linea->impuesto_monto, 2);
+                CxcDocumentoDetalle::create([
+                    'documento_id'    => $cxc->id,
+                    'linea'           => $linea->linea,
+                    'descripcion'     => $linea->descripcion,
+                    'cantidad'        => $linea->cantidad,
+                    'precio_unitario' => $linea->precio_unitario,
+                    'descuento'       => 0,
+                    'impuesto_monto'  => $linea->impuesto_monto,
+                    'total_linea'     => $linea->total_linea,
+                    'cuenta_id'       => $cuentaVentasId,
+                    'created_by'      => $usuario->email,
+                ]);
+            }
+
+            // 4. Asiento contable
+            $lineasAsiento = [[
+                'cuenta_id'   => $cuentaCxcId,
+                'contacto_id' => $cotizacion->cliente_id,
+                'descripcion' => "Factura {$numero}",
+                'debito'      => (float) $cotizacion->total,
+                'credito'     => 0,
+            ]];
+
+            foreach ($cotizacion->detalle as $linea) {
+                $base = round((float) $linea->total_linea - (float) $linea->impuesto_monto, 2);
+                $lineasAsiento[] = [
+                    'cuenta_id'   => $cuentaVentasId,
+                    'descripcion' => $linea->descripcion,
+                    'debito'      => 0,
+                    'credito'     => $base,
+                ];
+            }
+
+            if ((float) $cotizacion->itbms > 0 && $cuentaItbmsId) {
+                $lineasAsiento[] = [
+                    'cuenta_id'   => $cuentaItbmsId,
+                    'descripcion' => "ITBMS factura {$numero}",
+                    'debito'      => 0,
+                    'credito'     => (float) $cotizacion->itbms,
+                ];
+            }
+
+            $asiento = app(AsientoAutomatico::class)->postear(
+                $companiaId, $data['fecha'],
+                "Factura de venta {$numero} — ".$cotizacion->cliente->nombre,
+                $numero, $lineasAsiento, 'CXC', 'ventas_facturas', $factura->id, $usuario,
+            );
+
+            // 5. Vincular todo
+            $factura->update(['cxc_documento_id' => $cxc->id, 'asiento_id' => $asiento->id]);
+            $cxc->update(['asiento_id' => $asiento->id]);
+            $cotizacion->update(['estado' => VentaCotizacion::ESTADO_FACTURADA, 'updated_by' => $usuario->email]);
+
+            return $factura;
+        });
+
+        return redirect()->route('admin.ventas.facturas.show', $factura)
+            ->with('status', "Factura {$factura->numero} emitida desde cotización {$cotizacion->numero}.");
     }
 
     private function clientes(int $companiaId)

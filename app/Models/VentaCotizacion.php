@@ -70,7 +70,7 @@ class VentaCotizacion extends Model
 
     public function esFacturable(): bool
     {
-        return in_array($this->estado, [self::ESTADO_ENVIADA, self::ESTADO_ACEPTADA], true);
+        return in_array($this->estado, [self::ESTADO_BORRADOR, self::ESTADO_ENVIADA, self::ESTADO_ACEPTADA], true);
     }
 
     /**
