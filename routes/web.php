@@ -183,6 +183,8 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::resource('usuarios-compania', UsuarioCompaniaController::class)
             ->only(['store', 'update', 'destroy'])
             ->parameters(['usuarios-compania' => 'user']);
+        Route::get('usuarios-compania/{user}/permisos', [UsuarioCompaniaController::class, 'editarPermisos'])->name('usuarios-compania.permisos.edit');
+        Route::put('usuarios-compania/{user}/permisos', [UsuarioCompaniaController::class, 'actualizarPermisos'])->name('usuarios-compania.permisos.update');
     });
 });
 

@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\View\View;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
 class UsuarioCompaniaController extends Controller
@@ -115,6 +116,96 @@ class UsuarioCompaniaController extends Controller
 
         return redirect()->route('admin.usuarios-compania.index')
             ->with('status', "Acceso de {$user->email} a {$compania->nombre} eliminado.");
+    }
+
+    /**
+     * Muestra la pantalla para editar los permisos extra de un usuario en la compañía.
+     */
+    public function editarPermisos(Request $request, User $user): View
+    {
+        $compania = $this->companiaActiva($request);
+
+        // Permisos que tiene el usuario por su rol en esta compañía
+        $rolNombre = DB::table('seg_usuarios_roles')
+            ->join('seg_roles', 'seg_roles.id', '=', 'seg_usuarios_roles.rol_id')
+            ->where('seg_usuarios_roles.model_type', User::class)
+            ->where('seg_usuarios_roles.model_id', $user->id)
+            ->where('seg_usuarios_roles.compania_id', $compania->id)
+            ->value('seg_roles.name');
+
+        $permisosDelRol = $rolNombre
+            ? DB::table('seg_roles_permisos')
+                ->join('seg_roles', 'seg_roles.id', '=', 'seg_roles_permisos.rol_id')
+                ->join('seg_permisos', 'seg_permisos.id', '=', 'seg_roles_permisos.permiso_id')
+                ->where('seg_roles.name', $rolNombre)
+                ->pluck('seg_permisos.name')
+                ->all()
+            : [];
+
+        $permisosDirectos = DB::table('seg_usuarios_permisos')
+            ->join('seg_permisos', 'seg_permisos.id', '=', 'seg_usuarios_permisos.permiso_id')
+            ->where('seg_usuarios_permisos.model_type', User::class)
+            ->where('seg_usuarios_permisos.model_id', $user->id)
+            ->where('seg_usuarios_permisos.compania_id', $compania->id)
+            ->pluck('seg_permisos.name')
+            ->all();
+
+        $todosLosPermisos = DB::table('seg_permisos')
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        // Agrupar por módulo (prefijo antes del primer punto)
+        $grupos = [];
+        foreach ($todosLosPermisos as $p) {
+            $modulo = explode('.', $p->name)[0];
+            $grupos[$modulo][] = $p;
+        }
+
+        return view('admin.usuarios-compania.permisos', [
+            'usuario'         => $user,
+            'compania'        => $compania,
+            'rolNombre'       => $rolNombre,
+            'permisosDelRol'  => $permisosDelRol,
+            'permisosDirectos'=> $permisosDirectos,
+            'grupos'          => $grupos,
+        ]);
+    }
+
+    /**
+     * Sincroniza los permisos directos del usuario en la compañía (sin tocar los del rol).
+     */
+    public function actualizarPermisos(Request $request, User $user): RedirectResponse
+    {
+        $compania = $this->companiaActiva($request);
+
+        if ($user->is($request->user())) {
+            return back()->withErrors(['permisos' => 'No puedes editar tus propios permisos.']);
+        }
+
+        $data = $request->validate([
+            'permisos'   => ['nullable', 'array'],
+            'permisos.*' => ['integer', 'exists:seg_permisos,id'],
+        ]);
+
+        $permisosSeleccionados = $data['permisos'] ?? [];
+
+        DB::table('seg_usuarios_permisos')
+            ->where('model_type', User::class)
+            ->where('model_id', $user->id)
+            ->where('compania_id', $compania->id)
+            ->delete();
+
+        foreach ($permisosSeleccionados as $permisoId) {
+            DB::table('seg_usuarios_permisos')->insert([
+                'permiso_id'  => $permisoId,
+                'model_type'  => User::class,
+                'model_id'    => $user->id,
+                'compania_id' => $compania->id,
+            ]);
+        }
+
+        return redirect()->route('admin.usuarios-compania.index')
+            ->with('status', "Permisos de {$user->email} actualizados.");
     }
 
     /**

@@ -70,6 +70,7 @@
                                 </td>
                                 <td class="px-4 py-4 text-right text-sm font-medium sm:px-6">
                                     @if ($u->id !== auth()->id() && auth()->user()->can('usuarios_compania.gestionar'))
+                                        <a href="{{ route('admin.usuarios-compania.permisos.edit', $u->id) }}" class="mr-4 text-indigo-600 hover:text-indigo-900">Permisos</a>
                                         <form method="POST" action="{{ route('admin.usuarios-compania.destroy', $u->id) }}" class="inline" onsubmit="return confirm('Quitar el acceso de este usuario a la compañía?')">
                                             @csrf
                                             @method('DELETE')
