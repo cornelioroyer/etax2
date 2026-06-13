@@ -86,11 +86,13 @@
             'key' => 'ventas',
             'label' => 'Ventas',
             'icon' => 'M4.5 6.75h15M6 6.75l1.5 12h9l1.5-12M9 10.5h6M9.75 3h4.5',
+            'active' => request()->routeIs('admin.ventas.*') || request()->routeIs('admin.cxc.*'),
             'show' => $can('ventas.ver'),
             'children' => [
-                ['label' => 'Cotizaciones', 'href' => null, 'active' => false, 'show' => $can('ventas.ver')],
-                ['label' => 'Facturas de venta', 'href' => null, 'active' => false, 'show' => $can('ventas.ver')],
-                ['label' => 'Recibos', 'href' => null, 'active' => false, 'show' => $can('ventas.ver')],
+                ['label' => 'Cotizaciones', 'href' => route('admin.ventas.cotizaciones.index'), 'active' => request()->routeIs('admin.ventas.cotizaciones.*'), 'show' => $can('ventas.ver')],
+                ['label' => 'Facturas de venta', 'href' => route('admin.cxc.facturas.index'), 'active' => request()->routeIs('admin.cxc.facturas.*'), 'show' => $can('cxc.ver')],
+                ['label' => 'Cobros', 'href' => route('admin.cxc.cobros.index'), 'active' => request()->routeIs('admin.cxc.cobros.*'), 'show' => $can('cxc.ver')],
+                ['label' => 'Notas C/D', 'href' => route('admin.cxc.notas.index'), 'active' => request()->routeIs('admin.cxc.notas.*'), 'show' => $can('cxc.ver')],
             ],
         ],
         [

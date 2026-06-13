@@ -12,11 +12,11 @@ use App\Models\CuentaDefault;
 use App\Models\CxcDocumento;
 use App\Models\CxcDocumentoDetalle;
 use App\Services\AsientoAutomatico;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -135,11 +135,10 @@ class CxcFacturaController extends Controller
 
         if (! $cuentaCxcId) {
             throw ValidationException::withMessages([
-                'cliente_id' => 'La compañía no tiene configurada la cuenta default CXC (Cuentas por Cobrar). Aplica una plantilla de plan de cuentas o configúrala.',
+                'cliente_id' => 'La compañía no tiene configurada la cuenta default CXC. Configúrala antes de facturar.',
             ]);
         }
 
-        // Normalizar líneas y calcular totales
         $lineas = [];
         $subtotal = 0.0;
         $impuesto = 0.0;
@@ -149,10 +148,8 @@ class CxcFacturaController extends Controller
             $precio = round((float) $linea['precio_unitario'], 4);
             $base = round($cantidad * $precio, 2);
             $itbms = round($base * ((int) $linea['tasa_itbms']) / 100, 2);
-
             $subtotal += $base;
             $impuesto += $itbms;
-
             $lineas[] = [
                 'linea' => $i + 1,
                 'descripcion' => $linea['descripcion'],
@@ -169,12 +166,12 @@ class CxcFacturaController extends Controller
         $total = round($subtotal + $impuesto, 2);
 
         if ($total <= 0) {
-            throw ValidationException::withMessages(['lineas' => 'El total de la factura debe ser mayor que cero.']);
+            throw ValidationException::withMessages(['lineas' => 'El total debe ser mayor que cero.']);
         }
 
         if ($impuesto > 0 && ! $cuentaItbmsId) {
             throw ValidationException::withMessages([
-                'lineas' => 'La compañía no tiene configurada la cuenta default ITBMS_POR_PAGAR; no se puede facturar con ITBMS.',
+                'lineas' => 'La compañía no tiene configurada la cuenta default ITBMS_POR_PAGAR.',
             ]);
         }
 
@@ -199,7 +196,6 @@ class CxcFacturaController extends Controller
                 CxcDocumentoDetalle::create($linea + ['documento_id' => $factura->id, 'created_by' => $usuario->email]);
             }
 
-            // Asiento: débito CXC por el total, crédito ingreso por línea, crédito ITBMS
             $lineasAsiento = [[
                 'cuenta_id' => $cuentaCxcId,
                 'contacto_id' => (int) $data['cliente_id'],
@@ -228,15 +224,9 @@ class CxcFacturaController extends Controller
             }
 
             $asiento = app(AsientoAutomatico::class)->postear(
-                $companiaId,
-                $data['fecha'],
+                $companiaId, $data['fecha'],
                 "Factura de venta {$factura->numero} — ".$factura->cliente->nombre,
-                $factura->numero,
-                $lineasAsiento,
-                'CXC',
-                'cxc_documentos',
-                $factura->id,
-                $usuario,
+                $factura->numero, $lineasAsiento, 'CXC', 'cxc_documentos', $factura->id, $usuario,
             );
 
             $factura->update(['asiento_id' => $asiento->id]);

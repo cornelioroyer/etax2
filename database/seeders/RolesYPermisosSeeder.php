@@ -29,8 +29,11 @@ class RolesYPermisosSeeder extends Seeder
             // Módulos preparados para crecimiento
             'contabilidad.ver',
             'compras.ver',
+            'compras.gestionar',
             'ventas.ver',
+            'ventas.gestionar',
             'bancos.ver',
+            'bancos.gestionar',
             'inventario.ver',
             'activos.ver',
             'reportes.ver',

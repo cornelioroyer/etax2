@@ -28,6 +28,7 @@ use App\Http\Controllers\Admin\ReporteFlujoCajaController;
 use App\Http\Controllers\Admin\ReporteLiquidacionItbmsController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\UsuarioCompaniaController;
+use App\Http\Controllers\Admin\VentaCotizacionController;
 use App\Http\Controllers\Admin\ZonaController;
 use App\Http\Controllers\CompaniaActivaController;
 use App\Http\Controllers\DashboardController;
@@ -154,6 +155,18 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::middleware('permission:compras.gestionar')->group(function () {
         Route::get('compras/gastos/nuevo', [GastoController::class, 'create'])->name('compras.gastos.create');
         Route::post('compras/gastos', [GastoController::class, 'store'])->name('compras.gastos.store');
+    });
+
+    Route::middleware('permission:ventas.ver')->group(function () {
+        Route::get('ventas/cotizaciones', [VentaCotizacionController::class, 'index'])->name('ventas.cotizaciones.index');
+        Route::get('ventas/cotizaciones/{cotizacion}', [VentaCotizacionController::class, 'show'])->whereNumber('cotizacion')->name('ventas.cotizaciones.show');
+    });
+
+    Route::middleware('permission:ventas.gestionar')->group(function () {
+        Route::get('ventas/cotizaciones/nueva', [VentaCotizacionController::class, 'create'])->name('ventas.cotizaciones.create');
+        Route::post('ventas/cotizaciones', [VentaCotizacionController::class, 'store'])->name('ventas.cotizaciones.store');
+        Route::post('ventas/cotizaciones/{cotizacion}/estado', [VentaCotizacionController::class, 'cambiarEstado'])->whereNumber('cotizacion')->name('ventas.cotizaciones.estado');
+        Route::post('ventas/cotizaciones/{cotizacion}/anular', [VentaCotizacionController::class, 'anular'])->whereNumber('cotizacion')->name('ventas.cotizaciones.anular');
     });
 
     Route::middleware('permission:fel.ver')->group(function () {
