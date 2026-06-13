@@ -57,7 +57,7 @@
                                         {{ $user->is_active ? 'Activo' : 'Inactivo' }}
                                     </span>
                                 </td>
-                                <td class="px-6 py-4 text-sm text-gray-700">{{ $user->created_at?->timezone('America/Panama')->format('d/m/Y H:i') ?? '—' }}</td>
+                                <td class="px-6 py-4 text-sm text-gray-700">@fechaHora($user->created_at)</td>
                                 <td class="px-6 py-4 text-right text-sm font-medium">
                                     <a href="{{ route('admin.users.edit', $user) }}" class="text-indigo-600 hover:text-indigo-900">Editar</a>
                                     @unless ($user->is(auth()->user()))

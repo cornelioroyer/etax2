@@ -76,7 +76,7 @@
                                 </td>
                                 <td class="px-6 py-4 text-sm text-gray-500">
                                     @if ($periodo && ! $abierto)
-                                        {{ $periodo->fecha_cierre?->format('d/m/Y H:i') }}
+                                        @fechaHora($periodo->fecha_cierre)
                                         @if ($periodo->cerradoPor)
                                             <span class="block text-xs">{{ $periodo->cerradoPor->name }}</span>
                                         @endif

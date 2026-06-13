@@ -74,7 +74,7 @@
                         <dt class="font-medium text-gray-500">Posteado</dt>
                         <dd class="mt-0.5 text-gray-900">
                             @if ($asiento->fecha_posteo)
-                                {{ $asiento->fecha_posteo->timezone('America/Panama')->format('d/m/Y H:i') }}
+                                @fechaHora($asiento->fecha_posteo)
                                 @if ($asiento->posteadoPor) por {{ $asiento->posteadoPor->name }} @endif
                             @else
                                 —
