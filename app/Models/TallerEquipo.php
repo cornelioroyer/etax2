@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class TallerEquipo extends Model
 {
@@ -42,5 +44,22 @@ class TallerEquipo extends Model
     public function modelo(): BelongsTo
     {
         return $this->belongsTo(TallerModelo::class, 'modelo_id');
+    }
+
+    public function clientes(): HasMany
+    {
+        return $this->hasMany(TallerClienteEquipo::class, 'equipo_id');
+    }
+
+    public function clientePrincipal(): HasOne
+    {
+        return $this->hasOne(TallerClienteEquipo::class, 'equipo_id')
+            ->where('principal', true)
+            ->where('activo', true);
+    }
+
+    public function mediciones(): HasMany
+    {
+        return $this->hasMany(TallerEquipoMedicion::class, 'equipo_id')->latest('fecha');
     }
 }

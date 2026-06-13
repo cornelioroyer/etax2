@@ -33,7 +33,7 @@ class VentaFacturaController extends Controller
 
         return view('admin.ventas.facturas.create', [
             'clientes'  => $this->clientes($companiaId),
-            'impuestos' => TaxImpuesto::where('compania_id', $companiaId)->where('activo', true)->orderBy('nombre')->get(['id', 'nombre', 'porcentaje']),
+            'impuestos' => TaxImpuesto::itbmsGlobales(),
         ]);
     }
 
@@ -42,7 +42,7 @@ class VentaFacturaController extends Controller
         $companiaId = $this->companiaActivaId($request);
 
         $data = $request->validate([
-            'cliente_id'        => ['required', 'integer', 'exists:contactos,id'],
+            'cliente_id'        => ['required', 'integer', 'exists:contact_contactos,id'],
             'fecha'             => ['required', 'date'],
             'fecha_vencimiento' => ['nullable', 'date', 'after_or_equal:fecha'],
             'notas'             => ['nullable', 'string', 'max:1000'],
@@ -50,17 +50,11 @@ class VentaFacturaController extends Controller
             'lineas.*.descripcion'    => ['required', 'string', 'max:500'],
             'lineas.*.cantidad'       => ['required', 'numeric', 'min:0.0001'],
             'lineas.*.precio_unitario'=> ['required', 'numeric', 'min:0'],
-            'lineas.*.impuesto_id'    => ['required', 'integer', 'exists:tax_impuestos,id'],
+            'lineas.*.impuesto_id'    => ['required', 'integer', Rule::in(TaxImpuesto::itbmsGlobales()->pluck('id')->all())],
         ]);
 
-        $usuario        = $request->user();
-        $cuentaCxcId    = CuentaDefault::idPara($companiaId, 'CXC');
-        $cuentaItbmsId  = CuentaDefault::idPara($companiaId, 'ITBMS_POR_PAGAR');
-        $cuentaVentasId = CuentaDefault::idPara($companiaId, 'VENTAS');
-
-        if (! $cuentaCxcId) {
-            return back()->withInput()->withErrors(['cliente_id' => 'La compañía no tiene configurada la cuenta default CXC.']);
-        }
+        $usuario = $request->user();
+        $accion  = $request->input('accion', 'emitir');
 
         $impuestos = TaxImpuesto::whereIn('id', collect($data['lineas'])->pluck('impuesto_id')->unique())->get()->keyBy('id');
 
@@ -79,6 +73,52 @@ class VentaFacturaController extends Controller
         $subtotal = round($subtotal, 2);
         $itbms    = round($itbms, 2);
         $total    = round($subtotal + $itbms, 2);
+
+        if ($accion === 'borrador') {
+            $factura = DB::transaction(function () use ($companiaId, $data, $usuario, $lineasCalc, $subtotal, $itbms, $total) {
+                $factura = VentaFactura::create([
+                    'compania_id'       => $companiaId,
+                    'cliente_id'        => $data['cliente_id'],
+                    'numero'            => 'BORRADOR',
+                    'fecha'             => $data['fecha'],
+                    'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
+                    'subtotal'          => $subtotal,
+                    'descuento'         => 0,
+                    'itbms'             => $itbms,
+                    'total'             => $total,
+                    'saldo'             => $total,
+                    'estado'            => VentaFactura::ESTADO_BORRADOR,
+                    'notas'             => $data['notas'] ?? null,
+                    'created_by'        => $usuario->email,
+                ]);
+                foreach ($lineasCalc as $linea) {
+                    VentaFacturaDetalle::create([
+                        'factura_id'      => $factura->id,
+                        'linea'           => $linea['linea'],
+                        'descripcion'     => $linea['descripcion'],
+                        'cantidad'        => $linea['cantidad'],
+                        'precio_unitario' => $linea['precio_unitario'],
+                        'descuento'       => 0,
+                        'impuesto_id'     => $linea['impuesto_id'],
+                        'impuesto_monto'  => $linea['impuesto_monto'],
+                        'total_linea'     => $linea['total_linea'],
+                        'created_by'      => $usuario->email,
+                    ]);
+                }
+                return $factura;
+            });
+
+            return redirect()->route('admin.ventas.facturas.show', $factura)
+                ->with('status', 'Borrador guardado. Puedes emitirlo cuando esté listo.');
+        }
+
+        $cuentaCxcId    = CuentaDefault::idPara($companiaId, 'CXC');
+        $cuentaItbmsId  = CuentaDefault::idPara($companiaId, 'ITBMS_POR_PAGAR');
+        $cuentaVentasId = CuentaDefault::idPara($companiaId, 'VENTAS');
+
+        if (! $cuentaCxcId) {
+            return back()->withInput()->withErrors(['cliente_id' => 'La compañía no tiene configurada la cuenta default CXC.']);
+        }
 
         $factura = DB::transaction(function () use ($companiaId, $data, $usuario, $lineasCalc, $subtotal, $itbms, $total, $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId) {
             $numero = VentaFactura::siguienteNumero($companiaId);
@@ -263,6 +303,202 @@ class VentaFacturaController extends Controller
         $factura->load(['cliente', 'detalle.impuesto', 'detalle.cuentaIngreso', 'asiento', 'cotizacion', 'cxcDocumento']);
 
         return view('admin.ventas.facturas.show', ['factura' => $factura]);
+    }
+
+    public function edit(Request $request, VentaFactura $factura): View
+    {
+        abort_unless($factura->compania_id === $this->companiaActivaId($request), 404);
+        abort_unless($factura->estado === VentaFactura::ESTADO_BORRADOR, 403);
+
+        $companiaId = $factura->compania_id;
+        $factura->load('detalle');
+
+        return view('admin.ventas.facturas.create', [
+            'clientes'  => $this->clientes($companiaId),
+            'impuestos' => TaxImpuesto::itbmsGlobales(),
+            'factura'   => $factura,
+        ]);
+    }
+
+    public function update(Request $request, VentaFactura $factura): RedirectResponse
+    {
+        abort_unless($factura->compania_id === $this->companiaActivaId($request), 404);
+        abort_unless($factura->estado === VentaFactura::ESTADO_BORRADOR, 403);
+
+        $companiaId = $this->companiaActivaId($request);
+
+        $data = $request->validate([
+            'cliente_id'              => ['required', 'integer', 'exists:contact_contactos,id'],
+            'fecha'                   => ['required', 'date'],
+            'fecha_vencimiento'       => ['nullable', 'date', 'after_or_equal:fecha'],
+            'notas'                   => ['nullable', 'string', 'max:1000'],
+            'lineas'                  => ['required', 'array', 'min:1'],
+            'lineas.*.descripcion'    => ['required', 'string', 'max:500'],
+            'lineas.*.cantidad'       => ['required', 'numeric', 'min:0.0001'],
+            'lineas.*.precio_unitario'=> ['required', 'numeric', 'min:0'],
+            'lineas.*.impuesto_id'    => ['required', 'integer', Rule::in(TaxImpuesto::itbmsGlobales()->pluck('id')->all())],
+        ]);
+
+        $usuario   = $request->user();
+        $accion    = $request->input('accion', 'borrador');
+        $impuestos = TaxImpuesto::whereIn('id', collect($data['lineas'])->pluck('impuesto_id')->unique())->get()->keyBy('id');
+
+        $subtotal = 0; $itbms = 0; $lineasCalc = [];
+        foreach ($data['lineas'] as $i => $linea) {
+            $base       = round((float) $linea['cantidad'] * (float) $linea['precio_unitario'], 2);
+            $tasa       = (float) ($impuestos[$linea['impuesto_id']]->porcentaje ?? 0);
+            $impMonto   = round($base * $tasa / 100, 2);
+            $subtotal  += $base;
+            $itbms     += $impMonto;
+            $lineasCalc[] = array_merge($linea, ['base' => $base, 'impuesto_monto' => $impMonto, 'total_linea' => round($base + $impMonto, 2), 'linea' => $i + 1]);
+        }
+        $subtotal = round($subtotal, 2);
+        $itbms    = round($itbms, 2);
+        $total    = round($subtotal + $itbms, 2);
+
+        DB::transaction(function () use ($factura, $data, $usuario, $lineasCalc, $subtotal, $itbms, $total) {
+            $factura->update([
+                'cliente_id'        => $data['cliente_id'],
+                'fecha'             => $data['fecha'],
+                'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
+                'subtotal'          => $subtotal,
+                'itbms'             => $itbms,
+                'total'             => $total,
+                'saldo'             => $total,
+                'notas'             => $data['notas'] ?? null,
+                'updated_by'        => $usuario->email,
+            ]);
+
+            $factura->detalle()->delete();
+
+            foreach ($lineasCalc as $linea) {
+                VentaFacturaDetalle::create([
+                    'factura_id'      => $factura->id,
+                    'linea'           => $linea['linea'],
+                    'descripcion'     => $linea['descripcion'],
+                    'cantidad'        => $linea['cantidad'],
+                    'precio_unitario' => $linea['precio_unitario'],
+                    'descuento'       => 0,
+                    'impuesto_id'     => $linea['impuesto_id'],
+                    'impuesto_monto'  => $linea['impuesto_monto'],
+                    'total_linea'     => $linea['total_linea'],
+                    'created_by'      => $usuario->email,
+                ]);
+            }
+        });
+
+        if ($accion === 'emitir') {
+            return $this->emitir($request, $factura->fresh());
+        }
+
+        return redirect()->route('admin.ventas.facturas.show', $factura)
+            ->with('status', 'Borrador actualizado.');
+    }
+
+    public function emitir(Request $request, VentaFactura $factura): RedirectResponse
+    {
+        abort_unless($factura->compania_id === $this->companiaActivaId($request), 404);
+
+        if ($factura->estado !== VentaFactura::ESTADO_BORRADOR) {
+            return back()->withErrors(['factura' => 'La factura ya fue emitida.']);
+        }
+
+        $companiaId     = $factura->compania_id;
+        $cuentaCxcId    = CuentaDefault::idPara($companiaId, 'CXC');
+        $cuentaItbmsId  = CuentaDefault::idPara($companiaId, 'ITBMS_POR_PAGAR');
+        $cuentaVentasId = CuentaDefault::idPara($companiaId, 'VENTAS');
+
+        if (! $cuentaCxcId) {
+            return back()->withErrors(['factura' => 'La compañía no tiene configurada la cuenta default CXC.']);
+        }
+
+        $usuario = $request->user();
+        $factura->load(['detalle', 'cliente']);
+
+        $subtotal = (float) $factura->subtotal;
+        $itbms    = (float) $factura->itbms;
+        $total    = (float) $factura->total;
+
+        $lineasCalc = $factura->detalle->map(fn ($d) => [
+            'linea'          => $d->linea,
+            'descripcion'    => $d->descripcion,
+            'cantidad'       => $d->cantidad,
+            'precio_unitario'=> $d->precio_unitario,
+            'base'           => round((float) $d->total_linea - (float) $d->impuesto_monto, 2),
+            'impuesto_id'    => $d->impuesto_id,
+            'impuesto_monto' => (float) $d->impuesto_monto,
+            'total_linea'    => (float) $d->total_linea,
+        ])->all();
+
+        DB::transaction(function () use ($factura, $companiaId, $usuario, $lineasCalc, $subtotal, $itbms, $total, $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId) {
+            $numero = VentaFactura::siguienteNumero($companiaId);
+            $factura->update(['numero' => $numero, 'estado' => VentaFactura::ESTADO_EMITIDA, 'updated_by' => $usuario->email]);
+
+            foreach ($factura->detalle as $d) {
+                if (! $d->cuenta_ingreso_id) {
+                    $d->update(['cuenta_ingreso_id' => $cuentaVentasId]);
+                }
+            }
+
+            $cxc = CxcDocumento::create([
+                'compania_id'       => $companiaId,
+                'cliente_id'        => $factura->cliente_id,
+                'tipo_documento'    => CxcDocumento::TIPO_FACTURA,
+                'numero'            => $numero,
+                'fecha'             => $factura->fecha,
+                'fecha_vencimiento' => $factura->fecha_vencimiento,
+                'subtotal'          => $subtotal,
+                'descuento'         => 0,
+                'impuesto'          => $itbms,
+                'total'             => $total,
+                'saldo'             => $total,
+                'estado'            => CxcDocumento::ESTADO_PENDIENTE,
+                'created_by'        => $usuario->email,
+            ]);
+
+            foreach ($lineasCalc as $linea) {
+                CxcDocumentoDetalle::create([
+                    'documento_id'    => $cxc->id,
+                    'linea'           => $linea['linea'],
+                    'descripcion'     => $linea['descripcion'],
+                    'cantidad'        => $linea['cantidad'],
+                    'precio_unitario' => $linea['precio_unitario'],
+                    'descuento'       => 0,
+                    'impuesto_monto'  => $linea['impuesto_monto'],
+                    'total_linea'     => $linea['total_linea'],
+                    'cuenta_id'       => $cuentaVentasId,
+                    'created_by'      => $usuario->email,
+                ]);
+            }
+
+            $lineasAsiento = [[
+                'cuenta_id'   => $cuentaCxcId,
+                'contacto_id' => $factura->cliente_id,
+                'descripcion' => "Factura {$numero}",
+                'debito'      => $total,
+                'credito'     => 0,
+            ]];
+
+            foreach ($lineasCalc as $linea) {
+                $lineasAsiento[] = ['cuenta_id' => $cuentaVentasId, 'descripcion' => $linea['descripcion'], 'debito' => 0, 'credito' => $linea['base']];
+            }
+
+            if ($itbms > 0 && $cuentaItbmsId) {
+                $lineasAsiento[] = ['cuenta_id' => $cuentaItbmsId, 'descripcion' => "ITBMS factura {$numero}", 'debito' => 0, 'credito' => $itbms];
+            }
+
+            $asiento = app(AsientoAutomatico::class)->postear(
+                $companiaId, $factura->fecha,
+                "Factura de venta {$numero} — ".($factura->cliente->nombre ?? ''),
+                $numero, $lineasAsiento, 'CXC', 'ventas_facturas', $factura->id, $usuario,
+            );
+
+            $factura->update(['cxc_documento_id' => $cxc->id, 'asiento_id' => $asiento->id]);
+            $cxc->update(['asiento_id' => $asiento->id]);
+        });
+
+        return redirect()->route('admin.ventas.facturas.show', $factura)
+            ->with('status', "Factura {$factura->numero} emitida.");
     }
 
     public function anular(Request $request, VentaFactura $factura): RedirectResponse

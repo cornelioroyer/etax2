@@ -57,6 +57,9 @@ use App\Http\Controllers\Admin\TallerServicioController;
 use App\Http\Controllers\Admin\TallerSintomaController;
 use App\Http\Controllers\Admin\TallerSucursalController;
 use App\Http\Controllers\Admin\TallerEquipoController;
+use App\Http\Controllers\Admin\TallerCitaController;
+use App\Http\Controllers\Admin\TallerOrdenController;
+use App\Http\Controllers\Admin\TallerPresupuestoController;
 use App\Http\Controllers\Admin\TallerTecnicoController;
 use App\Http\Controllers\Admin\TallerTipoEquipoController;
 use App\Http\Controllers\Admin\BcoChequeController;
@@ -117,6 +120,11 @@ Route::middleware('auth')->group(function () {
 // Solo super admin (creadores de la plataforma)
 Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::resource('users', UserController::class)->except(['show']);
+    Route::resource('usuarios-compania', UsuarioCompaniaController::class)
+        ->only(['index', 'store', 'update', 'destroy'])
+        ->parameters(['usuarios-compania' => 'user']);
+    Route::get('usuarios-compania/{user}/permisos', [UsuarioCompaniaController::class, 'editarPermisos'])->name('usuarios-compania.permisos.edit');
+    Route::put('usuarios-compania/{user}/permisos', [UsuarioCompaniaController::class, 'actualizarPermisos'])->name('usuarios-compania.permisos.update');
 });
 
 // Módulos protegidos por permisos (por compañía)
@@ -373,19 +381,6 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::get('fel/{documento}/pdf', [FacturaFelController::class, 'pdf'])->name('fel.pdf');
     });
 
-    Route::middleware('permission:usuarios_compania.ver')->group(function () {
-        Route::resource('usuarios-compania', UsuarioCompaniaController::class)
-            ->only(['index'])
-            ->parameters(['usuarios-compania' => 'user']);
-    });
-
-    Route::middleware('permission:usuarios_compania.gestionar')->group(function () {
-        Route::resource('usuarios-compania', UsuarioCompaniaController::class)
-            ->only(['store', 'update', 'destroy'])
-            ->parameters(['usuarios-compania' => 'user']);
-        Route::get('usuarios-compania/{user}/permisos', [UsuarioCompaniaController::class, 'editarPermisos'])->name('usuarios-compania.permisos.edit');
-        Route::put('usuarios-compania/{user}/permisos', [UsuarioCompaniaController::class, 'actualizarPermisos'])->name('usuarios-compania.permisos.update');
-    });
 
     // ── Bancos: Cheques y Depósitos ──────────────────────────────────────────
     Route::middleware('permission:bancos.ver')->group(function () {
@@ -499,6 +494,14 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
 
     // ── Taller ───────────────────────────────────────────────────────────────
     Route::middleware('permission:taller.ver')->group(function () {
+        // Presupuestos (ver)
+        Route::get('taller/presupuestos', [TallerPresupuestoController::class, 'index'])->name('taller.presupuestos.index');
+        Route::get('taller/presupuestos/{presupuesto}', [TallerPresupuestoController::class, 'show'])->whereNumber('presupuesto')->name('taller.presupuestos.show');
+        // Citas (ver)
+        Route::get('taller/citas', [TallerCitaController::class, 'index'])->name('taller.citas.index');
+    });
+
+    Route::middleware('permission:taller.ver')->group(function () {
         Route::get('taller/talleres', [TallerController::class, 'index'])->name('taller.talleres.index');
         Route::get('taller/talleres/{taller}', [TallerController::class, 'show'])->whereNumber('taller')->name('taller.talleres.show');
         Route::get('taller/sucursales', [TallerSucursalController::class, 'index'])->name('taller.sucursales.index');
@@ -515,7 +518,27 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::get('taller/tecnicos/{tecnico}', [TallerTecnicoController::class, 'show'])->whereNumber('tecnico')->name('taller.tecnicos.show');
         Route::get('taller/equipos', [TallerEquipoController::class, 'index'])->name('taller.equipos.index');
         Route::get('taller/equipos/{equipo}', [TallerEquipoController::class, 'show'])->whereNumber('equipo')->name('taller.equipos.show');
+        Route::get('taller/ordenes', [TallerOrdenController::class, 'index'])->name('taller.ordenes.index');
+        Route::get('taller/ordenes/{orden}', [TallerOrdenController::class, 'show'])->whereNumber('orden')->name('taller.ordenes.show');
     });
+    Route::middleware('permission:taller.gestionar')->group(function () {
+        // Presupuestos (gestionar)
+        Route::get('taller/presupuestos/nuevo', [TallerPresupuestoController::class, 'create'])->name('taller.presupuestos.create');
+        Route::post('taller/presupuestos', [TallerPresupuestoController::class, 'store'])->name('taller.presupuestos.store');
+        Route::get('taller/presupuestos/{presupuesto}/editar', [TallerPresupuestoController::class, 'edit'])->whereNumber('presupuesto')->name('taller.presupuestos.edit');
+        Route::put('taller/presupuestos/{presupuesto}', [TallerPresupuestoController::class, 'update'])->whereNumber('presupuesto')->name('taller.presupuestos.update');
+        Route::delete('taller/presupuestos/{presupuesto}', [TallerPresupuestoController::class, 'destroy'])->whereNumber('presupuesto')->name('taller.presupuestos.destroy');
+        Route::post('taller/presupuestos/{presupuesto}/cambiar-estado', [TallerPresupuestoController::class, 'cambiarEstado'])->whereNumber('presupuesto')->name('taller.presupuestos.cambiar-estado');
+        Route::post('taller/presupuestos/{presupuesto}/detalles', [TallerPresupuestoController::class, 'storeDetalle'])->whereNumber('presupuesto')->name('taller.presupuestos.detalles.store');
+        Route::delete('taller/presupuestos/{presupuesto}/detalles/{detalle}', [TallerPresupuestoController::class, 'destroyDetalle'])->whereNumber(['presupuesto', 'detalle'])->name('taller.presupuestos.detalles.destroy');
+        // Citas (gestionar)
+        Route::get('taller/citas/nueva', [TallerCitaController::class, 'create'])->name('taller.citas.create');
+        Route::post('taller/citas', [TallerCitaController::class, 'store'])->name('taller.citas.store');
+        Route::get('taller/citas/{cita}/editar', [TallerCitaController::class, 'edit'])->whereNumber('cita')->name('taller.citas.edit');
+        Route::put('taller/citas/{cita}', [TallerCitaController::class, 'update'])->whereNumber('cita')->name('taller.citas.update');
+        Route::delete('taller/citas/{cita}', [TallerCitaController::class, 'destroy'])->whereNumber('cita')->name('taller.citas.destroy');
+    });
+
     Route::middleware('permission:taller.gestionar')->group(function () {
         Route::get('taller/talleres/nuevo', [TallerController::class, 'create'])->name('taller.talleres.create');
         Route::post('taller/talleres', [TallerController::class, 'store'])->name('taller.talleres.store');
@@ -595,6 +618,26 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('taller/equipos/{equipo}/clientes', [TallerEquipoController::class, 'storeCliente'])->whereNumber('equipo')->name('taller.equipos.clientes.store');
         Route::delete('taller/equipos/{equipo}/clientes/{clienteEquipo}', [TallerEquipoController::class, 'destroyCliente'])->whereNumber(['equipo', 'clienteEquipo'])->name('taller.equipos.clientes.destroy');
         Route::post('taller/equipos/{equipo}/mediciones', [TallerEquipoController::class, 'storeMedicion'])->whereNumber('equipo')->name('taller.equipos.mediciones.store');
+
+        Route::get('taller/ordenes/nueva', [TallerOrdenController::class, 'create'])->name('taller.ordenes.create');
+        Route::post('taller/ordenes', [TallerOrdenController::class, 'store'])->name('taller.ordenes.store');
+        Route::get('taller/ordenes/{orden}/editar', [TallerOrdenController::class, 'edit'])->whereNumber('orden')->name('taller.ordenes.edit');
+        Route::put('taller/ordenes/{orden}', [TallerOrdenController::class, 'update'])->whereNumber('orden')->name('taller.ordenes.update');
+        Route::post('taller/ordenes/{orden}/cambiar-estado', [TallerOrdenController::class, 'cambiarEstado'])->whereNumber('orden')->name('taller.ordenes.cambiar-estado');
+        Route::post('taller/ordenes/{orden}/sintomas', [TallerOrdenController::class, 'storeSintoma'])->whereNumber('orden')->name('taller.ordenes.sintomas.store');
+        Route::delete('taller/ordenes/{orden}/sintomas/{sintoma}', [TallerOrdenController::class, 'destroySintoma'])->whereNumber(['orden', 'sintoma'])->name('taller.ordenes.sintomas.destroy');
+        Route::post('taller/ordenes/{orden}/diagnosticos', [TallerOrdenController::class, 'storeDiagnostico'])->whereNumber('orden')->name('taller.ordenes.diagnosticos.store');
+        Route::delete('taller/ordenes/{orden}/diagnosticos/{diagnostico}', [TallerOrdenController::class, 'destroyDiagnostico'])->whereNumber(['orden', 'diagnostico'])->name('taller.ordenes.diagnosticos.destroy');
+        Route::post('taller/ordenes/{orden}/servicios', [TallerOrdenController::class, 'storeServicio'])->whereNumber('orden')->name('taller.ordenes.servicios.store');
+        Route::delete('taller/ordenes/{orden}/servicios/{servicio}', [TallerOrdenController::class, 'destroyServicio'])->whereNumber(['orden', 'servicio'])->name('taller.ordenes.servicios.destroy');
+        Route::post('taller/ordenes/{orden}/mano-obra', [TallerOrdenController::class, 'storeManoObra'])->whereNumber('orden')->name('taller.ordenes.mano-obra.store');
+        Route::delete('taller/ordenes/{orden}/mano-obra/{manoObra}', [TallerOrdenController::class, 'destroyManoObra'])->whereNumber(['orden', 'manoObra'])->name('taller.ordenes.mano-obra.destroy');
+        Route::post('taller/ordenes/{orden}/repuestos', [TallerOrdenController::class, 'storeRepuesto'])->whereNumber('orden')->name('taller.ordenes.repuestos.store');
+        Route::delete('taller/ordenes/{orden}/repuestos/{repuesto}', [TallerOrdenController::class, 'destroyRepuesto'])->whereNumber(['orden', 'repuesto'])->name('taller.ordenes.repuestos.destroy');
+        // Control de calidad, Entrega, Facturación
+        Route::post('taller/ordenes/{orden}/control-calidad', [TallerOrdenController::class, 'storeControlCalidad'])->whereNumber('orden')->name('taller.ordenes.control-calidad.store');
+        Route::post('taller/ordenes/{orden}/entrega', [TallerOrdenController::class, 'storeEntrega'])->whereNumber('orden')->name('taller.ordenes.entrega.store');
+        Route::post('taller/ordenes/{orden}/facturacion', [TallerOrdenController::class, 'storeFacturacion'])->whereNumber('orden')->name('taller.ordenes.facturacion.store');
     });
 
     // ── Ayuda / base de conocimientos ────────────────────────────────────────

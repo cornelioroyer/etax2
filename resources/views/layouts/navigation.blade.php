@@ -169,6 +169,9 @@
             'active' => request()->routeIs('admin.taller.*'),
             'show' => $can('taller.ver'),
             'children' => [
+                ['label' => 'Órdenes', 'href' => route('admin.taller.ordenes.index'), 'active' => request()->routeIs('admin.taller.ordenes.*'), 'show' => $can('taller.ver')],
+                ['label' => 'Presupuestos', 'href' => route('admin.taller.presupuestos.index'), 'active' => request()->routeIs('admin.taller.presupuestos.*'), 'show' => $can('taller.ver')],
+                ['label' => 'Citas', 'href' => route('admin.taller.citas.index'), 'active' => request()->routeIs('admin.taller.citas.*'), 'show' => $can('taller.ver')],
                 ['label' => 'Talleres', 'href' => route('admin.taller.talleres.index'), 'active' => request()->routeIs('admin.taller.talleres.*'), 'show' => $can('taller.ver')],
                 ['label' => 'Sucursales', 'href' => route('admin.taller.sucursales.index'), 'active' => request()->routeIs('admin.taller.sucursales.*'), 'show' => $can('taller.ver')],
                 ['label' => 'Áreas', 'href' => route('admin.taller.areas.index'), 'active' => request()->routeIs('admin.taller.areas.*'), 'show' => $can('taller.ver')],
@@ -261,10 +264,10 @@
             'label' => 'Seguridad',
             'icon' => 'M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5A2.25 2.25 0 0 0 19.5 19.5v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z',
             'active' => request()->routeIs('admin.users.*') || request()->routeIs('admin.usuarios-compania.*'),
-            'show' => Auth::user()->is_admin || $can('usuarios_compania.ver'),
+            'show' => Auth::user()->is_admin,
             'children' => [
                 ['label' => 'Usuarios', 'href' => route('admin.users.index'), 'active' => request()->routeIs('admin.users.*'), 'show' => Auth::user()->is_admin],
-                ['label' => 'Accesos por compañía', 'href' => route('admin.usuarios-compania.index'), 'active' => request()->routeIs('admin.usuarios-compania.*'), 'show' => $can('usuarios_compania.ver')],
+                ['label' => 'Accesos por compañía', 'href' => route('admin.usuarios-compania.index'), 'active' => request()->routeIs('admin.usuarios-compania.*'), 'show' => Auth::user()->is_admin],
             ],
         ],
         [

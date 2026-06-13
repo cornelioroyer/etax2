@@ -1,7 +1,9 @@
 <x-app-layout>
     <x-slot name="header">
         <div class="flex items-center justify-between">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">Factura {{ $factura->numero }}</h2>
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+                @if ($factura->estado === 'BORRADOR') Factura (Borrador) @else Factura {{ $factura->numero }} @endif
+            </h2>
             <a href="{{ route('admin.ventas.facturas.index') }}" class="text-sm text-gray-600 hover:text-gray-900">← Volver al listado</a>
         </div>
     </x-slot>
@@ -79,9 +81,31 @@
                         </div>
                     </dl>
 
-                    @can('ventas.gestionar')
-                        <div class="flex flex-wrap gap-2">
-                            @if (! $factura->esAnulada() && ! $factura->fel_documento_id)
+                    <div class="flex flex-wrap gap-2">
+                        @if ($factura->asiento)
+                            <a href="{{ route('admin.asientos.show', $factura->asiento) }}"
+                               class="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:border-slate-300 hover:text-slate-900">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 3h4M5.25 4.5h13.5a.75.75 0 0 1 .75.75v15l-2.625-1.5L14.25 20.25l-2.25-1.5-2.25 1.5-2.625-1.5L4.5 20.25v-15a.75.75 0 0 1 .75-.75Z" />
+                                </svg>
+                                Ver asiento
+                            </a>
+                        @endif
+
+                        @can('ventas.gestionar')
+                        @if ($factura->estado === 'BORRADOR')
+                                <a href="{{ route('admin.ventas.facturas.edit', $factura) }}"
+                                   class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                                    Editar
+                                </a>
+                                <form method="POST" action="{{ route('admin.ventas.facturas.emitir', $factura) }}"
+                                      onsubmit="return confirm('¿Emitir la factura? Se asignará número correlativo y se creará el asiento contable.')">
+                                    @csrf
+                                    <button class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
+                                        Emitir factura
+                                    </button>
+                                </form>
+                            @elseif (! $factura->esAnulada() && ! $factura->fel_documento_id)
                                 <form method="POST" action="{{ route('admin.ventas.facturas.anular', $factura) }}"
                                       onsubmit="return confirm('¿Anular la factura {{ $factura->numero }}? También se anulará el asiento contable.')">
                                     @csrf
@@ -90,9 +114,8 @@
                                     </button>
                                 </form>
                             @endif
-                        </div>
-                    @endcan
-                </div>
+                        @endcan
+                    </div>
             </div>
 
             {{-- Detalle --}}

@@ -1,8 +1,14 @@
 <x-app-layout>
     <x-slot name="header">
         <div class="flex items-center justify-between">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">Nueva factura de venta</h2>
-            <a href="{{ route('admin.ventas.facturas.index') }}" class="text-sm text-gray-600 hover:text-gray-900">← Volver al listado</a>
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+                {{ isset($factura) ? 'Editar borrador' : 'Nueva factura de venta' }}
+            </h2>
+            @if (isset($factura))
+                <a href="{{ route('admin.ventas.facturas.show', $factura) }}" class="text-sm text-gray-600 hover:text-gray-900">← Volver al detalle</a>
+            @else
+                <a href="{{ route('admin.ventas.facturas.index') }}" class="text-sm text-gray-600 hover:text-gray-900">← Volver al listado</a>
+            @endif
         </div>
     </x-slot>
 
@@ -15,9 +21,16 @@
                     </div>
                 @endif
 
-                <form method="POST" action="{{ route('admin.ventas.facturas.store') }}"
-                      x-data="facturaForm({{ old('lineas') ? collect(old('lineas'))->values()->toJson() : '[]' }}, {{ $impuestos->toJson() }})">
+                @php
+                    $lineasIniciales = isset($factura)
+                        ? $factura->detalle->map(fn($d) => ['descripcion'=>$d->descripcion,'cantidad'=>$d->cantidad,'precio_unitario'=>$d->precio_unitario,'impuesto_id'=>$d->impuesto_id])->values()->toJson()
+                        : (old('lineas') ? collect(old('lineas'))->values()->toJson() : '[]');
+                @endphp
+                <form method="POST"
+                      action="{{ isset($factura) ? route('admin.ventas.facturas.update', $factura) : route('admin.ventas.facturas.store') }}"
+                      x-data="facturaForm({{ $lineasIniciales }}, {{ $impuestos->toJson() }})">
                     @csrf
+                    @isset($factura) @method('PUT') @endisset
 
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
                         <div>
@@ -26,7 +39,7 @@
                                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                 <option value="">— Cliente —</option>
                                 @foreach ($clientes as $cliente)
-                                    <option value="{{ $cliente->id }}" @selected(old('cliente_id') == $cliente->id)>{{ $cliente->codigo }} — {{ $cliente->nombre }}</option>
+                                    <option value="{{ $cliente->id }}" @selected(old('cliente_id', $factura->cliente_id ?? null) == $cliente->id)>{{ $cliente->codigo }} — {{ $cliente->nombre }}</option>
                                 @endforeach
                             </select>
                             <x-input-error :messages="$errors->get('cliente_id')" class="mt-1" />
@@ -34,13 +47,13 @@
                         <div>
                             <x-input-label for="fecha" value="Fecha *" />
                             <x-text-input id="fecha" name="fecha" type="text" class="js-date mt-1 block w-full" required
-                                          :value="old('fecha', now()->format('Y-m-d'))" />
+                                          :value="old('fecha', isset($factura) ? $factura->fecha->format('Y-m-d') : now()->format('Y-m-d'))" />
                             <x-input-error :messages="$errors->get('fecha')" class="mt-1" />
                         </div>
                         <div>
                             <x-input-label for="fecha_vencimiento" value="Vence" />
                             <x-text-input id="fecha_vencimiento" name="fecha_vencimiento" type="text" class="js-date mt-1 block w-full"
-                                          :value="old('fecha_vencimiento')" />
+                                          :value="old('fecha_vencimiento', isset($factura) ? $factura->fecha_vencimiento?->format('Y-m-d') : '')" />
                             <x-input-error :messages="$errors->get('fecha_vencimiento')" class="mt-1" />
                         </div>
                     </div>
@@ -121,9 +134,14 @@
                     </div>
 
                     <div class="mt-6 flex flex-wrap items-center gap-3 border-t border-gray-100 pt-4">
-                        <button type="submit"
+                        <input type="hidden" name="accion" id="accion-input" value="emitir">
+                        <button type="submit" onclick="document.getElementById('accion-input').value='emitir'"
                                 class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
                             Emitir factura
+                        </button>
+                        <button type="submit" onclick="document.getElementById('accion-input').value='borrador'"
+                                class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                            Guardar borrador
                         </button>
                         <a href="{{ route('admin.ventas.facturas.index') }}" class="text-sm text-gray-600 hover:text-gray-900">Cancelar</a>
                     </div>
