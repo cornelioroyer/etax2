@@ -41,12 +41,23 @@ use App\Http\Controllers\Admin\AfiActivoController;
 use App\Http\Controllers\Admin\AfiCategoriaController;
 use App\Http\Controllers\Admin\AfiRevaluacionController;
 use App\Http\Controllers\Admin\AfiUbicacionController;
-use App\Http\Controllers\Admin\PrhCuotaController;
-use App\Http\Controllers\Admin\PrhEdificioController;
-use App\Http\Controllers\Admin\PrhPagoController;
-use App\Http\Controllers\Admin\PrhPropietarioController;
-use App\Http\Controllers\Admin\PrhTipoCuotaController;
-use App\Http\Controllers\Admin\PrhUnidadController;
+use App\Http\Controllers\Admin\PhCuotaController;
+use App\Http\Controllers\Admin\PhEdificioController;
+use App\Http\Controllers\Admin\PhPagoController;
+use App\Http\Controllers\Admin\PhPropietarioController;
+use App\Http\Controllers\Admin\PhTipoCuotaController;
+use App\Http\Controllers\Admin\PhUnidadController;
+use App\Http\Controllers\Admin\TallerAreaController;
+use App\Http\Controllers\Admin\TallerChecklistController;
+use App\Http\Controllers\Admin\TallerController;
+use App\Http\Controllers\Admin\TallerEspecialidadController;
+use App\Http\Controllers\Admin\TallerMarcaController;
+use App\Http\Controllers\Admin\TallerModeloController;
+use App\Http\Controllers\Admin\TallerServicioController;
+use App\Http\Controllers\Admin\TallerSintomaController;
+use App\Http\Controllers\Admin\TallerSucursalController;
+use App\Http\Controllers\Admin\TallerTecnicoController;
+use App\Http\Controllers\Admin\TallerTipoEquipoController;
 use App\Http\Controllers\Admin\BcoChequeController;
 use App\Http\Controllers\Admin\CajaController;
 use App\Http\Controllers\Admin\CajaOperacionController;
@@ -271,6 +282,9 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('ventas/cotizaciones/{cotizacion}/email', [VentaCotizacionController::class, 'enviarEmail'])->whereNumber('cotizacion')->name('ventas.cotizaciones.email');
         Route::get('ventas/facturas/nueva', [VentaFacturaController::class, 'create'])->name('ventas.facturas.create');
         Route::post('ventas/facturas', [VentaFacturaController::class, 'store'])->name('ventas.facturas.store');
+        Route::get('ventas/facturas/{factura}/editar', [VentaFacturaController::class, 'edit'])->whereNumber('factura')->name('ventas.facturas.edit');
+        Route::put('ventas/facturas/{factura}', [VentaFacturaController::class, 'update'])->whereNumber('factura')->name('ventas.facturas.update');
+        Route::post('ventas/facturas/{factura}/emitir', [VentaFacturaController::class, 'emitir'])->whereNumber('factura')->name('ventas.facturas.emitir');
         Route::post('ventas/facturas/{factura}/anular', [VentaFacturaController::class, 'anular'])->whereNumber('factura')->name('ventas.facturas.anular');
     });
 
@@ -421,45 +435,134 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('contabilidad/cierres/{cierre}/cerrar', [CglCierreController::class, 'cerrar'])->whereNumber('cierre')->name('contabilidad.cierres.cerrar');
     });
 
-    // ── Propiedad Horizontal (prh_*) ─────────────────────────────────────────
-    Route::middleware('permission:prh.ver')->group(function () {
-        Route::get('prh/edificios', [PrhEdificioController::class, 'index'])->name('prh.edificios.index');
-        Route::get('prh/edificios/{edificio}', [PrhEdificioController::class, 'show'])->whereNumber('edificio')->name('prh.edificios.show');
-        Route::get('prh/propietarios', [PrhPropietarioController::class, 'index'])->name('prh.propietarios.index');
-        Route::get('prh/tipos-cuota', [PrhTipoCuotaController::class, 'index'])->name('prh.tipos-cuota.index');
-        Route::get('prh/cuotas', [PrhCuotaController::class, 'index'])->name('prh.cuotas.index');
-        Route::get('prh/pagos', [PrhPagoController::class, 'index'])->name('prh.pagos.index');
-        Route::get('prh/edificios/{edificio}/unidades', [PrhUnidadController::class, 'index'])->whereNumber('edificio')->name('prh.edificios.unidades.index');
+    // ── Propiedad Horizontal (ph_*) ─────────────────────────────────────────
+    Route::middleware('permission:ph.ver')->group(function () {
+        Route::get('ph/edificios', [PhEdificioController::class, 'index'])->name('ph.edificios.index');
+        Route::get('ph/edificios/{edificio}', [PhEdificioController::class, 'show'])->whereNumber('edificio')->name('ph.edificios.show');
+        Route::get('ph/propietarios', [PhPropietarioController::class, 'index'])->name('ph.propietarios.index');
+        Route::get('ph/tipos-cuota', [PhTipoCuotaController::class, 'index'])->name('ph.tipos-cuota.index');
+        Route::get('ph/cuotas', [PhCuotaController::class, 'index'])->name('ph.cuotas.index');
+        Route::get('ph/pagos', [PhPagoController::class, 'index'])->name('ph.pagos.index');
+        Route::get('ph/edificios/{edificio}/unidades', [PhUnidadController::class, 'index'])->whereNumber('edificio')->name('ph.edificios.unidades.index');
     });
 
-    Route::middleware('permission:prh.gestionar')->group(function () {
-        Route::get('prh/edificios/nuevo', [PrhEdificioController::class, 'create'])->name('prh.edificios.create');
-        Route::post('prh/edificios', [PrhEdificioController::class, 'store'])->name('prh.edificios.store');
-        Route::get('prh/edificios/{edificio}/editar', [PrhEdificioController::class, 'edit'])->whereNumber('edificio')->name('prh.edificios.edit');
-        Route::put('prh/edificios/{edificio}', [PrhEdificioController::class, 'update'])->whereNumber('edificio')->name('prh.edificios.update');
-        Route::delete('prh/edificios/{edificio}', [PrhEdificioController::class, 'destroy'])->whereNumber('edificio')->name('prh.edificios.destroy');
+    Route::middleware('permission:ph.gestionar')->group(function () {
+        Route::get('ph/edificios/nuevo', [PhEdificioController::class, 'create'])->name('ph.edificios.create');
+        Route::post('ph/edificios', [PhEdificioController::class, 'store'])->name('ph.edificios.store');
+        Route::get('ph/edificios/{edificio}/editar', [PhEdificioController::class, 'edit'])->whereNumber('edificio')->name('ph.edificios.edit');
+        Route::put('ph/edificios/{edificio}', [PhEdificioController::class, 'update'])->whereNumber('edificio')->name('ph.edificios.update');
+        Route::delete('ph/edificios/{edificio}', [PhEdificioController::class, 'destroy'])->whereNumber('edificio')->name('ph.edificios.destroy');
 
-        Route::get('prh/edificios/{edificio}/unidades/nueva', [PrhUnidadController::class, 'create'])->whereNumber('edificio')->name('prh.edificios.unidades.create');
-        Route::post('prh/edificios/{edificio}/unidades', [PrhUnidadController::class, 'store'])->whereNumber('edificio')->name('prh.edificios.unidades.store');
-        Route::get('prh/edificios/{edificio}/unidades/{unidad}/editar', [PrhUnidadController::class, 'edit'])->whereNumber(['edificio', 'unidad'])->name('prh.edificios.unidades.edit');
-        Route::put('prh/edificios/{edificio}/unidades/{unidad}', [PrhUnidadController::class, 'update'])->whereNumber(['edificio', 'unidad'])->name('prh.edificios.unidades.update');
-        Route::delete('prh/edificios/{edificio}/unidades/{unidad}', [PrhUnidadController::class, 'destroy'])->whereNumber(['edificio', 'unidad'])->name('prh.edificios.unidades.destroy');
+        Route::get('ph/edificios/{edificio}/unidades/nueva', [PhUnidadController::class, 'create'])->whereNumber('edificio')->name('ph.edificios.unidades.create');
+        Route::post('ph/edificios/{edificio}/unidades', [PhUnidadController::class, 'store'])->whereNumber('edificio')->name('ph.edificios.unidades.store');
+        Route::get('ph/edificios/{edificio}/unidades/{unidad}/editar', [PhUnidadController::class, 'edit'])->whereNumber(['edificio', 'unidad'])->name('ph.edificios.unidades.edit');
+        Route::put('ph/edificios/{edificio}/unidades/{unidad}', [PhUnidadController::class, 'update'])->whereNumber(['edificio', 'unidad'])->name('ph.edificios.unidades.update');
+        Route::delete('ph/edificios/{edificio}/unidades/{unidad}', [PhUnidadController::class, 'destroy'])->whereNumber(['edificio', 'unidad'])->name('ph.edificios.unidades.destroy');
 
-        Route::post('prh/propietarios', [PrhPropietarioController::class, 'store'])->name('prh.propietarios.store');
-        Route::put('prh/propietarios/{propietario}', [PrhPropietarioController::class, 'update'])->whereNumber('propietario')->name('prh.propietarios.update');
-        Route::delete('prh/propietarios/{propietario}', [PrhPropietarioController::class, 'destroy'])->whereNumber('propietario')->name('prh.propietarios.destroy');
+        Route::post('ph/propietarios', [PhPropietarioController::class, 'store'])->name('ph.propietarios.store');
+        Route::put('ph/propietarios/{propietario}', [PhPropietarioController::class, 'update'])->whereNumber('propietario')->name('ph.propietarios.update');
+        Route::delete('ph/propietarios/{propietario}', [PhPropietarioController::class, 'destroy'])->whereNumber('propietario')->name('ph.propietarios.destroy');
 
-        Route::post('prh/tipos-cuota', [PrhTipoCuotaController::class, 'store'])->name('prh.tipos-cuota.store');
-        Route::put('prh/tipos-cuota/{tipoCuota}', [PrhTipoCuotaController::class, 'update'])->whereNumber('tipoCuota')->name('prh.tipos-cuota.update');
-        Route::delete('prh/tipos-cuota/{tipoCuota}', [PrhTipoCuotaController::class, 'destroy'])->whereNumber('tipoCuota')->name('prh.tipos-cuota.destroy');
+        Route::post('ph/tipos-cuota', [PhTipoCuotaController::class, 'store'])->name('ph.tipos-cuota.store');
+        Route::put('ph/tipos-cuota/{tipoCuota}', [PhTipoCuotaController::class, 'update'])->whereNumber('tipoCuota')->name('ph.tipos-cuota.update');
+        Route::delete('ph/tipos-cuota/{tipoCuota}', [PhTipoCuotaController::class, 'destroy'])->whereNumber('tipoCuota')->name('ph.tipos-cuota.destroy');
 
-        Route::get('prh/cuotas/generar', [PrhCuotaController::class, 'generar'])->name('prh.cuotas.generar');
-        Route::post('prh/cuotas/generar', [PrhCuotaController::class, 'procesarGenerar'])->name('prh.cuotas.procesarGenerar');
-        Route::patch('prh/cuotas/{cuota}/anular', [PrhCuotaController::class, 'anular'])->whereNumber('cuota')->name('prh.cuotas.anular');
+        Route::get('ph/cuotas/generar', [PhCuotaController::class, 'generar'])->name('ph.cuotas.generar');
+        Route::post('ph/cuotas/generar', [PhCuotaController::class, 'procesarGenerar'])->name('ph.cuotas.procesarGenerar');
+        Route::patch('ph/cuotas/{cuota}/anular', [PhCuotaController::class, 'anular'])->whereNumber('cuota')->name('ph.cuotas.anular');
 
-        Route::get('prh/pagos/nuevo', [PrhPagoController::class, 'create'])->name('prh.pagos.create');
-        Route::post('prh/pagos', [PrhPagoController::class, 'store'])->name('prh.pagos.store');
-        Route::delete('prh/pagos/{pago}', [PrhPagoController::class, 'destroy'])->whereNumber('pago')->name('prh.pagos.destroy');
+        Route::get('ph/pagos/nuevo', [PhPagoController::class, 'create'])->name('ph.pagos.create');
+        Route::post('ph/pagos', [PhPagoController::class, 'store'])->name('ph.pagos.store');
+        Route::delete('ph/pagos/{pago}', [PhPagoController::class, 'destroy'])->whereNumber('pago')->name('ph.pagos.destroy');
+    });
+
+    // ── Taller ───────────────────────────────────────────────────────────────
+    Route::middleware('permission:taller.ver')->group(function () {
+        Route::get('taller/talleres', [TallerController::class, 'index'])->name('taller.talleres.index');
+        Route::get('taller/talleres/{taller}', [TallerController::class, 'show'])->whereNumber('taller')->name('taller.talleres.show');
+        Route::get('taller/sucursales', [TallerSucursalController::class, 'index'])->name('taller.sucursales.index');
+        Route::get('taller/areas', [TallerAreaController::class, 'index'])->name('taller.areas.index');
+        Route::get('taller/tipos-equipo', [TallerTipoEquipoController::class, 'index'])->name('taller.tipos-equipo.index');
+        Route::get('taller/marcas', [TallerMarcaController::class, 'index'])->name('taller.marcas.index');
+        Route::get('taller/modelos', [TallerModeloController::class, 'index'])->name('taller.modelos.index');
+        Route::get('taller/especialidades', [TallerEspecialidadController::class, 'index'])->name('taller.especialidades.index');
+        Route::get('taller/sintomas', [TallerSintomaController::class, 'index'])->name('taller.sintomas.index');
+        Route::get('taller/servicios', [TallerServicioController::class, 'index'])->name('taller.servicios.index');
+        Route::get('taller/checklists', [TallerChecklistController::class, 'index'])->name('taller.checklists.index');
+        Route::get('taller/checklists/{checklist}', [TallerChecklistController::class, 'show'])->whereNumber('checklist')->name('taller.checklists.show');
+        Route::get('taller/tecnicos', [TallerTecnicoController::class, 'index'])->name('taller.tecnicos.index');
+        Route::get('taller/tecnicos/{tecnico}', [TallerTecnicoController::class, 'show'])->whereNumber('tecnico')->name('taller.tecnicos.show');
+    });
+    Route::middleware('permission:taller.gestionar')->group(function () {
+        Route::get('taller/talleres/nuevo', [TallerController::class, 'create'])->name('taller.talleres.create');
+        Route::post('taller/talleres', [TallerController::class, 'store'])->name('taller.talleres.store');
+        Route::get('taller/talleres/{taller}/editar', [TallerController::class, 'edit'])->whereNumber('taller')->name('taller.talleres.edit');
+        Route::put('taller/talleres/{taller}', [TallerController::class, 'update'])->whereNumber('taller')->name('taller.talleres.update');
+        Route::delete('taller/talleres/{taller}', [TallerController::class, 'destroy'])->whereNumber('taller')->name('taller.talleres.destroy');
+
+        Route::get('taller/sucursales/nueva', [TallerSucursalController::class, 'create'])->name('taller.sucursales.create');
+        Route::post('taller/sucursales', [TallerSucursalController::class, 'store'])->name('taller.sucursales.store');
+        Route::get('taller/sucursales/{sucursal}/editar', [TallerSucursalController::class, 'edit'])->whereNumber('sucursal')->name('taller.sucursales.edit');
+        Route::put('taller/sucursales/{sucursal}', [TallerSucursalController::class, 'update'])->whereNumber('sucursal')->name('taller.sucursales.update');
+        Route::delete('taller/sucursales/{sucursal}', [TallerSucursalController::class, 'destroy'])->whereNumber('sucursal')->name('taller.sucursales.destroy');
+
+        Route::get('taller/areas/nueva', [TallerAreaController::class, 'create'])->name('taller.areas.create');
+        Route::post('taller/areas', [TallerAreaController::class, 'store'])->name('taller.areas.store');
+        Route::get('taller/areas/{area}/editar', [TallerAreaController::class, 'edit'])->whereNumber('area')->name('taller.areas.edit');
+        Route::put('taller/areas/{area}', [TallerAreaController::class, 'update'])->whereNumber('area')->name('taller.areas.update');
+        Route::delete('taller/areas/{area}', [TallerAreaController::class, 'destroy'])->whereNumber('area')->name('taller.areas.destroy');
+
+        Route::get('taller/tipos-equipo/nuevo', [TallerTipoEquipoController::class, 'create'])->name('taller.tipos-equipo.create');
+        Route::post('taller/tipos-equipo', [TallerTipoEquipoController::class, 'store'])->name('taller.tipos-equipo.store');
+        Route::get('taller/tipos-equipo/{tipoEquipo}/editar', [TallerTipoEquipoController::class, 'edit'])->whereNumber('tipoEquipo')->name('taller.tipos-equipo.edit');
+        Route::put('taller/tipos-equipo/{tipoEquipo}', [TallerTipoEquipoController::class, 'update'])->whereNumber('tipoEquipo')->name('taller.tipos-equipo.update');
+        Route::delete('taller/tipos-equipo/{tipoEquipo}', [TallerTipoEquipoController::class, 'destroy'])->whereNumber('tipoEquipo')->name('taller.tipos-equipo.destroy');
+
+        Route::get('taller/marcas/nueva', [TallerMarcaController::class, 'create'])->name('taller.marcas.create');
+        Route::post('taller/marcas', [TallerMarcaController::class, 'store'])->name('taller.marcas.store');
+        Route::get('taller/marcas/{marca}/editar', [TallerMarcaController::class, 'edit'])->whereNumber('marca')->name('taller.marcas.edit');
+        Route::put('taller/marcas/{marca}', [TallerMarcaController::class, 'update'])->whereNumber('marca')->name('taller.marcas.update');
+        Route::delete('taller/marcas/{marca}', [TallerMarcaController::class, 'destroy'])->whereNumber('marca')->name('taller.marcas.destroy');
+
+        Route::get('taller/modelos/nuevo', [TallerModeloController::class, 'create'])->name('taller.modelos.create');
+        Route::post('taller/modelos', [TallerModeloController::class, 'store'])->name('taller.modelos.store');
+        Route::get('taller/modelos/{modelo}/editar', [TallerModeloController::class, 'edit'])->whereNumber('modelo')->name('taller.modelos.edit');
+        Route::put('taller/modelos/{modelo}', [TallerModeloController::class, 'update'])->whereNumber('modelo')->name('taller.modelos.update');
+        Route::delete('taller/modelos/{modelo}', [TallerModeloController::class, 'destroy'])->whereNumber('modelo')->name('taller.modelos.destroy');
+
+        Route::get('taller/especialidades/nueva', [TallerEspecialidadController::class, 'create'])->name('taller.especialidades.create');
+        Route::post('taller/especialidades', [TallerEspecialidadController::class, 'store'])->name('taller.especialidades.store');
+        Route::get('taller/especialidades/{especialidad}/editar', [TallerEspecialidadController::class, 'edit'])->whereNumber('especialidad')->name('taller.especialidades.edit');
+        Route::put('taller/especialidades/{especialidad}', [TallerEspecialidadController::class, 'update'])->whereNumber('especialidad')->name('taller.especialidades.update');
+        Route::delete('taller/especialidades/{especialidad}', [TallerEspecialidadController::class, 'destroy'])->whereNumber('especialidad')->name('taller.especialidades.destroy');
+
+        Route::get('taller/sintomas/nuevo', [TallerSintomaController::class, 'create'])->name('taller.sintomas.create');
+        Route::post('taller/sintomas', [TallerSintomaController::class, 'store'])->name('taller.sintomas.store');
+        Route::get('taller/sintomas/{sintoma}/editar', [TallerSintomaController::class, 'edit'])->whereNumber('sintoma')->name('taller.sintomas.edit');
+        Route::put('taller/sintomas/{sintoma}', [TallerSintomaController::class, 'update'])->whereNumber('sintoma')->name('taller.sintomas.update');
+        Route::delete('taller/sintomas/{sintoma}', [TallerSintomaController::class, 'destroy'])->whereNumber('sintoma')->name('taller.sintomas.destroy');
+
+        Route::get('taller/servicios/nuevo', [TallerServicioController::class, 'create'])->name('taller.servicios.create');
+        Route::post('taller/servicios', [TallerServicioController::class, 'store'])->name('taller.servicios.store');
+        Route::get('taller/servicios/{servicio}/editar', [TallerServicioController::class, 'edit'])->whereNumber('servicio')->name('taller.servicios.edit');
+        Route::put('taller/servicios/{servicio}', [TallerServicioController::class, 'update'])->whereNumber('servicio')->name('taller.servicios.update');
+        Route::delete('taller/servicios/{servicio}', [TallerServicioController::class, 'destroy'])->whereNumber('servicio')->name('taller.servicios.destroy');
+
+        Route::get('taller/checklists/nuevo', [TallerChecklistController::class, 'create'])->name('taller.checklists.create');
+        Route::post('taller/checklists', [TallerChecklistController::class, 'store'])->name('taller.checklists.store');
+        Route::get('taller/checklists/{checklist}/editar', [TallerChecklistController::class, 'edit'])->whereNumber('checklist')->name('taller.checklists.edit');
+        Route::put('taller/checklists/{checklist}', [TallerChecklistController::class, 'update'])->whereNumber('checklist')->name('taller.checklists.update');
+        Route::delete('taller/checklists/{checklist}', [TallerChecklistController::class, 'destroy'])->whereNumber('checklist')->name('taller.checklists.destroy');
+        Route::post('taller/checklists/{checklist}/detalles', [TallerChecklistController::class, 'storeDetalle'])->whereNumber('checklist')->name('taller.checklists.detalles.store');
+        Route::delete('taller/checklists/{checklist}/detalles/{detalle}', [TallerChecklistController::class, 'destroyDetalle'])->whereNumber(['checklist', 'detalle'])->name('taller.checklists.detalles.destroy');
+
+        Route::get('taller/tecnicos/nuevo', [TallerTecnicoController::class, 'create'])->name('taller.tecnicos.create');
+        Route::post('taller/tecnicos', [TallerTecnicoController::class, 'store'])->name('taller.tecnicos.store');
+        Route::get('taller/tecnicos/{tecnico}/editar', [TallerTecnicoController::class, 'edit'])->whereNumber('tecnico')->name('taller.tecnicos.edit');
+        Route::put('taller/tecnicos/{tecnico}', [TallerTecnicoController::class, 'update'])->whereNumber('tecnico')->name('taller.tecnicos.update');
+        Route::delete('taller/tecnicos/{tecnico}', [TallerTecnicoController::class, 'destroy'])->whereNumber('tecnico')->name('taller.tecnicos.destroy');
+        Route::post('taller/tecnicos/{tecnico}/especialidades', [TallerTecnicoController::class, 'storeEspecialidad'])->whereNumber('tecnico')->name('taller.tecnicos.especialidades.store');
+        Route::delete('taller/tecnicos/{tecnico}/especialidades/{especialidad}', [TallerTecnicoController::class, 'destroyEspecialidad'])->whereNumber(['tecnico', 'especialidad'])->name('taller.tecnicos.especialidades.destroy');
     });
 
     // ── Ayuda / base de conocimientos ────────────────────────────────────────
