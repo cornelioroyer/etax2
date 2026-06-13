@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Models\CuentaContable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Diario extends Model
 {
@@ -26,6 +28,11 @@ class Diario extends Model
             'requiere_aprobacion' => 'boolean',
             'activo' => 'boolean',
         ];
+    }
+
+    public function cuentaDefault(): BelongsTo
+    {
+        return $this->belongsTo(CuentaContable::class, 'cuenta_default_id');
     }
 
     /**

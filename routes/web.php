@@ -20,6 +20,7 @@ use App\Http\Controllers\Admin\ReporteComparativoController;
 use App\Http\Controllers\Admin\ReporteResultadosController;
 use App\Http\Controllers\Admin\FelConfiguracionController;
 use App\Http\Controllers\Admin\CuentaDefaultController;
+use App\Http\Controllers\Admin\DiarioController;
 use App\Http\Controllers\Admin\PeriodoContableController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\UsuarioCompaniaController;
@@ -69,6 +70,10 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::resource('asientos', AsientoController::class)->parameters(['asientos' => 'asiento']);
         Route::get('cuentas-default', [CuentaDefaultController::class, 'index'])->name('cuentas-default.index');
         Route::put('cuentas-default', [CuentaDefaultController::class, 'update'])->name('cuentas-default.update');
+        Route::get('diarios', [DiarioController::class, 'index'])->name('diarios.index');
+        Route::post('diarios', [DiarioController::class, 'store'])->name('diarios.store');
+        Route::put('diarios/{diario}', [DiarioController::class, 'update'])->name('diarios.update');
+        Route::post('diarios/{diario}/toggle', [DiarioController::class, 'toggleActivo'])->name('diarios.toggle');
         Route::get('periodos', [PeriodoContableController::class, 'index'])->name('periodos.index');
         Route::post('periodos/cerrar', [PeriodoContableController::class, 'cerrar'])->name('periodos.cerrar');
         Route::post('periodos/{periodo}/reabrir', [PeriodoContableController::class, 'reabrir'])->name('periodos.reabrir');
