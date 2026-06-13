@@ -20,6 +20,9 @@ use App\Http\Controllers\Admin\ReporteComparativoController;
 use App\Http\Controllers\Admin\ReporteResultadosController;
 use App\Http\Controllers\Admin\FelConfiguracionController;
 use App\Http\Controllers\Admin\BancoCuentaController;
+use App\Http\Controllers\Admin\AfiActivoController;
+use App\Http\Controllers\Admin\AfiCategoriaController;
+use App\Http\Controllers\Admin\AfiUbicacionController;
 use App\Http\Controllers\Admin\CajaController;
 use App\Http\Controllers\Admin\CajaOperacionController;
 use App\Http\Controllers\Admin\CompraOrdenController;
@@ -185,6 +188,26 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('caja/cajas/{caja}/vales', [CajaOperacionController::class, 'vale'])->whereNumber('caja')->name('caja.cajas.vales');
         Route::post('caja/vales/{vale}/liquidar', [CajaOperacionController::class, 'liquidarVale'])->whereNumber('vale')->name('caja.vales.liquidar');
         Route::post('caja/cajas/{caja}/arqueos', [CajaOperacionController::class, 'arqueo'])->whereNumber('caja')->name('caja.cajas.arqueos');
+    });
+
+    Route::middleware('permission:activos.ver')->group(function () {
+        Route::get('activos/activos', [AfiActivoController::class, 'index'])->name('activos.activos.index');
+        Route::get('activos/activos/{activo}', [AfiActivoController::class, 'show'])->whereNumber('activo')->name('activos.activos.show');
+        Route::get('activos/categorias', [AfiCategoriaController::class, 'index'])->name('activos.categorias.index');
+        Route::get('activos/ubicaciones', [AfiUbicacionController::class, 'index'])->name('activos.ubicaciones.index');
+    });
+
+    Route::middleware('permission:activos.gestionar')->group(function () {
+        Route::get('activos/activos/crear', [AfiActivoController::class, 'create'])->name('activos.activos.create');
+        Route::post('activos/activos', [AfiActivoController::class, 'store'])->name('activos.activos.store');
+        Route::post('activos/activos/{activo}/depreciar', [AfiActivoController::class, 'depreciar'])->whereNumber('activo')->name('activos.activos.depreciar');
+        Route::post('activos/activos/{activo}/baja', [AfiActivoController::class, 'baja'])->whereNumber('activo')->name('activos.activos.baja');
+        Route::post('activos/categorias', [AfiCategoriaController::class, 'store'])->name('activos.categorias.store');
+        Route::put('activos/categorias/{categoria}', [AfiCategoriaController::class, 'update'])->whereNumber('categoria')->name('activos.categorias.update');
+        Route::delete('activos/categorias/{categoria}', [AfiCategoriaController::class, 'destroy'])->whereNumber('categoria')->name('activos.categorias.destroy');
+        Route::post('activos/ubicaciones', [AfiUbicacionController::class, 'store'])->name('activos.ubicaciones.store');
+        Route::put('activos/ubicaciones/{ubicacion}', [AfiUbicacionController::class, 'update'])->whereNumber('ubicacion')->name('activos.ubicaciones.update');
+        Route::delete('activos/ubicaciones/{ubicacion}', [AfiUbicacionController::class, 'destroy'])->whereNumber('ubicacion')->name('activos.ubicaciones.destroy');
     });
 
     Route::middleware('permission:ventas.ver')->group(function () {

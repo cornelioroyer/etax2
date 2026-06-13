@@ -38,6 +38,7 @@ class RolesYPermisosSeeder extends Seeder
             'caja.gestionar',
             'inventario.ver',
             'activos.ver',
+            'activos.gestionar',
             'reportes.ver',
             'ia.ver',
             // Visibilidad de campos sensibles

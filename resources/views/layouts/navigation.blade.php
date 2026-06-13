@@ -141,10 +141,12 @@
             'key' => 'activos',
             'label' => 'Activos Fijos',
             'icon' => 'M4.5 20.25h15M6 20.25V6.75A2.25 2.25 0 0 1 8.25 4.5h7.5A2.25 2.25 0 0 1 18 6.75v13.5M9 9h6M9 12.75h6M9 16.5h3',
+            'active' => request()->routeIs('admin.activos.*'),
             'show' => $can('activos.ver'),
             'children' => [
-                ['label' => 'Registro de activos', 'href' => null, 'active' => false, 'show' => $can('activos.ver')],
-                ['label' => 'Depreciación', 'href' => null, 'active' => false, 'show' => $can('activos.ver')],
+                ['label' => 'Registro de activos', 'href' => route('admin.activos.activos.index'), 'active' => request()->routeIs('admin.activos.activos.*'), 'show' => $can('activos.ver')],
+                ['label' => 'Categorías', 'href' => route('admin.activos.categorias.index'), 'active' => request()->routeIs('admin.activos.categorias.*'), 'show' => $can('activos.ver')],
+                ['label' => 'Ubicaciones', 'href' => route('admin.activos.ubicaciones.index'), 'active' => request()->routeIs('admin.activos.ubicaciones.*'), 'show' => $can('activos.ver')],
             ],
         ],
         [
