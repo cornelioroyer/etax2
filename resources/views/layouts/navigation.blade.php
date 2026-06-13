@@ -77,7 +77,7 @@
             'active' => request()->routeIs('admin.compras.*') || request()->routeIs('admin.cxp.*'),
             'show' => $can('compras.ver'),
             'children' => [
-                ['label' => 'Órdenes de compra', 'href' => null, 'active' => false, 'show' => $can('compras.ver')],
+                ['label' => 'Órdenes de compra', 'href' => route('admin.compras.ordenes.index'), 'active' => request()->routeIs('admin.compras.ordenes.*'), 'show' => $can('compras.ver')],
                 ['label' => 'Facturas de compra', 'href' => route('admin.cxp.facturas.index'), 'active' => request()->routeIs('admin.cxp.facturas.*'), 'show' => $can('cxp.ver')],
                 ['label' => 'Gastos directos', 'href' => route('admin.compras.gastos.index'), 'active' => request()->routeIs('admin.compras.gastos.*'), 'show' => $can('compras.ver')],
             ],

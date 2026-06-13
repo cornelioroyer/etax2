@@ -20,6 +20,8 @@ use App\Http\Controllers\Admin\ReporteComparativoController;
 use App\Http\Controllers\Admin\ReporteResultadosController;
 use App\Http\Controllers\Admin\FelConfiguracionController;
 use App\Http\Controllers\Admin\BancoCuentaController;
+use App\Http\Controllers\Admin\CompraOrdenController;
+use App\Http\Controllers\Admin\CompraRecepcionController;
 use App\Http\Controllers\Admin\CuentaDefaultController;
 use App\Http\Controllers\Admin\DiarioController;
 use App\Http\Controllers\Admin\GastoController;
@@ -151,11 +153,20 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
 
     Route::middleware('permission:compras.ver')->group(function () {
         Route::get('compras/gastos', [GastoController::class, 'index'])->name('compras.gastos.index');
+        Route::get('compras/ordenes', [CompraOrdenController::class, 'index'])->name('compras.ordenes.index');
+        Route::get('compras/ordenes/{orden}', [CompraOrdenController::class, 'show'])->whereNumber('orden')->name('compras.ordenes.show');
     });
 
     Route::middleware('permission:compras.gestionar')->group(function () {
         Route::get('compras/gastos/nuevo', [GastoController::class, 'create'])->name('compras.gastos.create');
         Route::post('compras/gastos', [GastoController::class, 'store'])->name('compras.gastos.store');
+
+        Route::get('compras/ordenes/nueva', [CompraOrdenController::class, 'create'])->name('compras.ordenes.create');
+        Route::post('compras/ordenes', [CompraOrdenController::class, 'store'])->name('compras.ordenes.store');
+        Route::post('compras/ordenes/{orden}/aprobar', [CompraOrdenController::class, 'aprobar'])->whereNumber('orden')->name('compras.ordenes.aprobar');
+        Route::post('compras/ordenes/{orden}/anular', [CompraOrdenController::class, 'anular'])->whereNumber('orden')->name('compras.ordenes.anular');
+        Route::post('compras/ordenes/{orden}/facturar', [CompraOrdenController::class, 'facturar'])->whereNumber('orden')->name('compras.ordenes.facturar');
+        Route::post('compras/ordenes/{orden}/recepciones', [CompraRecepcionController::class, 'store'])->whereNumber('orden')->name('compras.ordenes.recepciones.store');
     });
 
     Route::middleware('permission:ventas.ver')->group(function () {
