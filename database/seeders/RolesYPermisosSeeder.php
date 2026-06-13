@@ -44,6 +44,8 @@ class RolesYPermisosSeeder extends Seeder
             'taller.gestionar',
             'ph.ver',
             'ph.gestionar',
+            'edu.ver',
+            'edu.gestionar',
             'reportes.ver',
             'ia.ver',
             'cxc.ver',
@@ -79,6 +81,7 @@ class RolesYPermisosSeeder extends Seeder
             'activos.ver',
             'taller.ver',
             'ph.ver',
+            'edu.ver',
             'reportes.ver',
             'ia.ver',
         ]);

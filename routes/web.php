@@ -56,6 +56,7 @@ use App\Http\Controllers\Admin\TallerModeloController;
 use App\Http\Controllers\Admin\TallerServicioController;
 use App\Http\Controllers\Admin\TallerSintomaController;
 use App\Http\Controllers\Admin\TallerSucursalController;
+use App\Http\Controllers\Admin\TallerEquipoController;
 use App\Http\Controllers\Admin\TallerTecnicoController;
 use App\Http\Controllers\Admin\TallerTipoEquipoController;
 use App\Http\Controllers\Admin\BcoChequeController;
@@ -75,6 +76,26 @@ use App\Http\Controllers\Admin\InvKardexController;
 use App\Http\Controllers\Admin\InvTransferenciaController;
 use App\Http\Controllers\Admin\ItemPrecioController;
 use App\Http\Controllers\Admin\VentaVendedorController;
+use App\Http\Controllers\Admin\EduAsistenciaController;
+use App\Http\Controllers\Admin\EduComunicadoController;
+use App\Http\Controllers\Admin\EduConfiguracionController;
+use App\Http\Controllers\Admin\EduConceptoCobroController;
+use App\Http\Controllers\Admin\EduDocenteController;
+use App\Http\Controllers\Admin\EduEstudianteController;
+use App\Http\Controllers\Admin\EduEsquemaCalificacionController;
+use App\Http\Controllers\Admin\EduEvaluacionController;
+use App\Http\Controllers\Admin\EduGeneracionCobroController;
+use App\Http\Controllers\Admin\EduGradoController;
+use App\Http\Controllers\Admin\EduGrupoController;
+use App\Http\Controllers\Admin\EduHorarioController;
+use App\Http\Controllers\Admin\EduInstitucionController;
+use App\Http\Controllers\Admin\EduMatriculaController;
+use App\Http\Controllers\Admin\EduNivelAcademicoController;
+use App\Http\Controllers\Admin\EduPeriodoAcademicoController;
+use App\Http\Controllers\Admin\EduPlanCobroController;
+use App\Http\Controllers\Admin\EduProgramaController;
+use App\Http\Controllers\Admin\EduAsignaturaController;
+use App\Http\Controllers\Admin\EduSedeController;
 use App\Http\Controllers\CompaniaActivaController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ProfileController;
@@ -492,6 +513,8 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::get('taller/checklists/{checklist}', [TallerChecklistController::class, 'show'])->whereNumber('checklist')->name('taller.checklists.show');
         Route::get('taller/tecnicos', [TallerTecnicoController::class, 'index'])->name('taller.tecnicos.index');
         Route::get('taller/tecnicos/{tecnico}', [TallerTecnicoController::class, 'show'])->whereNumber('tecnico')->name('taller.tecnicos.show');
+        Route::get('taller/equipos', [TallerEquipoController::class, 'index'])->name('taller.equipos.index');
+        Route::get('taller/equipos/{equipo}', [TallerEquipoController::class, 'show'])->whereNumber('equipo')->name('taller.equipos.show');
     });
     Route::middleware('permission:taller.gestionar')->group(function () {
         Route::get('taller/talleres/nuevo', [TallerController::class, 'create'])->name('taller.talleres.create');
@@ -563,6 +586,15 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::delete('taller/tecnicos/{tecnico}', [TallerTecnicoController::class, 'destroy'])->whereNumber('tecnico')->name('taller.tecnicos.destroy');
         Route::post('taller/tecnicos/{tecnico}/especialidades', [TallerTecnicoController::class, 'storeEspecialidad'])->whereNumber('tecnico')->name('taller.tecnicos.especialidades.store');
         Route::delete('taller/tecnicos/{tecnico}/especialidades/{especialidad}', [TallerTecnicoController::class, 'destroyEspecialidad'])->whereNumber(['tecnico', 'especialidad'])->name('taller.tecnicos.especialidades.destroy');
+
+        Route::get('taller/equipos/nuevo', [TallerEquipoController::class, 'create'])->name('taller.equipos.create');
+        Route::post('taller/equipos', [TallerEquipoController::class, 'store'])->name('taller.equipos.store');
+        Route::get('taller/equipos/{equipo}/editar', [TallerEquipoController::class, 'edit'])->whereNumber('equipo')->name('taller.equipos.edit');
+        Route::put('taller/equipos/{equipo}', [TallerEquipoController::class, 'update'])->whereNumber('equipo')->name('taller.equipos.update');
+        Route::delete('taller/equipos/{equipo}', [TallerEquipoController::class, 'destroy'])->whereNumber('equipo')->name('taller.equipos.destroy');
+        Route::post('taller/equipos/{equipo}/clientes', [TallerEquipoController::class, 'storeCliente'])->whereNumber('equipo')->name('taller.equipos.clientes.store');
+        Route::delete('taller/equipos/{equipo}/clientes/{clienteEquipo}', [TallerEquipoController::class, 'destroyCliente'])->whereNumber(['equipo', 'clienteEquipo'])->name('taller.equipos.clientes.destroy');
+        Route::post('taller/equipos/{equipo}/mediciones', [TallerEquipoController::class, 'storeMedicion'])->whereNumber('equipo')->name('taller.equipos.mediciones.store');
     });
 
     // ── Ayuda / base de conocimientos ────────────────────────────────────────
@@ -586,6 +618,36 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('configuracion/tasas', [ConfiguracionController::class, 'storeTasa'])->name('configuracion.tasas.store');
         Route::post('configuracion/retenciones', [ConfiguracionController::class, 'storeRetencion'])->name('configuracion.retenciones.store');
         Route::put('configuracion/retenciones/{retencion}', [ConfiguracionController::class, 'updateRetencion'])->whereNumber('retencion')->name('configuracion.retenciones.update');
+    });
+
+    // ── Educación ────────────────────────────────────────────────────────────
+    Route::prefix('edu')->name('edu.')->middleware('permission:edu.ver')->group(function () {
+        Route::resource('instituciones', EduInstitucionController::class)->except(['show'])->parameters(['instituciones' => 'institucion']);
+        Route::resource('sedes', EduSedeController::class)->except(['show'])->parameters(['sedes' => 'sede']);
+        Route::get('configuracion', [EduConfiguracionController::class, 'index'])->name('configuracion.index');
+        Route::resource('niveles', EduNivelAcademicoController::class)->except(['show'])->parameters(['niveles' => 'nivel']);
+        Route::resource('programas', EduProgramaController::class)->except(['show'])->parameters(['programas' => 'programa']);
+        Route::resource('grados', EduGradoController::class)->except(['show'])->parameters(['grados' => 'grado']);
+        Route::resource('grupos', EduGrupoController::class)->except(['show'])->parameters(['grupos' => 'grupo']);
+        Route::resource('periodos', EduPeriodoAcademicoController::class)->except(['show'])->parameters(['periodos' => 'periodo']);
+        Route::resource('asignaturas', EduAsignaturaController::class)->except(['show'])->parameters(['asignaturas' => 'asignatura']);
+        Route::resource('esquemas', EduEsquemaCalificacionController::class)->except(['show'])->parameters(['esquemas' => 'esquema']);
+        Route::post('esquemas/{esquema}/detalles', [EduEsquemaCalificacionController::class, 'storeDetalle'])->whereNumber('esquema')->name('esquemas.detalles.store');
+        Route::delete('esquemas/{esquema}/detalles/{detalle}', [EduEsquemaCalificacionController::class, 'destroyDetalle'])->whereNumber(['esquema', 'detalle'])->name('esquemas.detalles.destroy');
+        Route::resource('estudiantes', EduEstudianteController::class)->parameters(['estudiantes' => 'estudiante']);
+        Route::resource('docentes', EduDocenteController::class)->parameters(['docentes' => 'docente']);
+        Route::resource('matriculas', EduMatriculaController::class)->parameters(['matriculas' => 'matricula']);
+        Route::resource('horarios', EduHorarioController::class)->except(['show'])->parameters(['horarios' => 'horario']);
+        Route::resource('evaluaciones', EduEvaluacionController::class)->parameters(['evaluaciones' => 'evaluacion']);
+        Route::get('asistencias', [EduAsistenciaController::class, 'index'])->name('asistencias.index');
+        Route::post('asistencias', [EduAsistenciaController::class, 'store'])->name('asistencias.store');
+        Route::resource('conceptos-cobro', EduConceptoCobroController::class)->except(['show'])->parameters(['conceptos-cobro' => 'concepto']);
+        Route::resource('planes-cobro', EduPlanCobroController::class)->except(['show'])->parameters(['planes-cobro' => 'plan']);
+        Route::resource('generaciones-cobro', EduGeneracionCobroController::class)->except(['show', 'edit', 'update'])->parameters(['generaciones-cobro' => 'generacion']);
+        Route::resource('comunicados', EduComunicadoController::class)->parameters(['comunicados' => 'comunicado']);
+    });
+    Route::prefix('edu')->name('edu.')->middleware('permission:edu.gestionar')->group(function () {
+        Route::put('configuracion', [EduConfiguracionController::class, 'update'])->name('configuracion.update');
     });
 });
 
