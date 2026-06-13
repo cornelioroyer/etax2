@@ -31,6 +31,8 @@ class ComprasTest extends TestCase
 
     private CuentaContable $itbmsCredito;
 
+    private CuentaContable $banco;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -52,8 +54,9 @@ class ComprasTest extends TestCase
         $this->cxp = $crear('20101', 'Cuentas por Pagar Proveedores', 'CREDITO');
         $this->gasto = $crear('60101', 'Gastos Generales', 'DEBITO');
         $this->itbmsCredito = $crear('10113', 'ITBMS Credito Fiscal', 'DEBITO');
+        $this->banco = $crear('10102', 'Bancos', 'DEBITO');
 
-        foreach (['CXP' => $this->cxp, 'GASTO_DEFAULT' => $this->gasto, 'ITBMS_CREDITO' => $this->itbmsCredito] as $clave => $cuenta) {
+        foreach (['CXP' => $this->cxp, 'GASTO_DEFAULT' => $this->gasto, 'ITBMS_CREDITO' => $this->itbmsCredito, 'BANCO_DEFAULT' => $this->banco] as $clave => $cuenta) {
             CuentaDefault::create([
                 'compania_id' => $this->compania->id,
                 'clave' => $clave,
@@ -281,6 +284,59 @@ class ComprasTest extends TestCase
 
         $this->actuar()->post(route('admin.compras.ordenes.anular', $orden))->assertSessionHasErrors('orden');
         $this->assertSame('FACTURADA', $orden->fresh()->estado);
+    }
+
+    public function test_flujo_completo_orden_recepcion_factura_pago(): void
+    {
+        // 1. Orden de compra
+        $orden = $this->crearOrden(100, 1, 'ITBMS_7');
+        $this->assertSame('BORRADOR', $orden->estado);
+
+        // 2. Aprobar
+        $this->aprobar($orden);
+        $this->assertSame('APROBADA', $orden->fresh()->estado);
+
+        // 3. Recepción total
+        $this->recibir($orden, 1)->assertSessionHasNoErrors();
+        $this->assertSame('RECIBIDA', $orden->fresh()->estado);
+
+        // 4. Facturar -> CxpDocumento + asiento
+        $this->facturar($orden, 'FACT-FULL')->assertSessionHasNoErrors();
+        $orden->refresh();
+        $this->assertSame('FACTURADA', $orden->estado);
+
+        $factura = CxpDocumento::where('tipo_documento', 'FACTURA')->firstOrFail();
+        $this->assertSame('107.00', (string) $factura->total);
+        $this->assertSame('107.00', (string) $factura->saldo);
+        $this->assertSame('PENDIENTE', $factura->estado);
+
+        // 5. Pago total de la factura por banco (modulo CxP)
+        $this->actuar()->post(route('admin.cxp.pagos.store'), [
+            'proveedor_id' => $this->proveedor->id,
+            'fecha' => '2026-06-15',
+            'cuenta_pago_id' => $this->banco->id,
+            'aplicaciones' => [
+                ['documento_id' => $factura->id, 'monto' => 107],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        // Factura saldada
+        $factura->refresh();
+        $this->assertSame('0.00', (string) $factura->saldo);
+        $this->assertSame('PAGADO', $factura->estado);
+
+        // Pago contabilizado: debito CXP, credito banco
+        $pago = CxpDocumento::where('tipo_documento', 'PAGO')->firstOrFail();
+        $this->assertSame('107.00', (string) $pago->total);
+        $asientoPago = $pago->asiento;
+        $this->assertSame('POSTEADO', $asientoPago->estado);
+        $this->assertSame('107.00', (string) $asientoPago->total_debito);
+        $this->assertSame('107.00', (string) $asientoPago->total_credito);
+
+        // El banco quedo acreditado por 107 (salida de efectivo)
+        $lineaBanco = $asientoPago->detalle->firstWhere('cuenta_id', $this->banco->id);
+        $this->assertNotNull($lineaBanco);
+        $this->assertSame('107.00', (string) $lineaBanco->credito);
     }
 
     public function test_facturar_sin_cuenta_default_cxp_es_rechazado(): void
