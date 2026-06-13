@@ -2,7 +2,10 @@
     <x-slot name="header">
         <div class="flex items-center justify-between">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Caja {{ $caja->codigo }} — {{ $caja->nombre }}</h2>
-            <a href="{{ route('admin.caja.cajas.index') }}" class="text-sm text-gray-600 hover:text-gray-900">← Volver</a>
+            <div class="flex items-center gap-3">
+                <x-help-button module="caja" />
+                <a href="{{ route('admin.caja.index') }}" class="text-sm text-gray-600 hover:text-gray-900">← Volver</a>
+            </div>
         </div>
     </x-slot>
 
@@ -26,7 +29,7 @@
                         <div class="mt-1 text-xs text-gray-500">Cuenta de efectivo: {{ $caja->cuentaContable?->codigo ?? '— sin asignar —' }}</div>
                     </div>
                     @can('caja.gestionar')
-                        <form method="POST" action="{{ route('admin.caja.cajas.toggle', $caja) }}">
+                        <form method="POST" action="{{ route('admin.caja.toggle', $caja) }}">
                             @csrf
                             <button class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
                                 {{ $caja->activa ? 'Desactivar' : 'Activar' }}
@@ -36,7 +39,7 @@
                 </div>
 
                 @can('caja.gestionar')
-                    <form method="POST" action="{{ route('admin.caja.cajas.update', $caja) }}" class="mt-4 grid grid-cols-1 gap-4 border-t border-gray-100 pt-4 sm:grid-cols-3">
+                    <form method="POST" action="{{ route('admin.caja.update', $caja) }}" class="mt-4 grid grid-cols-1 gap-4 border-t border-gray-100 pt-4 sm:grid-cols-3">
                         @csrf @method('PUT')
                         <div>
                             <x-input-label for="nombre" value="Nombre" />
@@ -63,7 +66,7 @@
                     {{-- Movimiento --}}
                     <div class="bg-white p-6 shadow-sm sm:rounded-lg">
                         <h3 class="mb-3 text-sm font-semibold text-gray-700">Registrar movimiento</h3>
-                        <form method="POST" action="{{ route('admin.caja.cajas.movimientos', $caja) }}" class="space-y-3">
+                        <form method="POST" action="{{ route('admin.caja.movimiento', $caja) }}" class="space-y-3">
                             @csrf
                             <div class="grid grid-cols-2 gap-3">
                                 <div>
@@ -109,7 +112,7 @@
                     <div class="space-y-4">
                         <div class="bg-white p-6 shadow-sm sm:rounded-lg">
                             <h3 class="mb-3 text-sm font-semibold text-gray-700">Reembolso (reposición del fondo)</h3>
-                            <form method="POST" action="{{ route('admin.caja.cajas.reembolsos', $caja) }}" class="space-y-3">
+                            <form method="POST" action="{{ route('admin.caja.reembolso', $caja) }}" class="space-y-3">
                                 @csrf
                                 <div class="grid grid-cols-2 gap-3">
                                     <div>
@@ -136,7 +139,7 @@
 
                         <div class="bg-white p-6 shadow-sm sm:rounded-lg">
                             <h3 class="mb-3 text-sm font-semibold text-gray-700">Vale (adelanto)</h3>
-                            <form method="POST" action="{{ route('admin.caja.cajas.vales', $caja) }}" class="space-y-3">
+                            <form method="POST" action="{{ route('admin.caja.vale', $caja) }}" class="space-y-3">
                                 @csrf
                                 <div class="grid grid-cols-2 gap-3">
                                     <div>
@@ -178,7 +181,7 @@
                                         <td class="py-2 pr-2">{{ $vale->beneficiario }}<div class="text-xs text-gray-500">{{ $vale->motivo }}</div></td>
                                         <td class="py-2 pr-2 text-right">{{ number_format((float) $vale->monto, 2) }}</td>
                                         <td class="py-2 pr-2">
-                                            <form method="POST" action="{{ route('admin.caja.vales.liquidar', $vale) }}" class="flex items-center gap-2">
+                                            <form method="POST" action="{{ route('admin.caja.vale.liquidar', $vale) }}" class="flex items-center gap-2">
                                                 @csrf
                                                 <input type="hidden" name="fecha" value="{{ now()->format('Y-m-d') }}">
                                                 <select name="cuenta_contable_id" class="rounded-md border-gray-300 text-xs shadow-sm" required>
@@ -200,7 +203,7 @@
                 {{-- Arqueo --}}
                 <div class="bg-white p-6 shadow-sm sm:rounded-lg" x-data="arqueoForm()">
                     <h3 class="mb-3 text-sm font-semibold text-gray-700">Arqueo de caja</h3>
-                    <form method="POST" action="{{ route('admin.caja.cajas.arqueos', $caja) }}">
+                    <form method="POST" action="{{ route('admin.caja.arqueo', $caja) }}">
                         @csrf
                         <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
                             <div>

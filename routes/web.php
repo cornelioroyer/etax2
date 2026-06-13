@@ -411,6 +411,9 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('contabilidad/cierres/{cierre}/cerrar', [CglCierreController::class, 'cerrar'])->whereNumber('cierre')->name('contabilidad.cierres.cerrar');
     });
 
+    // ── Ayuda / base de conocimientos ────────────────────────────────────────
+    Route::get('ayuda', fn () => view('admin.ayuda.index'))->name('ayuda.index');
+
     // ── Configuración general (catálogos core) ───────────────────────────────
     Route::middleware('permission:contabilidad.ver')->group(function () {
         Route::get('configuracion', [ConfiguracionController::class, 'index'])->name('configuracion.index');

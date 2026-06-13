@@ -89,7 +89,7 @@
             'icon' => 'M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z',
             'active' => request()->routeIs('admin.caja.*'),
             'show' => $can('caja.ver'),
-            'href' => route('admin.caja.cajas.index'),
+            'href' => route('admin.caja.index'),
             'children' => [],
         ],
         [
@@ -208,9 +208,9 @@
             'label' => 'Ayuda',
             'icon' => 'M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.178-.43.326-.67.442-.745.361-1.451.999-1.451 1.827v.75M12 18h.008v.008H12V18Zm9-6a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
             'show' => true,
+            'active' => request()->routeIs('admin.ayuda.*'),
             'children' => [
-                ['label' => 'Centro de ayuda', 'href' => null, 'active' => false, 'show' => true],
-                ['label' => 'Soporte', 'href' => null, 'active' => false, 'show' => true],
+                ['label' => 'Centro de ayuda', 'href' => route('admin.ayuda.index'), 'active' => request()->routeIs('admin.ayuda.index'), 'show' => true],
             ],
         ],
     ];

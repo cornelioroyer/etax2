@@ -1,6 +1,9 @@
 <x-app-layout>
     <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight">Caja menuda</h2>
+        <div class="flex items-center justify-between">
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight">Caja menuda</h2>
+            <x-help-button module="caja" />
+        </div>
     </x-slot>
 
     <div class="py-8">
@@ -18,7 +21,7 @@
             @can('caja.gestionar')
                 <div class="bg-white p-6 shadow-sm sm:rounded-lg">
                     <h3 class="mb-3 text-sm font-semibold text-gray-700">Nueva caja</h3>
-                    <form method="POST" action="{{ route('admin.caja.cajas.store') }}">
+                    <form method="POST" action="{{ route('admin.caja.store') }}">
                         @csrf
                         <div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
                             <div>
@@ -62,7 +65,7 @@
                         @forelse ($cajas as $caja)
                             <tr class="hover:bg-gray-50">
                                 <td class="px-4 py-3 font-medium">
-                                    <a href="{{ route('admin.caja.cajas.show', $caja) }}" class="text-blue-700 hover:underline">{{ $caja->codigo }}</a>
+                                    <a href="{{ route('admin.caja.show', $caja) }}" class="text-blue-700 hover:underline">{{ $caja->codigo }}</a>
                                 </td>
                                 <td class="px-4 py-3">{{ $caja->nombre }}</td>
                                 <td class="px-4 py-3 text-gray-600">{{ $caja->cuentaContable?->codigo ?? '— sin cuenta —' }}</td>
