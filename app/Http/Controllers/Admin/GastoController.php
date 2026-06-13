@@ -36,7 +36,7 @@ class GastoController extends Controller
 
         $consulta = Asiento::query()
             ->where('compania_id', $companiaId)
-            ->where('modulo_origen', 'GASTO')
+            ->where('origen_modulo', 'GASTO')
             ->orderByDesc('fecha')
             ->orderByDesc('numero');
 

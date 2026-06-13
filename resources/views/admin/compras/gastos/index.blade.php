@@ -59,7 +59,7 @@
                                 <td class="px-4 py-3 whitespace-nowrap">{{ $gasto->fecha->format('d/m/Y') }}</td>
                                 <td class="px-4 py-3 max-w-xs truncate">{{ $gasto->descripcion }}</td>
                                 <td class="px-4 py-3 text-right tabular-nums font-medium">
-                                    B/. {{ number_format((float) $gasto->lineas->sum('debito'), 2) }}
+                                    B/. {{ number_format((float) $gasto->detalle->sum('debito'), 2) }}
                                 </td>
                                 <td class="px-4 py-3">
                                     @if ($gasto->estado === 'POSTEADO')

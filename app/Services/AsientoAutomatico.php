@@ -26,7 +26,7 @@ class AsientoAutomatico
         ?string $referencia,
         array $lineas,
         string $origenModulo,
-        string $origenTabla,
+        ?string $origenTabla,
         ?int $origenId,
         User $usuario,
     ): Asiento {
