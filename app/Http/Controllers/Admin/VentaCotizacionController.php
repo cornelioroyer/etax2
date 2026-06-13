@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Concerns\ConCompaniaActiva;
 use App\Http\Controllers\Concerns\ExportaReporte;
 use App\Http\Controllers\Controller;
+use App\Mail\CotizacionMail;
 use App\Models\Compania;
 use App\Models\Contacto;
 use App\Models\TaxImpuesto;
@@ -19,6 +20,7 @@ use App\Services\AsientoAutomatico;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -384,6 +386,33 @@ class VentaCotizacionController extends Controller
 
         return redirect()->route('admin.ventas.facturas.show', $factura)
             ->with('status', "Factura {$factura->numero} emitida desde cotización {$cotizacion->numero}.");
+    }
+
+    public function imprimir(Request $request, VentaCotizacion $cotizacion): View
+    {
+        abort_unless($cotizacion->compania_id === $this->companiaActivaId($request), 404);
+
+        $cotizacion->load(['cliente', 'detalle.impuesto']);
+        $compania = Compania::find($cotizacion->compania_id);
+
+        return view('admin.ventas.cotizaciones.print', compact('cotizacion', 'compania'));
+    }
+
+    public function enviarEmail(Request $request, VentaCotizacion $cotizacion): RedirectResponse
+    {
+        abort_unless($cotizacion->compania_id === $this->companiaActivaId($request), 404);
+
+        $data = $request->validate([
+            'destinatario' => ['required', 'email', 'max:255'],
+            'mensaje'      => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $cotizacion->load(['cliente', 'detalle.impuesto']);
+        $compania = Compania::find($cotizacion->compania_id);
+
+        Mail::to($data['destinatario'])->send(new CotizacionMail($cotizacion, $compania, $data['mensaje'] ?? null));
+
+        return back()->with('status', "Cotización enviada a {$data['destinatario']}.");
     }
 
     private function clientes(int $companiaId)

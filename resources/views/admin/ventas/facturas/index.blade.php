@@ -5,6 +5,9 @@
             <div class="flex items-center gap-2">
                 <a href="{{ route('admin.ventas.facturas.index', array_merge(request()->query(), ['export' => 'xlsx'])) }}" class="rounded-md border border-green-300 bg-white px-3 py-2 text-sm text-green-700 hover:bg-green-50">Excel</a>
                 <a href="{{ route('admin.ventas.facturas.index', array_merge(request()->query(), ['export' => 'pdf'])) }}" class="rounded-md border border-red-300 bg-white px-3 py-2 text-sm text-red-700 hover:bg-red-50">PDF</a>
+                @can('ventas.gestionar')
+                <a href="{{ route('admin.ventas.facturas.create') }}" class="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500">+ Nueva factura</a>
+                @endcan
             </div>
         </div>
     </x-slot>
@@ -101,7 +104,7 @@
                             @empty
                                 <tr>
                                     <td colspan="8" class="px-4 py-10 text-center text-gray-500">
-                                        No hay facturas. Las facturas se generan al convertir una cotización.
+                                        No hay facturas.
                                     </td>
                                 </tr>
                             @endforelse

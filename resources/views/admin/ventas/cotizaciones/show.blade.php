@@ -118,6 +118,60 @@
                         </div>
                     @endcan
                 </div>
+
+                {{-- Utilidades --}}
+                <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-4"
+                     x-data="{ emailOpen: false }">
+
+                    <a href="{{ route('admin.ventas.cotizaciones.imprimir', $cotizacion) }}" target="_blank"
+                       class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.75 19.5m10.56-5.671l-.001.063A43.16 43.16 0 0117.25 19.5m0 0a2.25 2.25 0 01-4.5 0m4.5 0a2.25 2.25 0 00-4.5 0m0 0H9.75m4.5 0H9.75M6.75 7.5h10.5M5.25 7.5H3.75m16.5 0h-1.5M5.25 7.5a2.25 2.25 0 01-2.25-2.25V5.25A2.25 2.25 0 015.25 3h13.5a2.25 2.25 0 012.25 2.25v.002A2.25 2.25 0 0118.75 7.5" />
+                        </svg>
+                        Imprimir / PDF
+                    </a>
+
+                    <button @click="emailOpen = true"
+                            class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+                        </svg>
+                        Enviar por email
+                    </button>
+
+                    {{-- Modal email --}}
+                    <div x-show="emailOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                        <div class="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl">
+                            <h3 class="mb-4 text-base font-semibold text-gray-800">Enviar cotización por email</h3>
+                            <form method="POST" action="{{ route('admin.ventas.cotizaciones.email', $cotizacion) }}">
+                                @csrf
+                                <div class="space-y-3">
+                                    <div>
+                                        <x-input-label for="destinatario" value="Destinatario *" />
+                                        <x-text-input id="destinatario" name="destinatario" type="email" class="mt-1 block w-full" required
+                                                      value="{{ $cotizacion->cliente->email ?? '' }}" />
+                                    </div>
+                                    <div>
+                                        <x-input-label for="mensaje" value="Mensaje (opcional)" />
+                                        <textarea id="mensaje" name="mensaje" rows="3"
+                                                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                                                  placeholder="Texto adicional que aparecerá en el correo"></textarea>
+                                    </div>
+                                </div>
+                                <div class="mt-5 flex gap-3">
+                                    <button type="submit"
+                                            class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
+                                        Enviar
+                                    </button>
+                                    <button type="button" @click="emailOpen = false"
+                                            class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
+                                        Cancelar
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             {{-- Detalle --}}

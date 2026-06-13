@@ -41,6 +41,12 @@ use App\Http\Controllers\Admin\AfiActivoController;
 use App\Http\Controllers\Admin\AfiCategoriaController;
 use App\Http\Controllers\Admin\AfiRevaluacionController;
 use App\Http\Controllers\Admin\AfiUbicacionController;
+use App\Http\Controllers\Admin\PrhCuotaController;
+use App\Http\Controllers\Admin\PrhEdificioController;
+use App\Http\Controllers\Admin\PrhPagoController;
+use App\Http\Controllers\Admin\PrhPropietarioController;
+use App\Http\Controllers\Admin\PrhTipoCuotaController;
+use App\Http\Controllers\Admin\PrhUnidadController;
 use App\Http\Controllers\Admin\BcoChequeController;
 use App\Http\Controllers\Admin\CajaController;
 use App\Http\Controllers\Admin\CajaOperacionController;
@@ -253,6 +259,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::middleware('permission:ventas.ver')->group(function () {
         Route::get('ventas/cotizaciones', [VentaCotizacionController::class, 'index'])->name('ventas.cotizaciones.index');
         Route::get('ventas/cotizaciones/{cotizacion}', [VentaCotizacionController::class, 'show'])->whereNumber('cotizacion')->name('ventas.cotizaciones.show');
+        Route::get('ventas/cotizaciones/{cotizacion}/imprimir', [VentaCotizacionController::class, 'imprimir'])->whereNumber('cotizacion')->name('ventas.cotizaciones.imprimir');
     });
 
     Route::middleware('permission:ventas.gestionar')->group(function () {
@@ -261,6 +268,9 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('ventas/cotizaciones/{cotizacion}/estado', [VentaCotizacionController::class, 'cambiarEstado'])->whereNumber('cotizacion')->name('ventas.cotizaciones.estado');
         Route::post('ventas/cotizaciones/{cotizacion}/anular', [VentaCotizacionController::class, 'anular'])->whereNumber('cotizacion')->name('ventas.cotizaciones.anular');
         Route::post('ventas/cotizaciones/{cotizacion}/facturar', [VentaCotizacionController::class, 'facturar'])->whereNumber('cotizacion')->name('ventas.cotizaciones.facturar');
+        Route::post('ventas/cotizaciones/{cotizacion}/email', [VentaCotizacionController::class, 'enviarEmail'])->whereNumber('cotizacion')->name('ventas.cotizaciones.email');
+        Route::get('ventas/facturas/nueva', [VentaFacturaController::class, 'create'])->name('ventas.facturas.create');
+        Route::post('ventas/facturas', [VentaFacturaController::class, 'store'])->name('ventas.facturas.store');
         Route::post('ventas/facturas/{factura}/anular', [VentaFacturaController::class, 'anular'])->whereNumber('factura')->name('ventas.facturas.anular');
     });
 
@@ -409,6 +419,47 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::middleware('permission:contabilidad.gestionar')->group(function () {
         Route::post('contabilidad/cierres', [CglCierreController::class, 'store'])->name('contabilidad.cierres.store');
         Route::post('contabilidad/cierres/{cierre}/cerrar', [CglCierreController::class, 'cerrar'])->whereNumber('cierre')->name('contabilidad.cierres.cerrar');
+    });
+
+    // ── Propiedad Horizontal (prh_*) ─────────────────────────────────────────
+    Route::middleware('permission:prh.ver')->group(function () {
+        Route::get('prh/edificios', [PrhEdificioController::class, 'index'])->name('prh.edificios.index');
+        Route::get('prh/edificios/{edificio}', [PrhEdificioController::class, 'show'])->whereNumber('edificio')->name('prh.edificios.show');
+        Route::get('prh/propietarios', [PrhPropietarioController::class, 'index'])->name('prh.propietarios.index');
+        Route::get('prh/tipos-cuota', [PrhTipoCuotaController::class, 'index'])->name('prh.tipos-cuota.index');
+        Route::get('prh/cuotas', [PrhCuotaController::class, 'index'])->name('prh.cuotas.index');
+        Route::get('prh/pagos', [PrhPagoController::class, 'index'])->name('prh.pagos.index');
+        Route::get('prh/edificios/{edificio}/unidades', [PrhUnidadController::class, 'index'])->whereNumber('edificio')->name('prh.edificios.unidades.index');
+    });
+
+    Route::middleware('permission:prh.gestionar')->group(function () {
+        Route::get('prh/edificios/nuevo', [PrhEdificioController::class, 'create'])->name('prh.edificios.create');
+        Route::post('prh/edificios', [PrhEdificioController::class, 'store'])->name('prh.edificios.store');
+        Route::get('prh/edificios/{edificio}/editar', [PrhEdificioController::class, 'edit'])->whereNumber('edificio')->name('prh.edificios.edit');
+        Route::put('prh/edificios/{edificio}', [PrhEdificioController::class, 'update'])->whereNumber('edificio')->name('prh.edificios.update');
+        Route::delete('prh/edificios/{edificio}', [PrhEdificioController::class, 'destroy'])->whereNumber('edificio')->name('prh.edificios.destroy');
+
+        Route::get('prh/edificios/{edificio}/unidades/nueva', [PrhUnidadController::class, 'create'])->whereNumber('edificio')->name('prh.edificios.unidades.create');
+        Route::post('prh/edificios/{edificio}/unidades', [PrhUnidadController::class, 'store'])->whereNumber('edificio')->name('prh.edificios.unidades.store');
+        Route::get('prh/edificios/{edificio}/unidades/{unidad}/editar', [PrhUnidadController::class, 'edit'])->whereNumber(['edificio', 'unidad'])->name('prh.edificios.unidades.edit');
+        Route::put('prh/edificios/{edificio}/unidades/{unidad}', [PrhUnidadController::class, 'update'])->whereNumber(['edificio', 'unidad'])->name('prh.edificios.unidades.update');
+        Route::delete('prh/edificios/{edificio}/unidades/{unidad}', [PrhUnidadController::class, 'destroy'])->whereNumber(['edificio', 'unidad'])->name('prh.edificios.unidades.destroy');
+
+        Route::post('prh/propietarios', [PrhPropietarioController::class, 'store'])->name('prh.propietarios.store');
+        Route::put('prh/propietarios/{propietario}', [PrhPropietarioController::class, 'update'])->whereNumber('propietario')->name('prh.propietarios.update');
+        Route::delete('prh/propietarios/{propietario}', [PrhPropietarioController::class, 'destroy'])->whereNumber('propietario')->name('prh.propietarios.destroy');
+
+        Route::post('prh/tipos-cuota', [PrhTipoCuotaController::class, 'store'])->name('prh.tipos-cuota.store');
+        Route::put('prh/tipos-cuota/{tipoCuota}', [PrhTipoCuotaController::class, 'update'])->whereNumber('tipoCuota')->name('prh.tipos-cuota.update');
+        Route::delete('prh/tipos-cuota/{tipoCuota}', [PrhTipoCuotaController::class, 'destroy'])->whereNumber('tipoCuota')->name('prh.tipos-cuota.destroy');
+
+        Route::get('prh/cuotas/generar', [PrhCuotaController::class, 'generar'])->name('prh.cuotas.generar');
+        Route::post('prh/cuotas/generar', [PrhCuotaController::class, 'procesarGenerar'])->name('prh.cuotas.procesarGenerar');
+        Route::patch('prh/cuotas/{cuota}/anular', [PrhCuotaController::class, 'anular'])->whereNumber('cuota')->name('prh.cuotas.anular');
+
+        Route::get('prh/pagos/nuevo', [PrhPagoController::class, 'create'])->name('prh.pagos.create');
+        Route::post('prh/pagos', [PrhPagoController::class, 'store'])->name('prh.pagos.store');
+        Route::delete('prh/pagos/{pago}', [PrhPagoController::class, 'destroy'])->whereNumber('pago')->name('prh.pagos.destroy');
     });
 
     // ── Ayuda / base de conocimientos ────────────────────────────────────────
