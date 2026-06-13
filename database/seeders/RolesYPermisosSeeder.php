@@ -26,7 +26,7 @@ class RolesYPermisosSeeder extends Seeder
             'zonas.eliminar',
             // Gestión de usuarios de la compañía (nivel admin_compania)
             'usuarios_compania.gestionar',
-            // Módulos preparados para crecimiento
+            // Módulos operativos
             'contabilidad.ver',
             'compras.ver',
             'compras.gestionar',
@@ -37,10 +37,19 @@ class RolesYPermisosSeeder extends Seeder
             'caja.ver',
             'caja.gestionar',
             'inventario.ver',
+            'inventario.gestionar',
             'activos.ver',
             'activos.gestionar',
             'reportes.ver',
             'ia.ver',
+            'cxc.ver',
+            'cxc.gestionar',
+            'cxp.ver',
+            'cxp.gestionar',
+            'contabilidad.gestionar',
+            'usuarios_compania.ver',
+            'fel.ver',
+            'fel.gestionar',
             // Visibilidad de campos sensibles
             'companias.campo.facturacion_fiscal',
         ];

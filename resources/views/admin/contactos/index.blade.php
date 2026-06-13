@@ -62,6 +62,7 @@
                             <div class="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
                                 <span class="text-xs text-slate-500">{{ $contacto->telefono ?: '' }}</span>
                                 <span class="flex gap-4 text-sm font-medium">
+                                    <a href="{{ route('admin.contactos.detalle', $contacto) }}" class="text-blue-600">Detalle</a>
                                     @can('contactos.editar')
                                         <a href="{{ route('admin.contactos.edit', $contacto) }}" class="text-indigo-600">Editar</a>
                                     @endcan
@@ -113,6 +114,7 @@
                                         </span>
                                     </td>
                                     <td class="px-6 py-3 text-right font-medium">
+                                        <a href="{{ route('admin.contactos.detalle', $contacto) }}" class="text-blue-600 hover:text-blue-900 mr-3">Detalle</a>
                                         @can('contactos.editar')
                                             <a href="{{ route('admin.contactos.edit', $contacto) }}" class="text-indigo-600 hover:text-indigo-900">Editar</a>
                                         @endcan

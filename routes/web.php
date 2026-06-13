@@ -20,13 +20,6 @@ use App\Http\Controllers\Admin\ReporteComparativoController;
 use App\Http\Controllers\Admin\ReporteResultadosController;
 use App\Http\Controllers\Admin\FelConfiguracionController;
 use App\Http\Controllers\Admin\BancoCuentaController;
-use App\Http\Controllers\Admin\AfiActivoController;
-use App\Http\Controllers\Admin\AfiCategoriaController;
-use App\Http\Controllers\Admin\AfiUbicacionController;
-use App\Http\Controllers\Admin\CajaController;
-use App\Http\Controllers\Admin\CajaOperacionController;
-use App\Http\Controllers\Admin\CompraOrdenController;
-use App\Http\Controllers\Admin\CompraRecepcionController;
 use App\Http\Controllers\Admin\CuentaDefaultController;
 use App\Http\Controllers\Admin\DiarioController;
 use App\Http\Controllers\Admin\GastoController;
@@ -37,7 +30,34 @@ use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\UsuarioCompaniaController;
 use App\Http\Controllers\Admin\VentaCotizacionController;
 use App\Http\Controllers\Admin\VentaFacturaController;
+use App\Http\Controllers\Admin\VentaReciboController;
+use App\Http\Controllers\Admin\VentaNotaCreditoController;
+use App\Http\Controllers\Admin\BcoBancoController;
+use App\Http\Controllers\Admin\BcoCuentaController;
+use App\Http\Controllers\Admin\BcoMovimientoController;
+use App\Http\Controllers\Admin\BcoTransferenciaController;
+use App\Http\Controllers\Admin\BcoConciliacionController;
+use App\Http\Controllers\Admin\AfiActivoController;
+use App\Http\Controllers\Admin\AfiCategoriaController;
+use App\Http\Controllers\Admin\AfiRevaluacionController;
+use App\Http\Controllers\Admin\AfiUbicacionController;
+use App\Http\Controllers\Admin\BcoChequeController;
+use App\Http\Controllers\Admin\CajaController;
+use App\Http\Controllers\Admin\CajaOperacionController;
+use App\Http\Controllers\Admin\CompraOrdenController;
+use App\Http\Controllers\Admin\CompraRecepcionController;
+use App\Http\Controllers\Admin\InvAlmacenController;
+use App\Http\Controllers\Admin\InvMovimientoController;
+use App\Http\Controllers\Admin\ItemProductoController;
 use App\Http\Controllers\Admin\ZonaController;
+use App\Http\Controllers\Admin\BcoDepositoController;
+use App\Http\Controllers\Admin\CglCierreController;
+use App\Http\Controllers\Admin\ConfiguracionController;
+use App\Http\Controllers\Admin\ContactoExtController;
+use App\Http\Controllers\Admin\InvKardexController;
+use App\Http\Controllers\Admin\InvTransferenciaController;
+use App\Http\Controllers\Admin\ItemPrecioController;
+use App\Http\Controllers\Admin\VentaVendedorController;
 use App\Http\Controllers\CompaniaActivaController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ProfileController;
@@ -165,7 +185,6 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::middleware('permission:compras.gestionar')->group(function () {
         Route::get('compras/gastos/nuevo', [GastoController::class, 'create'])->name('compras.gastos.create');
         Route::post('compras/gastos', [GastoController::class, 'store'])->name('compras.gastos.store');
-
         Route::get('compras/ordenes/nueva', [CompraOrdenController::class, 'create'])->name('compras.ordenes.create');
         Route::post('compras/ordenes', [CompraOrdenController::class, 'store'])->name('compras.ordenes.store');
         Route::post('compras/ordenes/{orden}/aprobar', [CompraOrdenController::class, 'aprobar'])->whereNumber('orden')->name('compras.ordenes.aprobar');
@@ -175,39 +194,60 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     });
 
     Route::middleware('permission:caja.ver')->group(function () {
-        Route::get('caja/cajas', [CajaController::class, 'index'])->name('caja.cajas.index');
-        Route::get('caja/cajas/{caja}', [CajaController::class, 'show'])->whereNumber('caja')->name('caja.cajas.show');
+        Route::get('caja', [CajaController::class, 'index'])->name('caja.index');
+        Route::get('caja/{caja}', [CajaController::class, 'show'])->whereNumber('caja')->name('caja.show');
     });
 
     Route::middleware('permission:caja.gestionar')->group(function () {
-        Route::post('caja/cajas', [CajaController::class, 'store'])->name('caja.cajas.store');
-        Route::put('caja/cajas/{caja}', [CajaController::class, 'update'])->whereNumber('caja')->name('caja.cajas.update');
-        Route::post('caja/cajas/{caja}/toggle', [CajaController::class, 'toggle'])->whereNumber('caja')->name('caja.cajas.toggle');
-        Route::post('caja/cajas/{caja}/movimientos', [CajaOperacionController::class, 'movimiento'])->whereNumber('caja')->name('caja.cajas.movimientos');
-        Route::post('caja/cajas/{caja}/reembolsos', [CajaOperacionController::class, 'reembolso'])->whereNumber('caja')->name('caja.cajas.reembolsos');
-        Route::post('caja/cajas/{caja}/vales', [CajaOperacionController::class, 'vale'])->whereNumber('caja')->name('caja.cajas.vales');
-        Route::post('caja/vales/{vale}/liquidar', [CajaOperacionController::class, 'liquidarVale'])->whereNumber('vale')->name('caja.vales.liquidar');
-        Route::post('caja/cajas/{caja}/arqueos', [CajaOperacionController::class, 'arqueo'])->whereNumber('caja')->name('caja.cajas.arqueos');
+        Route::post('caja', [CajaController::class, 'store'])->name('caja.store');
+        Route::put('caja/{caja}', [CajaController::class, 'update'])->whereNumber('caja')->name('caja.update');
+        Route::post('caja/{caja}/toggle', [CajaController::class, 'toggle'])->whereNumber('caja')->name('caja.toggle');
+        Route::post('caja/{caja}/movimiento', [CajaOperacionController::class, 'movimiento'])->whereNumber('caja')->name('caja.movimiento');
+        Route::post('caja/{caja}/reembolso', [CajaOperacionController::class, 'reembolso'])->whereNumber('caja')->name('caja.reembolso');
+        Route::post('caja/{caja}/vale', [CajaOperacionController::class, 'vale'])->whereNumber('caja')->name('caja.vale');
+        Route::post('caja/vales/{vale}/liquidar', [CajaOperacionController::class, 'liquidarVale'])->whereNumber('vale')->name('caja.vale.liquidar');
+        Route::post('caja/{caja}/arqueo', [CajaOperacionController::class, 'arqueo'])->whereNumber('caja')->name('caja.arqueo');
     });
 
     Route::middleware('permission:activos.ver')->group(function () {
-        Route::get('activos/activos', [AfiActivoController::class, 'index'])->name('activos.activos.index');
-        Route::get('activos/activos/{activo}', [AfiActivoController::class, 'show'])->whereNumber('activo')->name('activos.activos.show');
+        Route::get('activos', [AfiActivoController::class, 'index'])->name('activos.index');
         Route::get('activos/categorias', [AfiCategoriaController::class, 'index'])->name('activos.categorias.index');
         Route::get('activos/ubicaciones', [AfiUbicacionController::class, 'index'])->name('activos.ubicaciones.index');
+        Route::get('activos/{activo}', [AfiActivoController::class, 'show'])->whereNumber('activo')->name('activos.show');
     });
 
     Route::middleware('permission:activos.gestionar')->group(function () {
-        Route::get('activos/activos/crear', [AfiActivoController::class, 'create'])->name('activos.activos.create');
-        Route::post('activos/activos', [AfiActivoController::class, 'store'])->name('activos.activos.store');
-        Route::post('activos/activos/{activo}/depreciar', [AfiActivoController::class, 'depreciar'])->whereNumber('activo')->name('activos.activos.depreciar');
-        Route::post('activos/activos/{activo}/baja', [AfiActivoController::class, 'baja'])->whereNumber('activo')->name('activos.activos.baja');
+        Route::get('activos/nuevo', [AfiActivoController::class, 'create'])->name('activos.create');
+        Route::post('activos', [AfiActivoController::class, 'store'])->name('activos.store');
+        Route::post('activos/{activo}/depreciar', [AfiActivoController::class, 'depreciar'])->whereNumber('activo')->name('activos.depreciar');
+        Route::post('activos/{activo}/baja', [AfiActivoController::class, 'baja'])->whereNumber('activo')->name('activos.baja');
         Route::post('activos/categorias', [AfiCategoriaController::class, 'store'])->name('activos.categorias.store');
         Route::put('activos/categorias/{categoria}', [AfiCategoriaController::class, 'update'])->whereNumber('categoria')->name('activos.categorias.update');
         Route::delete('activos/categorias/{categoria}', [AfiCategoriaController::class, 'destroy'])->whereNumber('categoria')->name('activos.categorias.destroy');
         Route::post('activos/ubicaciones', [AfiUbicacionController::class, 'store'])->name('activos.ubicaciones.store');
         Route::put('activos/ubicaciones/{ubicacion}', [AfiUbicacionController::class, 'update'])->whereNumber('ubicacion')->name('activos.ubicaciones.update');
         Route::delete('activos/ubicaciones/{ubicacion}', [AfiUbicacionController::class, 'destroy'])->whereNumber('ubicacion')->name('activos.ubicaciones.destroy');
+    });
+
+    Route::middleware('permission:inventario.ver')->group(function () {
+        Route::get('inventario/almacenes', [InvAlmacenController::class, 'index'])->name('inventario.almacenes.index');
+        Route::get('inventario/almacenes/{almacen}/existencias', [InvAlmacenController::class, 'existencias'])->whereNumber('almacen')->name('inventario.almacenes.existencias');
+        Route::get('inventario/movimientos', [InvMovimientoController::class, 'index'])->name('inventario.movimientos.index');
+        Route::get('inventario/movimientos/{movimiento}', [InvMovimientoController::class, 'show'])->whereNumber('movimiento')->name('inventario.movimientos.show');
+        Route::get('items', [ItemProductoController::class, 'index'])->name('items.index');
+        Route::get('items/{item}/edit', [ItemProductoController::class, 'edit'])->whereNumber('item')->name('items.edit');
+    });
+
+    Route::middleware('permission:inventario.gestionar')->group(function () {
+        Route::get('items/nuevo', [ItemProductoController::class, 'create'])->name('items.create');
+        Route::post('items', [ItemProductoController::class, 'store'])->name('items.store');
+        Route::put('items/{item}', [ItemProductoController::class, 'update'])->whereNumber('item')->name('items.update');
+        Route::post('items/{item}/toggle', [ItemProductoController::class, 'toggle'])->whereNumber('item')->name('items.toggle');
+        Route::post('inventario/almacenes', [InvAlmacenController::class, 'store'])->name('inventario.almacenes.store');
+        Route::put('inventario/almacenes/{almacen}', [InvAlmacenController::class, 'update'])->whereNumber('almacen')->name('inventario.almacenes.update');
+        Route::post('inventario/almacenes/{almacen}/toggle', [InvAlmacenController::class, 'toggle'])->whereNumber('almacen')->name('inventario.almacenes.toggle');
+        Route::get('inventario/movimientos/nuevo', [InvMovimientoController::class, 'create'])->name('inventario.movimientos.create');
+        Route::post('inventario/movimientos', [InvMovimientoController::class, 'store'])->name('inventario.movimientos.store');
     });
 
     Route::middleware('permission:ventas.ver')->group(function () {
@@ -227,6 +267,48 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::middleware('permission:ventas.ver')->group(function () {
         Route::get('ventas/facturas', [VentaFacturaController::class, 'index'])->name('ventas.facturas.index');
         Route::get('ventas/facturas/{factura}', [VentaFacturaController::class, 'show'])->whereNumber('factura')->name('ventas.facturas.show');
+        Route::get('ventas/recibos', [VentaReciboController::class, 'index'])->name('ventas.recibos.index');
+        Route::get('ventas/recibos/{recibo}', [VentaReciboController::class, 'show'])->whereNumber('recibo')->name('ventas.recibos.show');
+        Route::get('ventas/notas-credito', [VentaNotaCreditoController::class, 'index'])->name('ventas.notas-credito.index');
+        Route::get('ventas/notas-credito/{notaCredito}', [VentaNotaCreditoController::class, 'show'])->whereNumber('notaCredito')->name('ventas.notas-credito.show');
+    });
+
+    Route::middleware('permission:ventas.gestionar')->group(function () {
+        Route::get('ventas/recibos/nuevo', [VentaReciboController::class, 'create'])->name('ventas.recibos.create');
+        Route::post('ventas/recibos', [VentaReciboController::class, 'store'])->name('ventas.recibos.store');
+        Route::post('ventas/recibos/{recibo}/anular', [VentaReciboController::class, 'anular'])->whereNumber('recibo')->name('ventas.recibos.anular');
+        Route::get('ventas/notas-credito/nueva', [VentaNotaCreditoController::class, 'create'])->name('ventas.notas-credito.create');
+        Route::post('ventas/notas-credito', [VentaNotaCreditoController::class, 'store'])->name('ventas.notas-credito.store');
+        Route::post('ventas/notas-credito/{notaCredito}/anular', [VentaNotaCreditoController::class, 'anular'])->whereNumber('notaCredito')->name('ventas.notas-credito.anular');
+    });
+
+    // Módulo bancario (bco_*)
+    Route::middleware('permission:bancos.ver')->group(function () {
+        Route::get('bco/cuentas', [BcoCuentaController::class, 'index'])->name('bco.cuentas.index');
+        Route::get('bco/cuentas/{cuenta}', [BcoCuentaController::class, 'show'])->whereNumber('cuenta')->name('bco.cuentas.show');
+        Route::get('bco/movimientos', [BcoMovimientoController::class, 'index'])->name('bco.movimientos.index');
+        Route::get('bco/movimientos/{movimiento}', [BcoMovimientoController::class, 'show'])->whereNumber('movimiento')->name('bco.movimientos.show');
+        Route::get('bco/transferencias', [BcoTransferenciaController::class, 'index'])->name('bco.transferencias.index');
+        Route::get('bco/transferencias/{transferencia}', [BcoTransferenciaController::class, 'show'])->whereNumber('transferencia')->name('bco.transferencias.show');
+        Route::get('bco/conciliaciones', [BcoConciliacionController::class, 'index'])->name('bco.conciliaciones.index');
+        Route::get('bco/conciliaciones/{conciliacion}', [BcoConciliacionController::class, 'show'])->whereNumber('conciliacion')->name('bco.conciliaciones.show');
+    });
+
+    Route::middleware('permission:bancos.gestionar')->group(function () {
+        Route::post('bco/bancos', [BcoBancoController::class, 'store'])->name('bco.bancos.store');
+        Route::put('bco/bancos/{banco}', [BcoBancoController::class, 'update'])->whereNumber('banco')->name('bco.bancos.update');
+        Route::post('bco/bancos/{banco}/toggle', [BcoBancoController::class, 'toggle'])->whereNumber('banco')->name('bco.bancos.toggle');
+        Route::post('bco/cuentas', [BcoCuentaController::class, 'store'])->name('bco.cuentas.store');
+        Route::put('bco/cuentas/{cuenta}', [BcoCuentaController::class, 'update'])->whereNumber('cuenta')->name('bco.cuentas.update');
+        Route::post('bco/cuentas/{cuenta}/toggle', [BcoCuentaController::class, 'toggle'])->whereNumber('cuenta')->name('bco.cuentas.toggle');
+        Route::get('bco/movimientos/nuevo', [BcoMovimientoController::class, 'create'])->name('bco.movimientos.create');
+        Route::post('bco/movimientos', [BcoMovimientoController::class, 'store'])->name('bco.movimientos.store');
+        Route::get('bco/transferencias/nueva', [BcoTransferenciaController::class, 'create'])->name('bco.transferencias.create');
+        Route::post('bco/transferencias', [BcoTransferenciaController::class, 'store'])->name('bco.transferencias.store');
+        Route::get('bco/conciliaciones/nueva', [BcoConciliacionController::class, 'create'])->name('bco.conciliaciones.create');
+        Route::post('bco/conciliaciones', [BcoConciliacionController::class, 'store'])->name('bco.conciliaciones.store');
+        Route::post('bco/conciliaciones/{conciliacion}/marcar', [BcoConciliacionController::class, 'marcar'])->whereNumber('conciliacion')->name('bco.conciliaciones.marcar');
+        Route::post('bco/conciliaciones/{conciliacion}/cerrar', [BcoConciliacionController::class, 'cerrar'])->whereNumber('conciliacion')->name('bco.conciliaciones.cerrar');
     });
 
     Route::middleware('permission:fel.ver')->group(function () {
@@ -258,6 +340,95 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
             ->parameters(['usuarios-compania' => 'user']);
         Route::get('usuarios-compania/{user}/permisos', [UsuarioCompaniaController::class, 'editarPermisos'])->name('usuarios-compania.permisos.edit');
         Route::put('usuarios-compania/{user}/permisos', [UsuarioCompaniaController::class, 'actualizarPermisos'])->name('usuarios-compania.permisos.update');
+    });
+
+    // ── Bancos: Cheques y Depósitos ──────────────────────────────────────────
+    Route::middleware('permission:bancos.ver')->group(function () {
+        Route::get('bco/cheques', [BcoChequeController::class, 'index'])->name('bco.cheques.index');
+        Route::get('bco/cheques/{cheque}', [BcoChequeController::class, 'show'])->whereNumber('cheque')->name('bco.cheques.show');
+        Route::get('bco/depositos', [BcoDepositoController::class, 'index'])->name('bco.depositos.index');
+        Route::get('bco/depositos/{deposito}', [BcoDepositoController::class, 'show'])->whereNumber('deposito')->name('bco.depositos.show');
+    });
+    Route::middleware('permission:bancos.gestionar')->group(function () {
+        Route::get('bco/cheques/nuevo', [BcoChequeController::class, 'create'])->name('bco.cheques.create');
+        Route::post('bco/cheques', [BcoChequeController::class, 'store'])->name('bco.cheques.store');
+        Route::post('bco/cheques/{cheque}/estado', [BcoChequeController::class, 'cambiarEstado'])->whereNumber('cheque')->name('bco.cheques.estado');
+        Route::get('bco/depositos/nuevo', [BcoDepositoController::class, 'create'])->name('bco.depositos.create');
+        Route::post('bco/depositos', [BcoDepositoController::class, 'store'])->name('bco.depositos.store');
+    });
+
+    // ── Inventario avanzado ──────────────────────────────────────────────────
+    Route::middleware('permission:inventario.ver')->group(function () {
+        Route::get('inventario/kardex', [InvKardexController::class, 'index'])->name('inventario.kardex.index');
+        Route::get('inventario/transferencias', [InvTransferenciaController::class, 'index'])->name('inventario.transferencias.index');
+        Route::get('inventario/transferencias/{transferencia}', [InvTransferenciaController::class, 'show'])->whereNumber('transferencia')->name('inventario.transferencias.show');
+    });
+    Route::middleware('permission:inventario.gestionar')->group(function () {
+        Route::get('inventario/transferencias/nueva', [InvTransferenciaController::class, 'create'])->name('inventario.transferencias.create');
+        Route::post('inventario/transferencias', [InvTransferenciaController::class, 'store'])->name('inventario.transferencias.store');
+        // Lista de precios de items
+        Route::post('items/{item}/precios', [ItemPrecioController::class, 'store'])->whereNumber('item')->name('items.precios.store');
+        Route::put('items/{item}/precios/{precio}', [ItemPrecioController::class, 'update'])->whereNumber(['item', 'precio'])->name('items.precios.update');
+        Route::delete('items/{item}/precios/{precio}', [ItemPrecioController::class, 'destroy'])->whereNumber(['item', 'precio'])->name('items.precios.destroy');
+    });
+
+    // ── Ventas: Vendedores ───────────────────────────────────────────────────
+    Route::middleware('permission:ventas.ver')->group(function () {
+        Route::get('ventas/vendedores', [VentaVendedorController::class, 'index'])->name('ventas.vendedores.index');
+        Route::get('ventas/vendedores/{vendedor}', [VentaVendedorController::class, 'show'])->whereNumber('vendedor')->name('ventas.vendedores.show');
+    });
+    Route::middleware('permission:ventas.gestionar')->group(function () {
+        Route::get('ventas/vendedores/nuevo', [VentaVendedorController::class, 'create'])->name('ventas.vendedores.create');
+        Route::post('ventas/vendedores', [VentaVendedorController::class, 'store'])->name('ventas.vendedores.store');
+        Route::put('ventas/vendedores/{vendedor}', [VentaVendedorController::class, 'update'])->whereNumber('vendedor')->name('ventas.vendedores.update');
+        Route::post('ventas/vendedores/{vendedor}/toggle', [VentaVendedorController::class, 'toggle'])->whereNumber('vendedor')->name('ventas.vendedores.toggle');
+    });
+
+    // ── Contactos extendidos ─────────────────────────────────────────────────
+    Route::get('contactos/{contacto}/detalle', [ContactoExtController::class, 'show'])->whereNumber('contacto')->name('contactos.detalle');
+    Route::post('contactos/{contacto}/cuentas-bancarias', [ContactoExtController::class, 'storeCuentaBancaria'])->whereNumber('contacto')->name('contactos.cuentas-bancarias.store');
+    Route::delete('contactos/{contacto}/cuentas-bancarias/{cuenta}', [ContactoExtController::class, 'destroyCuentaBancaria'])->whereNumber(['contacto', 'cuenta'])->name('contactos.cuentas-bancarias.destroy');
+    Route::post('contactos/{contacto}/direcciones', [ContactoExtController::class, 'storeDireccion'])->whereNumber('contacto')->name('contactos.direcciones.store');
+    Route::delete('contactos/{contacto}/direcciones/{direccion}', [ContactoExtController::class, 'destroyDireccion'])->whereNumber(['contacto', 'direccion'])->name('contactos.direcciones.destroy');
+    Route::post('contactos/{contacto}/personas', [ContactoExtController::class, 'storePersona'])->whereNumber('contacto')->name('contactos.personas.store');
+    Route::delete('contactos/{contacto}/personas/{persona}', [ContactoExtController::class, 'destroyPersona'])->whereNumber(['contacto', 'persona'])->name('contactos.personas.destroy');
+
+    // ── Activos Fijos: Revaluaciones ─────────────────────────────────────────
+    Route::middleware('permission:activos.ver')->group(function () {
+        Route::get('activos/{activo}/revaluaciones', [AfiRevaluacionController::class, 'create'])->whereNumber('activo')->name('activos.revaluaciones.create');
+    });
+    Route::middleware('permission:activos.gestionar')->group(function () {
+        Route::post('activos/{activo}/revaluaciones', [AfiRevaluacionController::class, 'store'])->whereNumber('activo')->name('activos.revaluaciones.store');
+    });
+
+    // ── Cierre contable ──────────────────────────────────────────────────────
+    Route::middleware('permission:contabilidad.ver')->group(function () {
+        Route::get('contabilidad/cierres', [CglCierreController::class, 'index'])->name('contabilidad.cierres.index');
+        Route::get('contabilidad/cierres/{cierre}', [CglCierreController::class, 'show'])->whereNumber('cierre')->name('contabilidad.cierres.show');
+    });
+    Route::middleware('permission:contabilidad.gestionar')->group(function () {
+        Route::post('contabilidad/cierres', [CglCierreController::class, 'store'])->name('contabilidad.cierres.store');
+        Route::post('contabilidad/cierres/{cierre}/cerrar', [CglCierreController::class, 'cerrar'])->whereNumber('cierre')->name('contabilidad.cierres.cerrar');
+    });
+
+    // ── Configuración general (catálogos core) ───────────────────────────────
+    Route::middleware('permission:contabilidad.ver')->group(function () {
+        Route::get('configuracion', [ConfiguracionController::class, 'index'])->name('configuracion.index');
+    });
+    Route::middleware('permission:contabilidad.gestionar')->group(function () {
+        Route::post('configuracion/sucursales', [ConfiguracionController::class, 'storeSucursal'])->name('configuracion.sucursales.store');
+        Route::put('configuracion/sucursales/{sucursal}', [ConfiguracionController::class, 'updateSucursal'])->whereNumber('sucursal')->name('configuracion.sucursales.update');
+        Route::post('configuracion/sucursales/{sucursal}/toggle', [ConfiguracionController::class, 'toggleSucursal'])->whereNumber('sucursal')->name('configuracion.sucursales.toggle');
+        Route::post('configuracion/departamentos', [ConfiguracionController::class, 'storeDepartamento'])->name('configuracion.departamentos.store');
+        Route::put('configuracion/departamentos/{departamento}', [ConfiguracionController::class, 'updateDepartamento'])->whereNumber('departamento')->name('configuracion.departamentos.update');
+        Route::post('configuracion/centros-costo', [ConfiguracionController::class, 'storeCentroCosto'])->name('configuracion.centros-costo.store');
+        Route::put('configuracion/centros-costo/{centroCosto}', [ConfiguracionController::class, 'updateCentroCosto'])->whereNumber('centroCosto')->name('configuracion.centros-costo.update');
+        Route::post('configuracion/proyectos', [ConfiguracionController::class, 'storeProyecto'])->name('configuracion.proyectos.store');
+        Route::put('configuracion/proyectos/{proyecto}', [ConfiguracionController::class, 'updateProyecto'])->whereNumber('proyecto')->name('configuracion.proyectos.update');
+        Route::post('configuracion/monedas', [ConfiguracionController::class, 'storeMoneda'])->name('configuracion.monedas.store');
+        Route::post('configuracion/tasas', [ConfiguracionController::class, 'storeTasa'])->name('configuracion.tasas.store');
+        Route::post('configuracion/retenciones', [ConfiguracionController::class, 'storeRetencion'])->name('configuracion.retenciones.store');
+        Route::put('configuracion/retenciones/{retencion}', [ConfiguracionController::class, 'updateRetencion'])->whereNumber('retencion')->name('configuracion.retenciones.update');
     });
 });
 
