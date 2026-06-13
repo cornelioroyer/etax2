@@ -20,6 +20,8 @@ use App\Http\Controllers\Admin\ReporteComparativoController;
 use App\Http\Controllers\Admin\ReporteResultadosController;
 use App\Http\Controllers\Admin\FelConfiguracionController;
 use App\Http\Controllers\Admin\BancoCuentaController;
+use App\Http\Controllers\Admin\CajaController;
+use App\Http\Controllers\Admin\CajaOperacionController;
 use App\Http\Controllers\Admin\CompraOrdenController;
 use App\Http\Controllers\Admin\CompraRecepcionController;
 use App\Http\Controllers\Admin\CuentaDefaultController;
@@ -167,6 +169,22 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('compras/ordenes/{orden}/anular', [CompraOrdenController::class, 'anular'])->whereNumber('orden')->name('compras.ordenes.anular');
         Route::post('compras/ordenes/{orden}/facturar', [CompraOrdenController::class, 'facturar'])->whereNumber('orden')->name('compras.ordenes.facturar');
         Route::post('compras/ordenes/{orden}/recepciones', [CompraRecepcionController::class, 'store'])->whereNumber('orden')->name('compras.ordenes.recepciones.store');
+    });
+
+    Route::middleware('permission:caja.ver')->group(function () {
+        Route::get('caja/cajas', [CajaController::class, 'index'])->name('caja.cajas.index');
+        Route::get('caja/cajas/{caja}', [CajaController::class, 'show'])->whereNumber('caja')->name('caja.cajas.show');
+    });
+
+    Route::middleware('permission:caja.gestionar')->group(function () {
+        Route::post('caja/cajas', [CajaController::class, 'store'])->name('caja.cajas.store');
+        Route::put('caja/cajas/{caja}', [CajaController::class, 'update'])->whereNumber('caja')->name('caja.cajas.update');
+        Route::post('caja/cajas/{caja}/toggle', [CajaController::class, 'toggle'])->whereNumber('caja')->name('caja.cajas.toggle');
+        Route::post('caja/cajas/{caja}/movimientos', [CajaOperacionController::class, 'movimiento'])->whereNumber('caja')->name('caja.cajas.movimientos');
+        Route::post('caja/cajas/{caja}/reembolsos', [CajaOperacionController::class, 'reembolso'])->whereNumber('caja')->name('caja.cajas.reembolsos');
+        Route::post('caja/cajas/{caja}/vales', [CajaOperacionController::class, 'vale'])->whereNumber('caja')->name('caja.cajas.vales');
+        Route::post('caja/vales/{vale}/liquidar', [CajaOperacionController::class, 'liquidarVale'])->whereNumber('vale')->name('caja.vales.liquidar');
+        Route::post('caja/cajas/{caja}/arqueos', [CajaOperacionController::class, 'arqueo'])->whereNumber('caja')->name('caja.cajas.arqueos');
     });
 
     Route::middleware('permission:ventas.ver')->group(function () {
