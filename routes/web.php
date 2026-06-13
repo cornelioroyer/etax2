@@ -19,9 +19,13 @@ use App\Http\Controllers\Admin\ReporteBalanceController;
 use App\Http\Controllers\Admin\ReporteComparativoController;
 use App\Http\Controllers\Admin\ReporteResultadosController;
 use App\Http\Controllers\Admin\FelConfiguracionController;
+use App\Http\Controllers\Admin\BancoCuentaController;
 use App\Http\Controllers\Admin\CuentaDefaultController;
 use App\Http\Controllers\Admin\DiarioController;
+use App\Http\Controllers\Admin\GastoController;
 use App\Http\Controllers\Admin\PeriodoContableController;
+use App\Http\Controllers\Admin\ReporteFlujoCajaController;
+use App\Http\Controllers\Admin\ReporteLiquidacionItbmsController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\UsuarioCompaniaController;
 use App\Http\Controllers\Admin\ZonaController;
@@ -129,6 +133,27 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::get('reportes/balance-situacion', ReporteBalanceController::class)->name('reportes.balance');
         Route::get('reportes/estado-resultado', ReporteResultadosController::class)->name('reportes.resultado');
         Route::get('reportes/comparativo-mensual', ReporteComparativoController::class)->name('reportes.comparativo');
+        Route::get('reportes/flujo-caja', ReporteFlujoCajaController::class)->name('reportes.flujo-caja');
+        Route::get('reportes/liquidacion-itbms', ReporteLiquidacionItbmsController::class)->name('reportes.liquidacion-itbms');
+    });
+
+    Route::middleware('permission:bancos.ver')->group(function () {
+        Route::get('bancos', [BancoCuentaController::class, 'index'])->name('bancos.index');
+    });
+
+    Route::middleware('permission:bancos.gestionar')->group(function () {
+        Route::post('bancos', [BancoCuentaController::class, 'store'])->name('bancos.store');
+        Route::put('bancos/{cuenta}', [BancoCuentaController::class, 'update'])->name('bancos.update');
+        Route::post('bancos/{cuenta}/toggle', [BancoCuentaController::class, 'toggleActiva'])->name('bancos.toggle');
+    });
+
+    Route::middleware('permission:compras.ver')->group(function () {
+        Route::get('compras/gastos', [GastoController::class, 'index'])->name('compras.gastos.index');
+    });
+
+    Route::middleware('permission:compras.gestionar')->group(function () {
+        Route::get('compras/gastos/nuevo', [GastoController::class, 'create'])->name('compras.gastos.create');
+        Route::post('compras/gastos', [GastoController::class, 'store'])->name('compras.gastos.store');
     });
 
     Route::middleware('permission:fel.ver')->group(function () {

@@ -36,8 +36,8 @@
                 ['label' => 'Balance de Situación', 'href' => route('admin.reportes.balance'), 'active' => request()->routeIs('admin.reportes.balance'), 'show' => $can('reportes.ver')],
                 ['label' => 'Estado de Resultado', 'href' => route('admin.reportes.resultado'), 'active' => request()->routeIs('admin.reportes.resultado'), 'show' => $can('reportes.ver')],
                 ['label' => 'Comparativo Mensual', 'href' => route('admin.reportes.comparativo'), 'active' => request()->routeIs('admin.reportes.comparativo'), 'show' => $can('reportes.ver')],
-                ['label' => 'Flujo de Efectivo', 'href' => null, 'active' => false, 'show' => $can('reportes.ver')],
-                ['label' => 'Liquidación ITBMS', 'href' => null, 'active' => false, 'show' => $can('reportes.ver')],
+                ['label' => 'Flujo de Efectivo', 'href' => route('admin.reportes.flujo-caja'), 'active' => request()->routeIs('admin.reportes.flujo-caja'), 'show' => $can('reportes.ver')],
+                ['label' => 'Liquidación ITBMS', 'href' => route('admin.reportes.liquidacion-itbms'), 'active' => request()->routeIs('admin.reportes.liquidacion-itbms'), 'show' => $can('reportes.ver')],
             ],
         ],
         [
@@ -74,11 +74,12 @@
             'key' => 'compras',
             'label' => 'Compras',
             'icon' => 'M3.75 6.75h16.5l-1.5 12h-13.5l-1.5-12ZM8.25 6.75a3.75 3.75 0 0 1 7.5 0',
+            'active' => request()->routeIs('admin.compras.*') || request()->routeIs('admin.cxp.*'),
             'show' => $can('compras.ver'),
             'children' => [
                 ['label' => 'Órdenes de compra', 'href' => null, 'active' => false, 'show' => $can('compras.ver')],
-                ['label' => 'Facturas de compra', 'href' => null, 'active' => false, 'show' => $can('compras.ver')],
-                ['label' => 'Gastos', 'href' => null, 'active' => false, 'show' => $can('compras.ver')],
+                ['label' => 'Facturas de compra', 'href' => route('admin.cxp.facturas.index'), 'active' => request()->routeIs('admin.cxp.facturas.*'), 'show' => $can('cxp.ver')],
+                ['label' => 'Gastos directos', 'href' => route('admin.compras.gastos.index'), 'active' => request()->routeIs('admin.compras.gastos.*'), 'show' => $can('compras.ver')],
             ],
         ],
         [
@@ -108,9 +109,10 @@
             'key' => 'bancos',
             'label' => 'Bancos',
             'icon' => 'M3 10.5h18M4.5 10.5V18M8.25 10.5V18M12 10.5V18m3.75-7.5V18M19.5 10.5V18M3.75 21h16.5M12 3l8.25 4.5H3.75L12 3Z',
+            'active' => request()->routeIs('admin.bancos.*'),
             'show' => $can('bancos.ver'),
             'children' => [
-                ['label' => 'Cuentas bancarias', 'href' => null, 'active' => false, 'show' => $can('bancos.ver')],
+                ['label' => 'Cuentas bancarias', 'href' => route('admin.bancos.index'), 'active' => request()->routeIs('admin.bancos.index'), 'show' => $can('bancos.ver')],
                 ['label' => 'Conciliaciones', 'href' => null, 'active' => false, 'show' => $can('bancos.ver')],
             ],
         ],
