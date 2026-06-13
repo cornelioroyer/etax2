@@ -1,3 +1,15 @@
+@php
+    $encabezadoOrden = function (string $campo, string $titulo, string $align = 'left') use ($sort, $dir, $search) {
+        $activo = $sort === $campo;
+        $nuevaDir = ($activo && $dir === 'asc') ? 'desc' : 'asc';
+        $flecha = $activo ? ($dir === 'asc' ? '▲' : '▼') : '';
+        $url = route('admin.users.index', ['sort' => $campo, 'dir' => $nuevaDir, 'search' => $search]);
+        $just = $align === 'right' ? 'justify-end' : '';
+        return '<a href="'.$url.'" class="group inline-flex items-center gap-1 '.$just.' '.($activo ? 'text-gray-900' : 'text-gray-500 hover:text-gray-700').'">'
+            .e($titulo).'<span class="text-[10px]">'.$flecha.'</span></a>';
+    };
+@endphp
+
 <x-app-layout>
     <x-slot name="header">
         <div class="flex items-center justify-between">
@@ -25,9 +37,10 @@
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
                         <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Usuario</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Rol</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Estado</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{!! $encabezadoOrden('name', 'Usuario') !!}</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{!! $encabezadoOrden('is_admin', 'Rol') !!}</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{!! $encabezadoOrden('is_active', 'Estado') !!}</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{!! $encabezadoOrden('created_at', 'Creado') !!}</th>
                             <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Acciones</th>
                         </tr>
                     </thead>
@@ -44,6 +57,7 @@
                                         {{ $user->is_active ? 'Activo' : 'Inactivo' }}
                                     </span>
                                 </td>
+                                <td class="px-6 py-4 text-sm text-gray-700">{{ $user->created_at?->format('d/m/Y H:i') ?? '—' }}</td>
                                 <td class="px-6 py-4 text-right text-sm font-medium">
                                     <a href="{{ route('admin.users.edit', $user) }}" class="text-indigo-600 hover:text-indigo-900">Editar</a>
                                     @unless ($user->is(auth()->user()))
@@ -56,7 +70,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr><td colspan="4" class="px-6 py-8 text-center text-gray-500">No hay usuarios.</td></tr>
+                            <tr><td colspan="5" class="px-6 py-8 text-center text-gray-500">No hay usuarios.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

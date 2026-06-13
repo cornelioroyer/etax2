@@ -16,6 +16,10 @@ class UserController extends Controller
     {
         $search = trim((string) $request->query('search', ''));
 
+        $ordenables = ['name', 'email', 'is_admin', 'is_active', 'created_at'];
+        $sort = in_array($request->query('sort'), $ordenables, true) ? $request->query('sort') : 'created_at';
+        $dir = in_array($request->query('dir'), ['asc', 'desc'], true) ? $request->query('dir') : 'desc';
+
         $users = User::query()
             ->when($search !== '', function ($query) use ($search) {
                 $query->where(function ($query) use ($search) {
@@ -23,11 +27,11 @@ class UserController extends Controller
                         ->orWhere('email', 'ilike', "%{$search}%");
                 });
             })
-            ->orderBy('name')
+            ->orderBy($sort, $dir)
             ->paginate(15)
             ->withQueryString();
 
-        return view('admin.users.index', compact('users', 'search'));
+        return view('admin.users.index', compact('users', 'search', 'sort', 'dir'));
     }
 
     public function create(): View
