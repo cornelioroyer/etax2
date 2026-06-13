@@ -2,7 +2,7 @@
     <x-slot name="header">
         <div class="flex items-center justify-between">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Nuevo activo fijo</h2>
-            <a href="{{ route('admin.activos.activos.index') }}" class="text-sm text-gray-600 hover:text-gray-900">← Volver al listado</a>
+            <a href="{{ route('admin.activos.index') }}" class="text-sm text-gray-600 hover:text-gray-900">← Volver al listado</a>
         </div>
     </x-slot>
 
@@ -30,7 +30,7 @@
                     </div>
                 @endif
 
-                <form method="POST" action="{{ route('admin.activos.activos.store') }}">
+                <form method="POST" action="{{ route('admin.activos.store') }}">
                     @csrf
 
                     <h3 class="mb-4 text-sm font-semibold text-gray-700">Datos del activo</h3>
@@ -147,7 +147,7 @@
 
                     <div class="mt-6 flex gap-3">
                         <x-primary-button>Registrar activo</x-primary-button>
-                        <a href="{{ route('admin.activos.activos.index') }}"
+                        <a href="{{ route('admin.activos.index') }}"
                             class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Cancelar</a>
                     </div>
                 </form>

@@ -6,7 +6,7 @@
                 <a href="{{ route('admin.activos.categorias.index') }}" class="text-gray-500 hover:text-gray-900">Categorías</a>
                 <a href="{{ route('admin.activos.ubicaciones.index') }}" class="text-gray-500 hover:text-gray-900">Ubicaciones</a>
                 @can('activos.gestionar')
-                    <a href="{{ route('admin.activos.activos.create') }}"
+                    <a href="{{ route('admin.activos.create') }}"
                         class="rounded-md bg-indigo-600 px-3 py-1.5 text-white hover:bg-indigo-700">+ Nuevo activo</a>
                 @endcan
             </div>
@@ -44,7 +44,7 @@
                                 <td class="px-4 py-2 text-right font-mono font-semibold">B/. {{ number_format($a->valor_libros, 2) }}</td>
                                 <td class="px-4 py-2">@include('admin.activos.activos._estado', ['estado' => $a->estado])</td>
                                 <td class="px-4 py-2">
-                                    <a href="{{ route('admin.activos.activos.show', $a) }}"
+                                    <a href="{{ route('admin.activos.show', $a) }}"
                                         class="text-xs text-indigo-600 hover:underline">Ver</a>
                                 </td>
                             </tr>
@@ -53,7 +53,7 @@
                                 <td colspan="8" class="px-4 py-12 text-center text-gray-400">
                                     Sin activos registrados.
                                     @can('activos.gestionar')
-                                        <a href="{{ route('admin.activos.activos.create') }}" class="text-indigo-600 hover:underline">Crear el primero</a>
+                                        <a href="{{ route('admin.activos.create') }}" class="text-indigo-600 hover:underline">Crear el primero</a>
                                     @endcan
                                 </td>
                             </tr>

@@ -5,7 +5,7 @@
                 <h2 class="font-semibold text-xl text-gray-800 leading-tight">{{ $activo->codigo }}</h2>
                 @include('admin.activos.activos._estado', ['estado' => $activo->estado])
             </div>
-            <a href="{{ route('admin.activos.activos.index') }}" class="text-sm text-gray-600 hover:text-gray-900">← Listado</a>
+            <a href="{{ route('admin.activos.index') }}" class="text-sm text-gray-600 hover:text-gray-900">← Listado</a>
         </div>
     </x-slot>
 
@@ -101,7 +101,7 @@
                         Depreciar período
                     </button>
                     <div x-show="open" x-cloak class="mt-4">
-                        <form method="POST" action="{{ route('admin.activos.activos.depreciar', $activo) }}">
+                        <form method="POST" action="{{ route('admin.activos.depreciar', $activo) }}">
                             @csrf
                             <div class="grid grid-cols-1 gap-3">
                                 <div>
@@ -141,7 +141,7 @@
                         Dar de baja
                     </button>
                     <div x-show="open" x-cloak class="mt-4">
-                        <form method="POST" action="{{ route('admin.activos.activos.baja', $activo) }}"
+                        <form method="POST" action="{{ route('admin.activos.baja', $activo) }}"
                               onsubmit="return confirm('¿Confirmar baja del activo? Esta acción es irreversible.')">
                             @csrf
                             <div class="grid grid-cols-1 gap-3">
