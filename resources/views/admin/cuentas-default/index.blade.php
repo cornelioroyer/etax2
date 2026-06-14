@@ -3,6 +3,13 @@
         <h2 class="font-semibold text-xl text-gray-800 leading-tight">Cuentas por defecto</h2>
     </x-slot>
 
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2/dist/css/tom-select.bootstrap5.min.css">
+    <style>
+        .ts-wrapper .ts-control { border-color: #d1d5db; border-radius: 0.375rem; font-size: 0.875rem; min-height: 2.25rem; }
+        .ts-wrapper.focus .ts-control { border-color: #6366f1; box-shadow: 0 0 0 1px #6366f1; }
+        .ts-dropdown { font-size: 0.875rem; }
+    </style>
+
     <div class="py-8">
         <div class="max-w-4xl mx-auto sm:px-6 lg:px-8 space-y-4">
 
@@ -32,8 +39,7 @@
                                     <p class="text-sm font-medium text-gray-700">{{ $descripcion }}</p>
                                     <p class="text-xs text-gray-400 font-mono">{{ $clave }}</p>
                                 </div>
-                                <select name="defaults[{{ $clave }}]"
-                                        class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm w-full">
+                                <select name="defaults[{{ $clave }}]" class="cuenta-select w-full">
                                     <option value="">— Sin asignar —</option>
                                     @foreach ($cuentas as $cuenta)
                                         <option value="{{ $cuenta->id }}"
@@ -59,4 +65,16 @@
 
         </div>
     </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
+    <script>
+        document.querySelectorAll('.cuenta-select').forEach(function(el) {
+            new TomSelect(el, {
+                allowEmptyOption: true,
+                placeholder: '— Buscar cuenta —',
+                searchField: ['text'],
+                maxOptions: 200,
+            });
+        });
+    </script>
 </x-app-layout>
