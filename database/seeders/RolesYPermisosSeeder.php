@@ -66,6 +66,9 @@ class RolesYPermisosSeeder extends Seeder
             Permission::findOrCreate($permiso, 'web');
         }
 
+        // Limpiar caché para que syncPermissions lea los permisos recién creados desde la BD
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
         // Roles globales (team_id null): se asignan a usuarios POR compañía.
         $adminCompania = Role::findOrCreate('admin_compania', 'web');
         $adminCompania->syncPermissions($permisos);
