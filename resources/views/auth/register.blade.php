@@ -17,48 +17,78 @@
 
         <!-- Name -->
         <div>
-            <x-input-label for="name" :value="__('Name')" />
+            <x-input-label for="name" value="Nombre" />
             <x-text-input id="name" class="block mt-1 w-full" type="text" name="name" :value="old('name')" required autofocus autocomplete="name" />
             <x-input-error :messages="$errors->get('name')" class="mt-2" />
         </div>
 
         <!-- Email Address -->
         <div class="mt-4">
-            <x-input-label for="email" :value="__('Email')" />
+            <x-input-label for="email" value="Correo electrónico" />
             <x-text-input id="email" class="block mt-1 w-full" type="email" name="email" :value="old('email')" required autocomplete="username" />
             <x-input-error :messages="$errors->get('email')" class="mt-2" />
         </div>
 
         <!-- Password -->
         <div class="mt-4">
-            <x-input-label for="password" :value="__('Password')" />
+            <x-input-label for="password" value="Contraseña" />
 
-            <x-text-input id="password" class="block mt-1 w-full"
-                            type="password"
-                            name="password"
-                            required autocomplete="new-password" />
+            <div class="mt-1" style="position: relative;">
+                <x-text-input id="password" class="block w-full"
+                                style="padding-right: 2.75rem;"
+                                type="password"
+                                name="password"
+                                required autocomplete="new-password" />
+                <button type="button"
+                        onclick="const i=document.getElementById('password');const o=i.type==='password';i.type=o?'text':'password';this.querySelector('.eye-show').style.display=o?'none':'block';this.querySelector('.eye-hide').style.display=o?'block':'none';"
+                        aria-label="Mostrar u ocultar contraseña"
+                        style="position: absolute; top: 0; bottom: 0; right: 0; display: flex; align-items: center; padding-right: 0.75rem; padding-left: 0.75rem; color: #6b7280; background: transparent; border: 0; cursor: pointer;">
+                    <svg class="eye-show" style="display: block; height: 1.25rem; width: 1.25rem;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <svg class="eye-hide" style="display: none; height: 1.25rem; width: 1.25rem;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.243 4.243L9.88 9.88" />
+                    </svg>
+                </button>
+            </div>
 
             <x-input-error :messages="$errors->get('password')" class="mt-2" />
         </div>
 
         <!-- Confirm Password -->
         <div class="mt-4">
-            <x-input-label for="password_confirmation" :value="__('Confirm Password')" />
+            <x-input-label for="password_confirmation" value="Confirmar contraseña" />
 
-            <x-text-input id="password_confirmation" class="block mt-1 w-full"
-                            type="password"
-                            name="password_confirmation" required autocomplete="new-password" />
+            <div class="mt-1" style="position: relative;">
+                <x-text-input id="password_confirmation" class="block w-full"
+                                style="padding-right: 2.75rem;"
+                                type="password"
+                                name="password_confirmation" required autocomplete="new-password" />
+                <button type="button"
+                        onclick="const i=document.getElementById('password_confirmation');const o=i.type==='password';i.type=o?'text':'password';this.querySelector('.eye-show').style.display=o?'none':'block';this.querySelector('.eye-hide').style.display=o?'block':'none';"
+                        aria-label="Mostrar u ocultar contraseña"
+                        style="position: absolute; top: 0; bottom: 0; right: 0; display: flex; align-items: center; padding-right: 0.75rem; padding-left: 0.75rem; color: #6b7280; background: transparent; border: 0; cursor: pointer;">
+                    <svg class="eye-show" style="display: block; height: 1.25rem; width: 1.25rem;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <svg class="eye-hide" style="display: none; height: 1.25rem; width: 1.25rem;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.243 4.243L9.88 9.88" />
+                    </svg>
+                </button>
+            </div>
 
             <x-input-error :messages="$errors->get('password_confirmation')" class="mt-2" />
         </div>
 
         <div class="flex items-center justify-end mt-4">
             <a class="underline text-sm text-gray-600 hover:text-gray-900 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500" href="{{ route('login') }}">
-                {{ __('Already registered?') }}
+                ¿Ya tienes cuenta?
             </a>
 
             <x-primary-button class="ms-4">
-                {{ __('Register') }}
+                Registrarse
             </x-primary-button>
         </div>
     </form>
