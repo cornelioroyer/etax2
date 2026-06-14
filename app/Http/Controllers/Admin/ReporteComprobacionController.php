@@ -13,19 +13,21 @@ use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Balance de Comprobación con formato de sumas y saldos por período.
+ * Balance de Comprobación por rango de fechas (sumas y saldos).
  *
- * Para el mes seleccionado, cada cuenta de movimiento muestra:
- *   - Balance Inicial : saldo acumulado (débito − crédito) ANTES del período.
- *   - Débito / Crédito: movimientos del período.
- *   - Corriente       : débito − crédito del período.
+ * Se pide un período «desde / hasta» y, para cada cuenta de movimiento:
+ *   - Balance Inicial : saldo acumulado (débito − crédito) de los asientos
+ *                       posteados ANTES de la fecha «desde».
+ *   - Débito / Crédito: lo registrado dentro del rango pedido.
+ *   - Corriente       : débito − crédito del rango.
  *   - Balance Final   : Balance Inicial + Corriente.
  *
- * Las cifras usan la convención débito − crédito (los saldos acreedores se
- * muestran entre paréntesis). Las cuentas se presentan según la jerarquía del
- * plan de cuentas (grupos de nivel 1 y 2) con un subtotal «Suma» por grupo.
- * Por partida doble, los totales generales de Débito y Crédito deben coincidir
- * y los Balances Inicial/Final deben sumar cero.
+ * Los datos provienen de los asientos POSTEADOS (cgl_asientos +
+ * cgl_asientos_detalle) para poder cortar por fecha exacta. Las cifras usan
+ * la convención débito − crédito (los saldos acreedores se muestran entre
+ * paréntesis) y se presentan según la jerarquía del plan de cuentas, con un
+ * subtotal «Suma» por grupo. Por partida doble, los totales de Débito y
+ * Crédito deben coincidir y los Balances Inicial/Final deben sumar cero.
  */
 class ReporteComprobacionController extends Controller
 {
@@ -36,56 +38,58 @@ class ReporteComprobacionController extends Controller
     {
         $companiaId = $this->companiaActivaId($request);
 
-        $periodos = DB::table('cgl_periodos')
-            ->where('compania_id', $companiaId)
-            ->selectRaw('DISTINCT anio, mes')
-            ->orderByDesc('anio')
-            ->orderByDesc('mes')
-            ->get();
+        $validado = $request->validate([
+            'desde' => ['nullable', 'date'],
+            'hasta' => ['nullable', 'date'],
+        ]);
+
+        $hasta = ! empty($validado['hasta'])
+            ? Carbon::parse($validado['hasta'])->startOfDay()
+            : now()->endOfMonth()->startOfDay();
+        $desde = ! empty($validado['desde'])
+            ? Carbon::parse($validado['desde'])->startOfDay()
+            : $hasta->copy()->startOfMonth();
+
+        if ($desde->gt($hasta)) {
+            [$desde, $hasta] = [$hasta->copy(), $desde->copy()];
+        }
 
         $compania = Compania::find($companiaId);
 
-        if ($periodos->isEmpty()) {
+        $hayAsientos = DB::table('cgl_asientos')
+            ->where('compania_id', $companiaId)
+            ->where('estado', 'POSTEADO')
+            ->exists();
+
+        if (! $hayAsientos) {
             return view('admin.reportes.balance-comprobacion', [
                 'sinDatos' => true,
-                'periodos' => $periodos,
-                'anio' => now()->year,
-                'mes' => now()->month,
-                'corte' => now(),
+                'desde' => $desde,
+                'hasta' => $hasta,
                 'filas' => collect(),
                 'totales' => $this->totalesVacios(),
             ]);
         }
 
-        $anio = (int) $request->input('anio', $periodos->first()->anio);
-        $mes = (int) $request->input('mes', $periodos->firstWhere('anio', $anio)->mes ?? $periodos->first()->mes);
-
-        if (! $periodos->contains(fn ($p) => $p->anio == $anio && $p->mes == $mes)) {
-            $delAnio = $periodos->firstWhere('anio', $anio) ?? $periodos->first();
-            $anio = (int) $delAnio->anio;
-            $mes = (int) $delAnio->mes;
-        }
-
-        $corte = Carbon::create($anio, $mes, 1)->endOfMonth();
-
-        // Saldo acumulado (débito − crédito) ANTES del período → Balance Inicial.
-        $inicial = DB::table('cgl_saldos as s')
-            ->join('cgl_periodos as p', 'p.id', '=', 's.periodo_id')
-            ->where('s.compania_id', $companiaId)
-            ->where(fn ($q) => $q->where('p.anio', '<', $anio)
-                ->orWhere(fn ($q) => $q->where('p.anio', $anio)->where('p.mes', '<', $mes)))
-            ->groupBy('s.cuenta_id')
-            ->selectRaw('s.cuenta_id, SUM(s.debito - s.credito) as inicial')
+        // Balance Inicial: saldo (débito − crédito) acumulado ANTES de «desde».
+        $inicial = DB::table('cgl_asientos_detalle as d')
+            ->join('cgl_asientos as a', 'a.id', '=', 'd.asiento_id')
+            ->where('a.compania_id', $companiaId)
+            ->where('a.estado', 'POSTEADO')
+            ->whereDate('a.fecha', '<', $desde->toDateString())
+            ->groupBy('d.cuenta_id')
+            ->selectRaw('d.cuenta_id, SUM(d.debito - d.credito) as inicial')
             ->pluck('inicial', 'cuenta_id');
 
-        // Movimientos del período seleccionado.
-        $movimiento = DB::table('cgl_saldos as s')
-            ->join('cgl_periodos as p', 'p.id', '=', 's.periodo_id')
-            ->where('s.compania_id', $companiaId)
-            ->where('p.anio', $anio)
-            ->where('p.mes', $mes)
-            ->groupBy('s.cuenta_id')
-            ->selectRaw('s.cuenta_id, SUM(s.debito) as debito, SUM(s.credito) as credito')
+        // Movimientos dentro del rango pedido.
+        $movimiento = DB::table('cgl_asientos_detalle as d')
+            ->join('cgl_asientos as a', 'a.id', '=', 'd.asiento_id')
+            ->where('a.compania_id', $companiaId)
+            ->where('a.estado', 'POSTEADO')
+            ->whereDate('a.fecha', '>=', $desde->toDateString())
+            ->whereDate('a.fecha', '<=', $hasta->toDateString())
+            ->groupBy('d.cuenta_id')
+            ->selectRaw('d.cuenta_id, SUM(d.debito) as debito, SUM(d.credito) as credito')
             ->get()
             ->keyBy('cuenta_id');
 
@@ -110,7 +114,8 @@ class ReporteComprobacionController extends Controller
 
         $datos = [
             'compania' => $compania,
-            'corte' => $corte,
+            'desde' => $desde,
+            'hasta' => $hasta,
             'filas' => collect($filas),
             'totales' => $totales,
             'generado' => now(),
@@ -118,15 +123,12 @@ class ReporteComprobacionController extends Controller
         ];
 
         if ($export = $this->exportarReporte($request, 'admin.exports.balance-comprobacion', $datos,
-            'balance_comprobacion_'.$corte->format('Y-m'))) {
+            'balance_comprobacion_'.$desde->format('Ymd').'_'.$hasta->format('Ymd'))) {
             return $export;
         }
 
         return view('admin.reportes.balance-comprobacion', array_merge($datos, [
             'sinDatos' => false,
-            'periodos' => $periodos,
-            'anio' => $anio,
-            'mes' => $mes,
         ]));
     }
 

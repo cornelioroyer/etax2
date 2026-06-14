@@ -1,7 +1,5 @@
 <x-app-layout>
     @php
-        $meses = [1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril', 5 => 'Mayo', 6 => 'Junio',
-                  7 => 'Julio', 8 => 'Agosto', 9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre'];
         // Convención débito − crédito: los saldos acreedores se muestran entre paréntesis.
         $fmt = function ($n) {
             $n = round((float) $n, 2);
@@ -19,21 +17,24 @@
                 <h1 class="text-2xl font-bold text-slate-900">Balance de Comprobación</h1>
                 <p class="text-sm text-slate-500">Sumas y saldos por período, desde los asientos posteados.</p>
             </div>
-            <div class="flex items-center gap-2">
-                @if (! $sinDatos)
-                    <form method="GET" class="flex items-center gap-2">
-                        <select name="mes" class="rounded-md border-slate-300 text-sm shadow-sm focus:border-[#0d2d5e] focus:ring-[#0d2d5e]" onchange="this.form.submit()">
-                            @foreach ($periodos->where('anio', $anio)->sortBy('mes') as $p)
-                                <option value="{{ $p->mes }}" @selected($p->mes == $mes)>{{ $meses[$p->mes] }}</option>
-                            @endforeach
-                        </select>
-                        <select name="anio" class="rounded-md border-slate-300 text-sm shadow-sm focus:border-[#0d2d5e] focus:ring-[#0d2d5e]" onchange="this.form.submit()">
-                            @foreach ($periodos->pluck('anio')->unique() as $a)
-                                <option value="{{ $a }}" @selected($a == $anio)>{{ $a }}</option>
-                            @endforeach
-                        </select>
-                    </form>
+            <div class="flex flex-wrap items-end gap-2">
+                <form method="GET" class="flex items-end gap-2">
+                    <label class="text-xs font-medium text-slate-600">
+                        Desde
+                        <input type="date" name="desde" value="{{ $desde->format('Y-m-d') }}"
+                               class="mt-1 block rounded-md border-slate-300 text-sm shadow-sm focus:border-[#0d2d5e] focus:ring-[#0d2d5e]">
+                    </label>
+                    <label class="text-xs font-medium text-slate-600">
+                        Hasta
+                        <input type="date" name="hasta" value="{{ $hasta->format('Y-m-d') }}"
+                               class="mt-1 block rounded-md border-slate-300 text-sm shadow-sm focus:border-[#0d2d5e] focus:ring-[#0d2d5e]">
+                    </label>
+                    <button type="submit" class="rounded-md bg-[#0d2d5e] px-3 py-2 text-sm font-semibold text-white hover:bg-[#0a2347]">
+                        Ver
+                    </button>
+                </form>
 
+                @if (! $sinDatos)
                     <a href="{{ request()->fullUrlWithQuery(['export' => 'pdf']) }}"
                        class="inline-flex items-center gap-2 rounded-md bg-[#d21034] px-3 py-2 text-sm font-semibold text-white hover:bg-[#b00d2b]">
                         PDF
@@ -51,7 +52,7 @@
 
         @if ($sinDatos)
             <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                {{ $companiaActiva->nombre ?? 'La compañía' }} aún no tiene períodos contables — el balance de comprobación se llenará al postear asientos en Contabilidad.
+                {{ $companiaActiva->nombre ?? 'La compañía' }} aún no tiene asientos posteados — el balance de comprobación se llenará al postear asientos en Contabilidad.
             </div>
         @else
             <div class="mx-auto max-w-5xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm print:border-0 print:shadow-none">
@@ -69,7 +70,7 @@
                     @if (!empty($compania?->ruc))
                         <p class="text-xs text-slate-500">RUC {{ $compania->ruc }}{{ $compania->dv ? ' DV '.$compania->dv : '' }}</p>
                     @endif
-                    <p class="mt-1 text-sm font-medium text-slate-600">Período al {{ $corte->format('d/m/Y') }}</p>
+                    <p class="mt-1 text-sm font-medium text-slate-600">Del {{ $desde->format('d/m/Y') }} al {{ $hasta->format('d/m/Y') }}</p>
                 </div>
 
                 <div class="p-4 sm:p-6">

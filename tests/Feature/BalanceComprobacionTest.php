@@ -4,63 +4,68 @@ namespace Tests\Feature;
 
 use App\Models\Compania;
 use App\Models\CuentaContable;
-use App\Models\PeriodoContable;
-use App\Models\TipoCuenta;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class BalanceComprobacionTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_balance_de_comprobacion_con_datos(): void
+    private function cuenta(Compania $compania, string $codigo, string $nombre, string $naturaleza): CuentaContable
     {
-        $user = User::factory()->create(['is_admin' => true]);
+        return CuentaContable::create([
+            'compania_id' => $compania->id, 'codigo' => $codigo, 'nombre' => $nombre,
+            'nivel' => 3, 'naturaleza' => $naturaleza,
+            'permite_movimiento' => true, 'conciliable' => false, 'activa' => true,
+        ]);
+    }
+
+    private function postear(User $admin, Compania $compania, string $fecha, array $lineas): void
+    {
+        $this->actingAs($admin)
+            ->withSession(['compania_activa_id' => $compania->id])
+            ->post(route('admin.asientos.store'), [
+                'fecha' => $fecha,
+                'descripcion' => 'Asiento '.$fecha,
+                'lineas' => $lineas,
+                'accion' => 'postear',
+            ])
+            ->assertSessionHasNoErrors();
+    }
+
+    public function test_balance_por_rango_separa_inicial_y_movimiento(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
         $compania = Compania::create(['nombre' => 'COMPANIA COMPROBACION', 'activa' => true]);
 
-        $tipos = collect([
-            ['ACTIVO', 'DEBITO'], ['PASIVO', 'CREDITO'], ['INGRESO', 'CREDITO'],
-        ])->mapWithKeys(fn ($t) => [$t[0] => TipoCuenta::firstOrCreate(['codigo' => $t[0]], ['nombre' => ucfirst(strtolower($t[0])), 'naturaleza' => $t[1]])->id]);
+        $caja = $this->cuenta($compania, '10101', 'Caja', 'DEBITO');
+        $prov = $this->cuenta($compania, '20101', 'Proveedores', 'CREDITO');
+        $ventas = $this->cuenta($compania, '40101', 'Ventas', 'CREDITO');
 
-        $periodo = PeriodoContable::create([
-            'compania_id' => $compania->id, 'anio' => 2026, 'mes' => 5,
-            'fecha_inicio' => '2026-05-01', 'fecha_fin' => '2026-05-31', 'estado' => 'ABIERTO',
+        // Mayo (antes del rango) → forma el Balance Inicial.
+        $this->postear($admin, $compania, '2026-05-15', [
+            ['cuenta_id' => $caja->id, 'debito' => 1000, 'credito' => 0],
+            ['cuenta_id' => $ventas->id, 'debito' => 0, 'credito' => 1000],
         ]);
 
-        $cuenta = fn (string $codigo, string $nombre, string $tipo) => CuentaContable::create([
-            'compania_id' => $compania->id, 'codigo' => $codigo, 'nombre' => $nombre,
-            'nivel' => strlen($codigo) >= 5 ? 3 : 2, 'tipo_cuenta_id' => $tipos[$tipo],
-            'naturaleza' => $tipo === 'ACTIVO' ? 'DEBITO' : 'CREDITO',
-            'permite_movimiento' => strlen($codigo) >= 5, 'conciliable' => false, 'activa' => true,
+        // Junio (dentro del rango) → movimiento del período.
+        $this->postear($admin, $compania, '2026-06-10', [
+            ['cuenta_id' => $caja->id, 'debito' => 500, 'credito' => 0],
+            ['cuenta_id' => $prov->id, 'debito' => 0, 'credito' => 500],
         ]);
 
-        $caja = $cuenta('10101', 'Caja', 'ACTIVO');
-        $prov = $cuenta('20101', 'Proveedores', 'PASIVO');
-        $ventas = $cuenta('40101', 'Ventas', 'INGRESO');
-
-        $saldo = fn ($cuentaId, $debito, $credito) => DB::table('cgl_saldos')->insert([
-            'compania_id' => $compania->id, 'periodo_id' => $periodo->id, 'cuenta_id' => $cuentaId,
-            'debito' => $debito, 'credito' => $credito, 'saldo' => $debito - $credito,
-            'created_at' => now(), 'updated_at' => now(),
-        ]);
-
-        // Venta al contado 1000 + compra a crédito por pagar 250
-        $saldo($caja->id, 1000, 0);
-        $saldo($ventas->id, 0, 750);
-        $saldo($prov->id, 0, 250);
-
-        // Sumas: débito 1000 = crédito 1000 ; Saldos: deudor 1000 = acreedor 1000
-        $this->actingAs($user)
+        // Rango junio: Caja inicial 1000 + débito 500 = final 1500 ; Ventas inicial (1000)
+        // sin movimiento ; Proveedores crédito 500 corriente (500). Débito=Crédito=500.
+        $this->actingAs($admin)
             ->withSession(['compania_activa_id' => $compania->id])
-            ->get(route('admin.reportes.comprobacion'))
+            ->get(route('admin.reportes.comprobacion', ['desde' => '2026-06-01', 'hasta' => '2026-06-30']))
             ->assertOk()
             ->assertSee('Balance de Comprobación')
-            ->assertSee('Totales')
-            ->assertSee('1,000.00')
-            ->assertSee('750.00')
-            ->assertSee('250.00')
+            ->assertSee('Del 01/06/2026 al 30/06/2026')
+            ->assertSee('1,500.00')      // Balance Final de Caja
+            ->assertSee('(1,000.00)')    // Ventas: saldo acreedor heredado del inicial
+            ->assertSee('(500.00)')      // Proveedores: corriente/final acreedor
             ->assertDontSee('no cuadra');
     }
 
@@ -73,6 +78,6 @@ class BalanceComprobacionTest extends TestCase
             ->withSession(['compania_activa_id' => $compania->id])
             ->get(route('admin.reportes.comprobacion'))
             ->assertOk()
-            ->assertSee('no tiene períodos contables');
+            ->assertSee('no tiene asientos posteados');
     }
 }

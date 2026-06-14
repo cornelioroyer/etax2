@@ -38,7 +38,7 @@
         @if (!empty($compania?->ruc))
             <div class="sub">RUC {{ $compania->ruc }}{{ $compania->dv ? ' DV '.$compania->dv : '' }}</div>
         @endif
-        <div class="sub">Período al {{ $corte->format('d/m/Y') }}</div>
+        <div class="sub">Del {{ $desde->format('d/m/Y') }} al {{ $hasta->format('d/m/Y') }}</div>
     </div>
 
     <table>
