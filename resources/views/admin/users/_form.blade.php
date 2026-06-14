@@ -26,8 +26,8 @@
     </div>
 
     <div class="flex flex-wrap gap-6">
-        <label class="inline-flex items-center gap-2 text-sm text-gray-700">
-            <input type="checkbox" name="is_admin" value="1" @checked(old('is_admin', $user->is_admin ?? false)) class="rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500">
+        <label class="inline-flex items-center gap-2 text-sm text-gray-700 @disabled(! auth()->user()->is_admin)">
+            <input type="checkbox" name="is_admin" value="1" @checked(old('is_admin', $user->is_admin ?? false)) @disabled(! auth()->user()->is_admin) class="rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500 disabled:opacity-50">
             Administrador
         </label>
 

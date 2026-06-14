@@ -53,7 +53,8 @@ class UserController extends Controller
             'name' => $data['name'],
             'email' => $data['email'],
             'password' => Hash::make($data['password']),
-            'is_admin' => $request->boolean('is_admin'),
+            // El flag super_admin solo lo puede otorgar otro super_admin.
+            'is_admin' => $request->user()->is_admin ? $request->boolean('is_admin') : false,
             'is_active' => $request->boolean('is_active'),
         ]);
 
@@ -81,7 +82,8 @@ class UserController extends Controller
         $user->fill([
             'name' => $data['name'],
             'email' => $data['email'],
-            'is_admin' => $request->boolean('is_admin'),
+            // Solo un super_admin puede cambiar el flag super_admin; si no, se conserva el valor actual.
+            'is_admin' => $request->user()->is_admin ? $request->boolean('is_admin') : $user->is_admin,
             'is_active' => $request->boolean('is_active'),
         ]);
 
