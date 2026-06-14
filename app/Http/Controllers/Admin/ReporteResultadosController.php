@@ -25,6 +25,7 @@ class ReporteResultadosController extends Controller
         $periodos = DB::table('cgl_saldos as s')
             ->join('cgl_periodos as p', 'p.id', '=', 's.periodo_id')
             ->where('s.compania_id', $companiaId)
+            ->where('p.mes', '<=', 12) // excluye el período de ajuste (cierre anual)
             ->selectRaw('DISTINCT p.anio, p.mes')
             ->orderByDesc('p.anio')
             ->orderByDesc('p.mes')

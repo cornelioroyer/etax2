@@ -14,6 +14,9 @@ class PeriodoContable extends Model
 
     public const ESTADO_CERRADO = 'CERRADO';
 
+    /** Mes reservado para el período de ajuste / cierre anual. */
+    public const MES_AJUSTE = 13;
+
     protected $fillable = [
         'compania_id',
         'anio',
@@ -50,6 +53,30 @@ class PeriodoContable extends Model
                 'created_by' => $usuario,
             ]
         );
+    }
+
+    /**
+     * Período de ajuste (mes 13) del año, para el asiento de cierre anual.
+     * Lo crea ABIERTO si no existe. Su fecha es el 31 de diciembre del año.
+     */
+    public static function ajusteAnual(int $companiaId, int $anio, ?string $usuario = null): self
+    {
+        $fin = Carbon::create($anio, 12, 31);
+
+        return self::firstOrCreate(
+            ['compania_id' => $companiaId, 'anio' => $anio, 'mes' => self::MES_AJUSTE],
+            [
+                'fecha_inicio' => $fin->toDateString(),
+                'fecha_fin' => $fin->toDateString(),
+                'estado' => self::ESTADO_ABIERTO,
+                'created_by' => $usuario,
+            ]
+        );
+    }
+
+    public function esAjuste(): bool
+    {
+        return $this->mes === self::MES_AJUSTE;
     }
 
     public function estaAbierto(): bool

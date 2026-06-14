@@ -24,6 +24,7 @@ use App\Http\Controllers\Admin\ReporteComparativoController;
 use App\Http\Controllers\Admin\ReporteResultadosController;
 use App\Http\Controllers\Admin\FelConfiguracionController;
 use App\Http\Controllers\Admin\BancoCuentaController;
+use App\Http\Controllers\Admin\CierreAnualController;
 use App\Http\Controllers\Admin\CuentaDefaultController;
 use App\Http\Controllers\Admin\DiarioController;
 use App\Http\Controllers\Admin\GastoController;
@@ -169,6 +170,9 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::get('periodos', [PeriodoContableController::class, 'index'])->name('periodos.index');
         Route::post('periodos/cerrar', [PeriodoContableController::class, 'cerrar'])->name('periodos.cerrar');
         Route::post('periodos/{periodo}/reabrir', [PeriodoContableController::class, 'reabrir'])->name('periodos.reabrir');
+        Route::get('cierre-anual', [CierreAnualController::class, 'index'])->name('cierre-anual.index');
+        Route::post('cierre-anual/cerrar', [CierreAnualController::class, 'cerrar'])->name('cierre-anual.cerrar');
+        Route::post('cierre-anual/reversar', [CierreAnualController::class, 'reversar'])->name('cierre-anual.reversar');
     });
 
     Route::middleware('permission:cxc.ver')->group(function () {
