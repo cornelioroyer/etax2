@@ -18,6 +18,7 @@ use App\Http\Controllers\Admin\CxpFacturaController;
 use App\Http\Controllers\Admin\CxpNotaController;
 use App\Http\Controllers\Admin\CxpPagoController;
 use App\Http\Controllers\Admin\FacturaFelController;
+use App\Http\Controllers\Admin\ReporteComprobacionController;
 use App\Http\Controllers\Admin\ReporteBalanceController;
 use App\Http\Controllers\Admin\ReporteComparativoController;
 use App\Http\Controllers\Admin\ReporteResultadosController;
@@ -218,6 +219,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
 
     Route::middleware('permission:reportes.ver')->group(function () {
         Route::get('reportes/balance-situacion', ReporteBalanceController::class)->name('reportes.balance');
+        Route::get('reportes/balance-comprobacion', ReporteComprobacionController::class)->name('reportes.comprobacion');
         Route::get('reportes/estado-resultado', ReporteResultadosController::class)->name('reportes.resultado');
         Route::get('reportes/comparativo-mensual', ReporteComparativoController::class)->name('reportes.comparativo');
         Route::get('reportes/flujo-caja', ReporteFlujoCajaController::class)->name('reportes.flujo-caja');

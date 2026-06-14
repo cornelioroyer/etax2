@@ -38,6 +38,7 @@
             'active' => request()->routeIs('admin.reportes.*'),
             'children' => [
                 ['label' => 'Balance de Situación', 'href' => route('admin.reportes.balance'), 'active' => request()->routeIs('admin.reportes.balance'), 'show' => $can('reportes.ver')],
+                ['label' => 'Balance de Comprobación', 'href' => route('admin.reportes.comprobacion'), 'active' => request()->routeIs('admin.reportes.comprobacion'), 'show' => $can('reportes.ver')],
                 ['label' => 'Estado de Resultado', 'href' => route('admin.reportes.resultado'), 'active' => request()->routeIs('admin.reportes.resultado'), 'show' => $can('reportes.ver')],
                 ['label' => 'Comparativo Mensual', 'href' => route('admin.reportes.comparativo'), 'active' => request()->routeIs('admin.reportes.comparativo'), 'show' => $can('reportes.ver')],
                 ['label' => 'Flujo de Efectivo', 'href' => route('admin.reportes.flujo-caja'), 'active' => request()->routeIs('admin.reportes.flujo-caja'), 'show' => $can('reportes.ver')],
