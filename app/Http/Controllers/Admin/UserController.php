@@ -49,13 +49,16 @@ class UserController extends Controller
             'is_active' => ['nullable', 'boolean'],
         ]);
 
-        User::create([
+        $user = User::create([
             'name' => $data['name'],
             'email' => $data['email'],
             'password' => Hash::make($data['password']),
             'is_admin' => $request->boolean('is_admin'),
             'is_active' => $request->boolean('is_active'),
         ]);
+
+        // Por defecto, todo usuario nuevo queda en la compañía 1 con rol "usuario".
+        $user->asegurarAccesoDefault(1);
 
         return redirect()->route('admin.users.index')->with('status', 'Usuario creado.');
     }
