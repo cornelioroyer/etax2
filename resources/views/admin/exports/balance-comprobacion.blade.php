@@ -4,9 +4,10 @@
     <meta charset="utf-8">
     <style>
         body { font-family: DejaVu Sans, sans-serif; font-size: 10px; color: #111; }
+        .meta { font-size: 9px; color: #555; margin-bottom: 4px; }
         .cab { text-align: center; margin-bottom: 10px; }
         .cab h1 { font-size: 14px; margin: 0; text-transform: uppercase; }
-        .cab .titulo { font-size: 12px; font-weight: bold; margin: 4px 0 0; text-transform: uppercase; }
+        .cab .cia { font-size: 12px; font-weight: bold; margin: 3px 0 0; }
         .cab .sub { color: #555; font-size: 9px; margin-top: 2px; }
         table { width: 100%; border-collapse: collapse; }
         th, td { border: 1px solid #ccc; padding: 3px 5px; }
@@ -27,12 +28,16 @@
     };
 @endphp
 <body>
+    <div class="meta">
+        {{ $usuario ?? '' }}<br>
+        {{ ($generado ?? now())->format('d/m/Y H:i') }}
+    </div>
     <div class="cab">
-        <h1>{{ $compania->nombre ?? '' }}</h1>
+        <h1>Balance de Comprobación</h1>
+        <div class="cia">{{ $compania->nombre ?? '' }}</div>
         @if (!empty($compania?->ruc))
             <div class="sub">RUC {{ $compania->ruc }}{{ $compania->dv ? ' DV '.$compania->dv : '' }}</div>
         @endif
-        <div class="titulo">Balance de Comprobación</div>
         <div class="sub">Período al {{ $corte->format('d/m/Y') }}</div>
     </div>
 

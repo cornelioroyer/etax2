@@ -57,13 +57,19 @@
             <div class="mx-auto max-w-5xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm print:border-0 print:shadow-none">
 
                 {{-- ░░ Encabezado del informe ░░ --}}
-                <div class="border-b-2 border-[#0d2d5e] px-8 py-6 text-center">
-                    <h2 class="text-xl font-extrabold uppercase tracking-wide text-[#0d2d5e]">{{ $compania->nombre ?? '' }}</h2>
+                <div class="relative border-b-2 border-[#0d2d5e] px-8 py-6 text-center">
+                    {{-- usuario y fecha/hora en el extremo superior izquierdo --}}
+                    <div class="absolute left-4 top-3 text-left text-[11px] leading-tight text-slate-500">
+                        <p class="font-semibold text-slate-600">{{ $usuario }}</p>
+                        <p>{{ $generado->format('d/m/Y H:i') }}</p>
+                    </div>
+
+                    <h2 class="text-xl font-extrabold uppercase tracking-wider text-[#0d2d5e]">Balance de Comprobación</h2>
+                    <p class="mt-1 text-lg font-bold text-[#005293]">{{ $compania->nombre ?? '' }}</p>
                     @if (!empty($compania?->ruc))
                         <p class="text-xs text-slate-500">RUC {{ $compania->ruc }}{{ $compania->dv ? ' DV '.$compania->dv : '' }}</p>
                     @endif
-                    <p class="mt-2 text-lg font-bold uppercase tracking-wider text-[#005293]">Balance de Comprobación</p>
-                    <p class="text-sm font-medium text-slate-600">Período al {{ $corte->format('d/m/Y') }}</p>
+                    <p class="mt-1 text-sm font-medium text-slate-600">Período al {{ $corte->format('d/m/Y') }}</p>
                 </div>
 
                 <div class="p-4 sm:p-6">

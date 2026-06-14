@@ -114,6 +114,7 @@ class ReporteComprobacionController extends Controller
             'filas' => collect($filas),
             'totales' => $totales,
             'generado' => now(),
+            'usuario' => $request->user()->name ?: $request->user()->email,
         ];
 
         if ($export = $this->exportarReporte($request, 'admin.exports.balance-comprobacion', $datos,
