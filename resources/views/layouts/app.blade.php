@@ -204,7 +204,7 @@
                 class="fixed inset-0 z-50 flex items-center justify-center p-4 print:hidden"
                 x-cloak
             >
-            <div class="flex w-full max-w-2xl flex-col bg-white rounded-2xl shadow-2xl overflow-hidden" style="max-height: 85vh">
+            <div class="flex w-full max-w-3xl flex-col bg-white rounded-2xl shadow-2xl overflow-hidden" style="max-height: 85vh">
                 {{-- Cabecera del drawer --}}
                 <div class="flex shrink-0 items-center justify-between bg-[#0d2d5e] px-5 py-4">
                     <div>
