@@ -108,55 +108,13 @@ class CuentaContableController extends Controller
             'plantilla' => ['required', 'string', Rule::exists('core_plantillas_cuentas', 'codigo')],
         ])['plantilla'];
 
-        $plantillaId = DB::table('core_plantillas_cuentas')->where('codigo', $codigo)->value('id');
+        $creadas = app(\App\Services\PlantillaCuentas::class)
+            ->aplicar($companiaId, $codigo, $request->user()->email);
 
-        abort_if(! $plantillaId, 404, 'Plantilla no encontrada.');
-
-        $detalle = DB::table('core_plantillas_cuentas_detalle')
-            ->where('plantilla_id', $plantillaId)
-            ->orderBy('codigo')
-            ->get();
-
-        $tipos = TipoCuenta::pluck('id', 'codigo');
-        $usuario = $request->user()->email;
-
-        DB::transaction(function () use ($detalle, $tipos, $companiaId, $usuario) {
-            $idsPorCodigo = [];
-
-            foreach ($detalle as $fila) {
-                $cuenta = CuentaContable::create([
-                    'compania_id' => $companiaId,
-                    'codigo' => $fila->codigo,
-                    'nombre' => $fila->nombre,
-                    'cuenta_padre_id' => $fila->codigo_padre ? ($idsPorCodigo[$fila->codigo_padre] ?? null) : null,
-                    'nivel' => $fila->nivel,
-                    'tipo_cuenta_id' => $tipos[$fila->tipo_cuenta_codigo] ?? null,
-                    'naturaleza' => $fila->naturaleza,
-                    'permite_movimiento' => $fila->permite_movimiento,
-                    'conciliable' => $fila->conciliable,
-                    'activa' => true,
-                    'renglon_isr' => $fila->renglon_isr ?? null,
-                    'created_by' => $usuario,
-                ]);
-
-                $idsPorCodigo[$fila->codigo] = $cuenta->id;
-
-                if ($fila->clave_default) {
-                    DB::table('core_cuentas_default')->insert([
-                        'compania_id' => $companiaId,
-                        'clave' => $fila->clave_default,
-                        'cuenta_id' => $cuenta->id,
-                        'descripcion' => $fila->nombre,
-                        'created_by' => $usuario,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                }
-            }
-        });
+        abort_if($creadas === 0, 404, 'Plantilla no encontrada.');
 
         return redirect()->route('admin.cuentas.index')
-            ->with('status', "Plantilla aplicada: {$detalle->count()} cuentas creadas.");
+            ->with('status', "Plantilla aplicada: {$creadas} cuentas creadas.");
     }
 
     private function datosFormulario(Request $request, ?CuentaContable $excluir = null): array

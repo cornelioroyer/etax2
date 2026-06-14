@@ -84,7 +84,15 @@ class CompaniaController extends Controller
             $compania->update($files);
         }
 
-        return redirect()->route('admin.companias.index')->with('status', 'Compañía creada.');
+        // Catálogo contable inicial: plan de cuentas Formulario 2 DGI (PA_ISR),
+        // incluida la cuenta Salarios por Pagar y demás cuentas por defecto.
+        app(\App\Services\PlantillaCuentas::class)->aplicar(
+            $compania->id,
+            \App\Services\PlantillaCuentas::POR_DEFECTO,
+            $request->user()->email
+        );
+
+        return redirect()->route('admin.companias.index')->with('status', 'Compañía creada con catálogo contable DGI.');
     }
 
     public function edit(Compania $compania): View
