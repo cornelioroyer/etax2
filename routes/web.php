@@ -121,8 +121,14 @@ Route::middleware('auth')->group(function () {
 });
 
 // Solo super admin (creadores de la plataforma)
+// Usuarios de plataforma (flag is_admin): solo super-admin.
 Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::resource('users', UserController::class)->except(['show']);
+});
+
+// Usuarios por compañía: super-admin o admin de la compañía (permiso usuarios_compania.gestionar).
+// El controlador limita la vista a los usuarios de la compañía activa que administra.
+Route::middleware(['auth', 'permission:usuarios_compania.gestionar'])->prefix('admin')->name('admin.')->group(function () {
     Route::resource('usuarios-compania', UsuarioCompaniaController::class)
         ->only(['index', 'store', 'update', 'destroy'])
         ->parameters(['usuarios-compania' => 'user']);

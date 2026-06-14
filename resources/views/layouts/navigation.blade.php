@@ -267,10 +267,10 @@
             'label' => 'Seguridad',
             'icon' => 'M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5A2.25 2.25 0 0 0 19.5 19.5v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z',
             'active' => request()->routeIs('admin.users.*') || request()->routeIs('admin.usuarios-compania.*'),
-            'show' => Auth::user()->is_admin,
+            'show' => Auth::user()->is_admin || $can('usuarios_compania.gestionar'),
             'children' => [
                 ['label' => 'Usuarios', 'href' => route('admin.users.index'), 'active' => request()->routeIs('admin.users.*'), 'show' => Auth::user()->is_admin],
-                ['label' => 'Accesos por compañía', 'href' => route('admin.usuarios-compania.index'), 'active' => request()->routeIs('admin.usuarios-compania.*'), 'show' => Auth::user()->is_admin],
+                ['label' => 'Accesos por compañía', 'href' => route('admin.usuarios-compania.index'), 'active' => request()->routeIs('admin.usuarios-compania.*'), 'show' => Auth::user()->is_admin || $can('usuarios_compania.gestionar')],
             ],
         ],
         [
