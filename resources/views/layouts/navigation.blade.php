@@ -15,7 +15,7 @@
             'key' => 'contabilidad',
             'label' => 'Contabilidad',
             'icon' => 'M9 7.5h6M9 12h6M9 16.5h3M6.75 3h10.5A2.25 2.25 0 0 1 19.5 5.25v13.5A2.25 2.25 0 0 1 17.25 21H6.75A2.25 2.25 0 0 1 4.5 18.75V5.25A2.25 2.25 0 0 1 6.75 3Z',
-            'active' => request()->routeIs('admin.cuentas.*') || request()->routeIs('admin.asientos.*') || request()->routeIs('admin.periodos.*') || request()->routeIs('admin.cuentas-default.*') || request()->routeIs('admin.diarios.*'),
+            'active' => request()->routeIs('admin.cuentas.*') || request()->routeIs('admin.asientos.*') || request()->routeIs('admin.periodos.*') || request()->routeIs('admin.cuentas-default.*') || request()->routeIs('admin.diarios.*') || request()->routeIs('admin.dimensiones.*'),
             'show' => $can('contabilidad.ver'),
             'children' => [
                 ['label' => 'Estados Financieros', 'href' => route('dashboard'), 'active' => false, 'show' => $can('contabilidad.ver')],
@@ -25,6 +25,9 @@
                 ['label' => 'Asientos', 'href' => route('admin.asientos.index'), 'active' => request()->routeIs('admin.asientos.*'), 'show' => $can('contabilidad.ver')],
                 ['label' => 'Períodos contables', 'href' => route('admin.periodos.index'), 'active' => request()->routeIs('admin.periodos.*'), 'show' => $can('contabilidad.ver')],
                 ['label' => 'Cierre contable', 'href' => route('admin.contabilidad.cierres.index'), 'active' => request()->routeIs('admin.contabilidad.cierres.*'), 'show' => $can('contabilidad.ver')],
+                ['label' => 'Clases de asiento', 'href' => route('admin.dimensiones.clases.index'), 'active' => request()->routeIs('admin.dimensiones.clases.*'), 'show' => $can('dimensiones.ver')],
+                ['label' => 'Líneas de negocio', 'href' => route('admin.dimensiones.lineas-negocio.index'), 'active' => request()->routeIs('admin.dimensiones.lineas-negocio.*'), 'show' => $can('dimensiones.ver')],
+                ['label' => 'Ubicaciones', 'href' => route('admin.dimensiones.ubicaciones.index'), 'active' => request()->routeIs('admin.dimensiones.ubicaciones.*'), 'show' => $can('dimensiones.ver')],
             ],
         ],
         [
@@ -108,7 +111,7 @@
         ],
         [
             'key' => 'fel',
-            'label' => 'Facturación FEL',
+            'label' => 'Factura Electrónica',
             'icon' => 'M9 12h6m-6 3h4M5.25 4.5h13.5a.75.75 0 0 1 .75.75v15l-2.625-1.5L14.25 20.25l-2.25-1.5-2.25 1.5-2.625-1.5L4.5 20.25v-15a.75.75 0 0 1 .75-.75Z',
             'active' => request()->routeIs('admin.fel.*'),
             'show' => $can('fel.ver'),

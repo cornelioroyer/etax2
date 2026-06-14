@@ -41,6 +41,9 @@ use App\Http\Controllers\Admin\AfiActivoController;
 use App\Http\Controllers\Admin\AfiCategoriaController;
 use App\Http\Controllers\Admin\AfiRevaluacionController;
 use App\Http\Controllers\Admin\AfiUbicacionController;
+use App\Http\Controllers\Admin\DimClaseController;
+use App\Http\Controllers\Admin\DimLineaNegocioController;
+use App\Http\Controllers\Admin\DimUbicacionController;
 use App\Http\Controllers\Admin\PhCuotaController;
 use App\Http\Controllers\Admin\PhEdificioController;
 use App\Http\Controllers\Admin\PhPagoController;
@@ -439,6 +442,24 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     });
     Route::middleware('permission:activos.gestionar')->group(function () {
         Route::post('activos/{activo}/revaluaciones', [AfiRevaluacionController::class, 'store'])->whereNumber('activo')->name('activos.revaluaciones.store');
+    });
+
+    // ── Dimensiones analíticas (dim_*) ──────────────────────────────────────
+    Route::middleware('permission:dimensiones.ver')->group(function () {
+        Route::get('dimensiones/clases', [DimClaseController::class, 'index'])->name('dimensiones.clases.index');
+        Route::get('dimensiones/lineas-negocio', [DimLineaNegocioController::class, 'index'])->name('dimensiones.lineas-negocio.index');
+        Route::get('dimensiones/ubicaciones', [DimUbicacionController::class, 'index'])->name('dimensiones.ubicaciones.index');
+    });
+    Route::middleware('permission:dimensiones.gestionar')->group(function () {
+        Route::post('dimensiones/clases', [DimClaseController::class, 'store'])->name('dimensiones.clases.store');
+        Route::put('dimensiones/clases/{clase}', [DimClaseController::class, 'update'])->whereNumber('clase')->name('dimensiones.clases.update');
+        Route::delete('dimensiones/clases/{clase}', [DimClaseController::class, 'destroy'])->whereNumber('clase')->name('dimensiones.clases.destroy');
+        Route::post('dimensiones/lineas-negocio', [DimLineaNegocioController::class, 'store'])->name('dimensiones.lineas-negocio.store');
+        Route::put('dimensiones/lineas-negocio/{lineaNegocio}', [DimLineaNegocioController::class, 'update'])->whereNumber('lineaNegocio')->name('dimensiones.lineas-negocio.update');
+        Route::delete('dimensiones/lineas-negocio/{lineaNegocio}', [DimLineaNegocioController::class, 'destroy'])->whereNumber('lineaNegocio')->name('dimensiones.lineas-negocio.destroy');
+        Route::post('dimensiones/ubicaciones', [DimUbicacionController::class, 'store'])->name('dimensiones.ubicaciones.store');
+        Route::put('dimensiones/ubicaciones/{ubicacion}', [DimUbicacionController::class, 'update'])->whereNumber('ubicacion')->name('dimensiones.ubicaciones.update');
+        Route::delete('dimensiones/ubicaciones/{ubicacion}', [DimUbicacionController::class, 'destroy'])->whereNumber('ubicacion')->name('dimensiones.ubicaciones.destroy');
     });
 
     // ── Cierre contable ──────────────────────────────────────────────────────
