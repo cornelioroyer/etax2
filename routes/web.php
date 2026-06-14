@@ -220,6 +220,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::middleware('permission:reportes.ver')->group(function () {
         Route::get('reportes/balance-situacion', ReporteBalanceController::class)->name('reportes.balance');
         Route::get('reportes/balance-comprobacion', ReporteComprobacionController::class)->name('reportes.comprobacion');
+        Route::get('reportes/balance-comprobacion/detalle', [ReporteComprobacionController::class, 'detalle'])->name('reportes.comprobacion.detalle');
         Route::get('reportes/estado-resultado', ReporteResultadosController::class)->name('reportes.resultado');
         Route::get('reportes/comparativo-mensual', ReporteComparativoController::class)->name('reportes.comparativo');
         Route::get('reportes/flujo-caja', ReporteFlujoCajaController::class)->name('reportes.flujo-caja');

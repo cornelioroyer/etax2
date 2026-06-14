@@ -69,6 +69,40 @@ class BalanceComprobacionTest extends TestCase
             ->assertDontSee('no cuadra');
     }
 
+    public function test_detalle_del_saldo_lista_inicial_y_movimientos(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $compania = Compania::create(['nombre' => 'COMPANIA DETALLE', 'activa' => true]);
+
+        $caja = $this->cuenta($compania, '10101', 'Caja', 'DEBITO');
+        $ventas = $this->cuenta($compania, '40101', 'Ventas', 'CREDITO');
+
+        // Mayo → balance inicial de Caja = 1000.
+        $this->postear($admin, $compania, '2026-05-15', [
+            ['cuenta_id' => $caja->id, 'debito' => 1000, 'credito' => 0],
+            ['cuenta_id' => $ventas->id, 'debito' => 0, 'credito' => 1000],
+        ]);
+
+        // Junio → un movimiento dentro del rango (+500), final = 1500.
+        $this->postear($admin, $compania, '2026-06-10', [
+            ['cuenta_id' => $caja->id, 'debito' => 500, 'credito' => 0],
+            ['cuenta_id' => $ventas->id, 'debito' => 0, 'credito' => 500],
+        ]);
+
+        $this->actingAs($admin)
+            ->withSession(['compania_activa_id' => $compania->id])
+            ->getJson(route('admin.reportes.comprobacion.detalle', [
+                'cuenta' => $caja->id, 'desde' => '2026-06-01', 'hasta' => '2026-06-30',
+            ]))
+            ->assertOk()
+            ->assertJsonPath('cuenta.codigo', '10101')
+            ->assertJsonPath('inicial', 1000)
+            ->assertJsonPath('final', 1500)
+            ->assertJsonCount(1, 'movimientos')
+            ->assertJsonPath('movimientos.0.debito', 500)
+            ->assertJsonPath('movimientos.0.saldo', 1500);
+    }
+
     public function test_comprobacion_sin_asientos_muestra_aviso(): void
     {
         $user = User::factory()->create(['is_admin' => true]);

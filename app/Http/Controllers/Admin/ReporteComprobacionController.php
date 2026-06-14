@@ -133,6 +133,92 @@ class ReporteComprobacionController extends Controller
     }
 
     /**
+     * Detalle del saldo de una cuenta: parte del balance inicial (antes de
+     * «desde») y lista los asientos posteados dentro del rango, con saldo
+     * corriente acumulado que termina en el Balance Final mostrado en el
+     * reporte. Devuelve JSON para el modal.
+     */
+    public function detalle(Request $request): Response
+    {
+        $companiaId = $this->companiaActivaId($request);
+
+        $validado = $request->validate([
+            'cuenta' => ['required', 'integer'],
+            'desde' => ['nullable', 'date'],
+            'hasta' => ['nullable', 'date'],
+        ]);
+
+        $hasta = ! empty($validado['hasta'])
+            ? Carbon::parse($validado['hasta'])->startOfDay()
+            : now()->endOfMonth()->startOfDay();
+        $desde = ! empty($validado['desde'])
+            ? Carbon::parse($validado['desde'])->startOfDay()
+            : $hasta->copy()->startOfMonth();
+
+        if ($desde->gt($hasta)) {
+            [$desde, $hasta] = [$hasta->copy(), $desde->copy()];
+        }
+
+        $cuenta = DB::table('cgl_cuentas')
+            ->where('compania_id', $companiaId)
+            ->where('id', $validado['cuenta'])
+            ->first(['id', 'codigo', 'nombre']);
+
+        abort_if($cuenta === null, Response::HTTP_NOT_FOUND);
+
+        // Balance inicial (débito − crédito) acumulado ANTES de «desde».
+        $inicial = (float) DB::table('cgl_asientos_detalle as d')
+            ->join('cgl_asientos as a', 'a.id', '=', 'd.asiento_id')
+            ->where('a.compania_id', $companiaId)
+            ->where('a.estado', 'POSTEADO')
+            ->where('d.cuenta_id', $cuenta->id)
+            ->whereDate('a.fecha', '<', $desde->toDateString())
+            ->sum(DB::raw('d.debito - d.credito'));
+
+        // Movimientos dentro del rango, en orden cronológico.
+        $movimientos = DB::table('cgl_asientos_detalle as d')
+            ->join('cgl_asientos as a', 'a.id', '=', 'd.asiento_id')
+            ->where('a.compania_id', $companiaId)
+            ->where('a.estado', 'POSTEADO')
+            ->where('d.cuenta_id', $cuenta->id)
+            ->whereDate('a.fecha', '>=', $desde->toDateString())
+            ->whereDate('a.fecha', '<=', $hasta->toDateString())
+            ->orderBy('a.fecha')
+            ->orderBy('a.numero')
+            ->orderBy('d.linea')
+            ->get([
+                'a.fecha', 'a.numero', 'a.descripcion as asiento_desc',
+                'd.descripcion as linea_desc', 'd.debito', 'd.credito',
+            ]);
+
+        $saldo = round($inicial, 2);
+        $filas = [];
+
+        foreach ($movimientos as $m) {
+            $deb = round((float) $m->debito, 2);
+            $cre = round((float) $m->credito, 2);
+            $saldo = round($saldo + $deb - $cre, 2);
+
+            $filas[] = [
+                'fecha' => Carbon::parse($m->fecha)->format('d/m/Y'),
+                'numero' => $m->numero,
+                'descripcion' => $m->linea_desc ?: $m->asiento_desc ?: '',
+                'debito' => $deb,
+                'credito' => $cre,
+                'saldo' => $saldo,
+            ];
+        }
+
+        return response()->json([
+            'cuenta' => ['codigo' => $cuenta->codigo, 'nombre' => $cuenta->nombre],
+            'periodo' => ['desde' => $desde->format('d/m/Y'), 'hasta' => $hasta->format('d/m/Y')],
+            'inicial' => round($inicial, 2),
+            'final' => $saldo,
+            'movimientos' => $filas,
+        ]);
+    }
+
+    /**
      * Recorre la jerarquía emitiendo filas (grupos, cuentas y subtotales «Suma»)
      * y devuelve el agregado de la rama. Las ramas sin movimiento se omiten.
      *
@@ -161,6 +247,7 @@ class ReporteComprobacionController extends Controller
 
             $filas[] = array_merge([
                 'tipo' => 'cuenta',
+                'id' => $cuenta->id,
                 'nivel' => $cuenta->nivel,
                 'codigo' => $cuenta->codigo,
                 'nombre' => $cuenta->nombre,
