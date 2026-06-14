@@ -105,7 +105,10 @@ return [
      * Set this to false if you want to implement custom logic for checking permissions.
      */
 
-    'register_permission_check_method' => true,
+    // false: la app registra su propio Gate::before en AppServiceProvider para
+    // controlar el orden (super_admin, restricción de la compañía 1, y la
+    // resolución estándar de permisos). Ver App\Providers\AppServiceProvider.
+    'register_permission_check_method' => false,
 
     /*
      * When set to true, Laravel\Octane\Events\OperationTerminated event listener will be registered
