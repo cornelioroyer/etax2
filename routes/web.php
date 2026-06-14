@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\AsientoController;
 use App\Http\Controllers\Admin\BudgetEscenarioController;
 use App\Http\Controllers\Admin\BudgetPresupuestoController;
+use App\Http\Controllers\Admin\BudgetVersionController;
 use App\Http\Controllers\Admin\CompaniaController;
 use App\Http\Controllers\Admin\ContactoController;
 use App\Http\Controllers\Admin\CuentaContableController;
@@ -673,6 +674,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::prefix('presupuestos')->name('presupuestos.')->group(function () {
         Route::middleware('permission:presupuestos.ver')->group(function () {
             Route::get('escenarios', [BudgetEscenarioController::class, 'index'])->name('escenarios.index');
+            Route::get('versiones', [BudgetVersionController::class, 'index'])->name('versiones.index');
             Route::get('/', [BudgetPresupuestoController::class, 'index'])->name('index');
             Route::get('{presupuesto}', [BudgetPresupuestoController::class, 'show'])->whereNumber('presupuesto')->name('show');
         });
@@ -684,6 +686,13 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
             Route::get('escenarios/{escenario}/editar', [BudgetEscenarioController::class, 'edit'])->whereNumber('escenario')->name('escenarios.edit');
             Route::put('escenarios/{escenario}', [BudgetEscenarioController::class, 'update'])->whereNumber('escenario')->name('escenarios.update');
             Route::delete('escenarios/{escenario}', [BudgetEscenarioController::class, 'destroy'])->whereNumber('escenario')->name('escenarios.destroy');
+
+            // Versiones
+            Route::get('versiones/nueva', [BudgetVersionController::class, 'create'])->name('versiones.create');
+            Route::post('versiones', [BudgetVersionController::class, 'store'])->name('versiones.store');
+            Route::get('versiones/{version}/editar', [BudgetVersionController::class, 'edit'])->whereNumber('version')->name('versiones.edit');
+            Route::put('versiones/{version}', [BudgetVersionController::class, 'update'])->whereNumber('version')->name('versiones.update');
+            Route::delete('versiones/{version}', [BudgetVersionController::class, 'destroy'])->whereNumber('version')->name('versiones.destroy');
 
             // Presupuestos
             Route::get('nuevo', [BudgetPresupuestoController::class, 'create'])->name('create');

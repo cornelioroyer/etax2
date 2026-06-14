@@ -53,6 +53,7 @@
             'children' => [
                 ['label' => 'Presupuestos', 'href' => route('admin.presupuestos.index'), 'active' => request()->routeIs('admin.presupuestos.index') || request()->routeIs('admin.presupuestos.show') || request()->routeIs('admin.presupuestos.create') || request()->routeIs('admin.presupuestos.edit'), 'show' => $can('presupuestos.ver')],
                 ['label' => 'Escenarios', 'href' => route('admin.presupuestos.escenarios.index'), 'active' => request()->routeIs('admin.presupuestos.escenarios.*'), 'show' => $can('presupuestos.ver')],
+                ['label' => 'Versiones', 'href' => route('admin.presupuestos.versiones.index'), 'active' => request()->routeIs('admin.presupuestos.versiones.*'), 'show' => $can('presupuestos.ver')],
             ],
         ],
         [

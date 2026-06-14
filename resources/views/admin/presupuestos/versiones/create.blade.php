@@ -1,0 +1,39 @@
+<x-app-layout>
+    <x-slot name="header">
+        <div class="flex items-center justify-between">
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight">Nueva versión</h2>
+            <a href="{{ route('admin.presupuestos.versiones.index') }}" class="text-sm text-gray-600 hover:text-gray-900">← Versiones</a>
+        </div>
+    </x-slot>
+
+    <div class="py-8">
+        <div class="max-w-xl mx-auto sm:px-6 lg:px-8">
+            @if ($errors->any())
+                <div class="mb-4 rounded-md bg-red-50 p-4 text-sm text-red-800">
+                    @foreach ($errors->all() as $error)<div>{{ $error }}</div>@endforeach
+                </div>
+            @endif
+            <div class="bg-white p-6 shadow-sm sm:rounded-lg">
+                <form method="POST" action="{{ route('admin.presupuestos.versiones.store') }}">
+                    @csrf
+                    <div>
+                        <x-input-label for="nombre" value="Nombre de la versión *" />
+                        <x-text-input id="nombre" name="nombre" type="text" class="mt-1 block w-full"
+                            :value="old('nombre')" required maxlength="100" placeholder="Ej.: v1, Revisión Q2..." />
+                    </div>
+                    <label class="mt-4 flex items-center gap-2 text-sm text-gray-700">
+                        <input type="hidden" name="activa" value="0">
+                        <input type="checkbox" name="activa" value="1" {{ old('activa', true) ? 'checked' : '' }}
+                            class="rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500">
+                        Activa
+                    </label>
+                    <div class="mt-6 flex gap-3">
+                        <x-primary-button>Guardar versión</x-primary-button>
+                        <a href="{{ route('admin.presupuestos.versiones.index') }}"
+                            class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Cancelar</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</x-app-layout>

@@ -23,6 +23,7 @@ class BudgetPresupuesto extends Model
     protected $fillable = [
         'compania_id',
         'escenario_id',
+        'version_id',
         'nombre',
         'anio',
         'estado',
@@ -40,6 +41,11 @@ class BudgetPresupuesto extends Model
     public function escenario(): BelongsTo
     {
         return $this->belongsTo(BudgetEscenario::class, 'escenario_id');
+    }
+
+    public function version(): BelongsTo
+    {
+        return $this->belongsTo(BudgetVersion::class, 'version_id');
     }
 
     public function compania(): BelongsTo

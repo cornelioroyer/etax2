@@ -5,7 +5,7 @@
             \App\Models\BudgetPresupuesto::ESTADO_CERRADO  => 'bg-gray-200 text-gray-600',
             default => 'bg-yellow-100 text-yellow-700',
         };
-        $totalGeneral = $presupuesto->detalle->sum('monto_total');
+        $periodoLabel = fn ($p) => $p ? sprintf('%02d/%d', $p->mes, $p->anio) : '—';
     @endphp
 
     <x-slot name="header">
@@ -19,7 +19,9 @@
                 </div>
                 <p class="mt-0.5 text-sm text-gray-500">
                     <a href="{{ route('admin.presupuestos.index') }}" class="hover:underline">Presupuestos</a>
-                    &rsaquo; {{ $presupuesto->escenario?->nombre }} &rsaquo; {{ $presupuesto->anio }}
+                    &rsaquo; Año {{ $presupuesto->anio }}
+                    @if ($presupuesto->escenario) &rsaquo; {{ $presupuesto->escenario->nombre }} @endif
+                    @if ($presupuesto->version) &rsaquo; v.{{ $presupuesto->version->nombre }} @endif
                 </p>
             </div>
             <div class="flex gap-2 text-sm">
@@ -65,39 +67,45 @@
                 </div>
             @endcan
 
-            {{-- Detalle: cuenta x 12 meses --}}
+            {{-- Detalle: cuenta / periodo / dimensiones --}}
             <div class="bg-white shadow-sm sm:rounded-lg overflow-hidden">
                 <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
                     <h3 class="text-sm font-semibold text-gray-700">Detalle por cuenta</h3>
-                    <span class="text-xs text-gray-500 font-mono">Total: {{ number_format($totalGeneral, 2) }}</span>
+                    <span class="text-xs text-gray-500 font-mono">Presupuestado: {{ number_format($totales['presupuestado'], 2) }}</span>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-xs divide-y divide-gray-200">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="px-3 py-2 text-left font-semibold uppercase text-gray-500 sticky left-0 bg-gray-50">Cuenta</th>
-                                @foreach ($meses as $col => $label)
-                                    <th class="px-2 py-2 text-right font-semibold uppercase text-gray-500">{{ $label }}</th>
-                                @endforeach
-                                <th class="px-3 py-2 text-right font-semibold uppercase text-gray-500">Total</th>
+                                <th class="px-3 py-2 text-left font-semibold uppercase text-gray-500">Cuenta</th>
+                                <th class="px-3 py-2 text-left font-semibold uppercase text-gray-500">Periodo</th>
+                                <th class="px-3 py-2 text-left font-semibold uppercase text-gray-500">C. Costo</th>
+                                <th class="px-3 py-2 text-left font-semibold uppercase text-gray-500">Depto.</th>
+                                <th class="px-3 py-2 text-left font-semibold uppercase text-gray-500">Proyecto</th>
+                                <th class="px-3 py-2 text-right font-semibold uppercase text-gray-500">Presupuestado</th>
+                                <th class="px-3 py-2 text-right font-semibold uppercase text-gray-500">Real</th>
+                                <th class="px-3 py-2 text-right font-semibold uppercase text-gray-500">Variación</th>
                                 @can('presupuestos.gestionar')<th></th>@endcan
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
                             @forelse ($presupuesto->detalle as $d)
                                 <tr class="hover:bg-gray-50">
-                                    <td class="px-3 py-2 sticky left-0 bg-white">
+                                    <td class="px-3 py-2">
                                         <span class="font-mono font-semibold">{{ $d->cuenta?->codigo }}</span>
                                         <span class="text-gray-600">{{ $d->cuenta?->nombre }}</span>
                                     </td>
-                                    @foreach (array_keys($meses) as $col)
-                                        <td class="px-2 py-2 text-right font-mono">{{ number_format($d->$col, 2) }}</td>
-                                    @endforeach
-                                    <td class="px-3 py-2 text-right font-mono font-semibold">{{ number_format($d->monto_total, 2) }}</td>
+                                    <td class="px-3 py-2 font-mono">{{ $periodoLabel($d->periodo) }}</td>
+                                    <td class="px-3 py-2 text-gray-600">{{ $d->centroCosto?->nombre ?? '—' }}</td>
+                                    <td class="px-3 py-2 text-gray-600">{{ $d->departamento?->nombre ?? '—' }}</td>
+                                    <td class="px-3 py-2 text-gray-600">{{ $d->proyecto?->nombre ?? '—' }}</td>
+                                    <td class="px-3 py-2 text-right font-mono font-semibold">{{ number_format($d->monto_presupuestado, 2) }}</td>
+                                    <td class="px-3 py-2 text-right font-mono">{{ number_format($d->monto_real, 2) }}</td>
+                                    <td class="px-3 py-2 text-right font-mono {{ $d->variacion < 0 ? 'text-red-600' : 'text-gray-700' }}">{{ number_format($d->variacion, 2) }}</td>
                                     @can('presupuestos.gestionar')
                                         <td class="px-3 py-2 text-right">
                                             <form method="POST" action="{{ route('admin.presupuestos.detalle.destroy', [$presupuesto, $d]) }}"
-                                                onsubmit="return confirm('¿Quitar esta cuenta del presupuesto?')">
+                                                onsubmit="return confirm('¿Quitar esta línea?')">
                                                 @csrf @method('DELETE')
                                                 <button type="submit" class="text-red-600 hover:underline">Quitar</button>
                                             </form>
@@ -106,7 +114,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="{{ 14 + (Auth::user()->can('presupuestos.gestionar') ? 1 : 0) }}"
+                                    <td colspan="{{ 8 + (Auth::user()->can('presupuestos.gestionar') ? 1 : 0) }}"
                                         class="px-4 py-6 text-center text-gray-400">Sin cuentas en este presupuesto.</td>
                                 </tr>
                             @endforelse
@@ -114,11 +122,10 @@
                         @if ($presupuesto->detalle->isNotEmpty())
                             <tfoot class="bg-gray-50 font-semibold">
                                 <tr>
-                                    <td class="px-3 py-2 sticky left-0 bg-gray-50 text-gray-700">Totales</td>
-                                    @foreach (array_keys($meses) as $col)
-                                        <td class="px-2 py-2 text-right font-mono">{{ number_format($totalesMes[$col], 2) }}</td>
-                                    @endforeach
-                                    <td class="px-3 py-2 text-right font-mono">{{ number_format($totalGeneral, 2) }}</td>
+                                    <td colspan="5" class="px-3 py-2 text-right text-gray-700">Totales</td>
+                                    <td class="px-3 py-2 text-right font-mono">{{ number_format($totales['presupuestado'], 2) }}</td>
+                                    <td class="px-3 py-2 text-right font-mono">{{ number_format($totales['real'], 2) }}</td>
+                                    <td class="px-3 py-2 text-right font-mono">{{ number_format($totales['variacion'], 2) }}</td>
                                     @can('presupuestos.gestionar')<td></td>@endcan
                                 </tr>
                             </tfoot>
@@ -126,33 +133,70 @@
                     </table>
                 </div>
 
-                {{-- Agregar cuenta --}}
+                {{-- Agregar línea --}}
                 @can('presupuestos.gestionar')
                     <div class="px-4 py-4 border-t border-gray-200 bg-gray-50">
                         <p class="text-xs font-semibold text-gray-600 mb-3">Agregar cuenta</p>
                         @if ($cuentas->isEmpty())
                             <p class="text-xs text-gray-400">No hay cuentas de movimiento activas en esta compañía.</p>
                         @else
-                            <form method="POST" action="{{ route('admin.presupuestos.detalle.store', $presupuesto) }}" class="space-y-3">
+                            <form method="POST" action="{{ route('admin.presupuestos.detalle.store', $presupuesto) }}"
+                                class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-end">
                                 @csrf
-                                <div>
+                                <div class="lg:col-span-2">
                                     <label class="block text-xs text-gray-600 mb-1">Cuenta contable *</label>
                                     <select name="cuenta_id" required
-                                        class="w-full sm:w-2/3 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                                         <option value="">— Seleccione cuenta —</option>
                                         @foreach ($cuentas as $c)
                                             <option value="{{ $c->id }}">{{ $c->codigo }} · {{ $c->nombre }}</option>
                                         @endforeach
                                     </select>
                                 </div>
-                                <div class="grid grid-cols-3 sm:grid-cols-6 lg:grid-cols-12 gap-2">
-                                    @foreach ($meses as $col => $label)
-                                        <div>
-                                            <label class="block text-[11px] text-gray-500 mb-0.5">{{ $label }}</label>
-                                            <input type="number" name="{{ $col }}" step="0.01" value="0"
-                                                class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-xs text-right">
-                                        </div>
-                                    @endforeach
+                                <div>
+                                    <label class="block text-xs text-gray-600 mb-1">Periodo</label>
+                                    <select name="periodo_id"
+                                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                        <option value="">— Anual / sin periodo —</option>
+                                        @foreach ($periodos as $per)
+                                            <option value="{{ $per->id }}">{{ sprintf('%02d/%d', $per->mes, $per->anio) }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-600 mb-1">Centro de costo</label>
+                                    <select name="centro_costo_id"
+                                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                        <option value="">— Ninguno —</option>
+                                        @foreach ($centrosCosto as $cc)
+                                            <option value="{{ $cc->id }}">{{ $cc->codigo }} · {{ $cc->nombre }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-600 mb-1">Departamento</label>
+                                    <select name="departamento_id"
+                                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                        <option value="">— Ninguno —</option>
+                                        @foreach ($departamentos as $dep)
+                                            <option value="{{ $dep->id }}">{{ $dep->codigo }} · {{ $dep->nombre }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-600 mb-1">Proyecto</label>
+                                    <select name="proyecto_id"
+                                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                        <option value="">— Ninguno —</option>
+                                        @foreach ($proyectos as $pro)
+                                            <option value="{{ $pro->id }}">{{ $pro->codigo }} · {{ $pro->nombre }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-600 mb-1">Monto presupuestado *</label>
+                                    <input type="number" name="monto_presupuestado" step="0.01" value="0" required
+                                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm text-right">
                                 </div>
                                 <div><x-primary-button>Agregar cuenta</x-primary-button></div>
                             </form>

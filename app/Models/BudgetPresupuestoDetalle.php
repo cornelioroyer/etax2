@@ -11,20 +11,15 @@ class BudgetPresupuestoDetalle extends Model
 
     protected $fillable = [
         'presupuesto_id',
+        'periodo_id',
         'cuenta_id',
-        'monto_01',
-        'monto_02',
-        'monto_03',
-        'monto_04',
-        'monto_05',
-        'monto_06',
-        'monto_07',
-        'monto_08',
-        'monto_09',
-        'monto_10',
-        'monto_11',
-        'monto_12',
-        'monto_total',
+        'centro_costo_id',
+        'departamento_id',
+        'proyecto_id',
+        'monto_presupuestado',
+        'monto_real',
+        'variacion',
+        'porcentaje_variacion',
         'created_by',
         'updated_by',
     ];
@@ -32,19 +27,10 @@ class BudgetPresupuestoDetalle extends Model
     protected function casts(): array
     {
         return [
-            'monto_01' => 'decimal:2',
-            'monto_02' => 'decimal:2',
-            'monto_03' => 'decimal:2',
-            'monto_04' => 'decimal:2',
-            'monto_05' => 'decimal:2',
-            'monto_06' => 'decimal:2',
-            'monto_07' => 'decimal:2',
-            'monto_08' => 'decimal:2',
-            'monto_09' => 'decimal:2',
-            'monto_10' => 'decimal:2',
-            'monto_11' => 'decimal:2',
-            'monto_12' => 'decimal:2',
-            'monto_total' => 'decimal:2',
+            'monto_presupuestado'  => 'decimal:2',
+            'monto_real'           => 'decimal:2',
+            'variacion'            => 'decimal:2',
+            'porcentaje_variacion' => 'decimal:4',
         ];
     }
 
@@ -56,5 +42,25 @@ class BudgetPresupuestoDetalle extends Model
     public function cuenta(): BelongsTo
     {
         return $this->belongsTo(CuentaContable::class, 'cuenta_id');
+    }
+
+    public function periodo(): BelongsTo
+    {
+        return $this->belongsTo(PeriodoContable::class, 'periodo_id');
+    }
+
+    public function centroCosto(): BelongsTo
+    {
+        return $this->belongsTo(CoreCentroCosto::class, 'centro_costo_id');
+    }
+
+    public function departamento(): BelongsTo
+    {
+        return $this->belongsTo(CoreDepartamento::class, 'departamento_id');
+    }
+
+    public function proyecto(): BelongsTo
+    {
+        return $this->belongsTo(CoreProyecto::class, 'proyecto_id');
     }
 }

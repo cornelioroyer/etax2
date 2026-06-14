@@ -7,22 +7,20 @@ use App\Http\Controllers\Controller;
 use App\Models\BudgetEscenario;
 use App\Models\BudgetPresupuesto;
 use App\Models\BudgetPresupuestoDetalle;
+use App\Models\BudgetVersion;
+use App\Models\CoreCentroCosto;
+use App\Models\CoreDepartamento;
+use App\Models\CoreProyecto;
 use App\Models\CuentaContable;
+use App\Models\PeriodoContable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class BudgetPresupuestoController extends Controller
 {
     use ConCompaniaActiva;
-
-    /** Meses de la columna monto_01..monto_12 (campo => etiqueta). */
-    public const MESES = [
-        'monto_01' => 'Ene', 'monto_02' => 'Feb', 'monto_03' => 'Mar',
-        'monto_04' => 'Abr', 'monto_05' => 'May', 'monto_06' => 'Jun',
-        'monto_07' => 'Jul', 'monto_08' => 'Ago', 'monto_09' => 'Sep',
-        'monto_10' => 'Oct', 'monto_11' => 'Nov', 'monto_12' => 'Dic',
-    ];
 
     // ── Listado ───────────────────────────────────────────────────────────────
 
@@ -33,24 +31,25 @@ class BudgetPresupuestoController extends Controller
 
         $search      = trim($request->input('q', ''));
         $escenarioId = $request->input('escenario_id');
+        $versionId   = $request->input('version_id');
         $anio        = $request->input('anio');
 
-        $escenarios = BudgetEscenario::where('compania_id', $companiaId)
-            ->orderBy('nombre')
-            ->get();
+        $escenarios = BudgetEscenario::where('compania_id', $companiaId)->orderBy('nombre')->get();
+        $versiones  = BudgetVersion::where('compania_id', $companiaId)->orderBy('nombre')->get();
 
         $presupuestos = BudgetPresupuesto::where('compania_id', $companiaId)
             ->when($escenarioId, fn ($q) => $q->where('escenario_id', $escenarioId))
+            ->when($versionId, fn ($q) => $q->where('version_id', $versionId))
             ->when($anio, fn ($q) => $q->where('anio', $anio))
             ->when($search !== '', fn ($q) => $q->where('nombre', 'ilike', "%{$search}%"))
-            ->with('escenario')
+            ->with(['escenario', 'version'])
             ->orderBy('anio', 'desc')
             ->orderBy('nombre')
             ->paginate(20)
             ->withQueryString();
 
         return view('admin.presupuestos.index', compact(
-            'presupuestos', 'escenarios', 'search', 'escenarioId', 'anio'
+            'presupuestos', 'escenarios', 'versiones', 'search', 'escenarioId', 'versionId', 'anio'
         ));
     }
 
@@ -61,11 +60,10 @@ class BudgetPresupuestoController extends Controller
         abort_unless($request->user()->can('presupuestos.gestionar'), 403);
         $companiaId = $this->companiaActivaId($request);
 
-        $escenarios = BudgetEscenario::where('compania_id', $companiaId)
-            ->orderBy('nombre')
-            ->get();
-
-        return view('admin.presupuestos.create', compact('escenarios'));
+        return view('admin.presupuestos.create', [
+            'escenarios' => BudgetEscenario::where('compania_id', $companiaId)->orderBy('nombre')->get(),
+            'versiones'  => BudgetVersion::where('compania_id', $companiaId)->orderBy('nombre')->get(),
+        ]);
     }
 
     public function store(Request $request): RedirectResponse
@@ -73,13 +71,7 @@ class BudgetPresupuestoController extends Controller
         abort_unless($request->user()->can('presupuestos.gestionar'), 403);
         $companiaId = $this->companiaActivaId($request);
 
-        $data = $request->validate([
-            'escenario_id' => ['required', 'integer'],
-            'nombre'       => ['required', 'string', 'max:150'],
-            'anio'         => ['required', 'integer', 'min:2000', 'max:2100'],
-        ]);
-
-        $this->resolverEscenario($request, (int) $data['escenario_id']);
+        $data = $this->validarCabecera($request, $companiaId);
 
         $presupuesto = BudgetPresupuesto::create([
             ...$data,
@@ -99,24 +91,32 @@ class BudgetPresupuestoController extends Controller
         abort_unless($request->user()->can('presupuestos.ver'), 403);
         abort_unless($presupuesto->compania_id === $this->companiaActivaId($request), 404);
 
-        $presupuesto->load(['escenario', 'detalle.cuenta']);
+        $presupuesto->load([
+            'escenario', 'version',
+            'detalle.cuenta', 'detalle.periodo', 'detalle.centroCosto',
+            'detalle.departamento', 'detalle.proyecto',
+        ]);
 
-        $cuentas = CuentaContable::where('compania_id', $presupuesto->compania_id)
-            ->where('permite_movimiento', true)
-            ->where('activa', true)
-            ->orderBy('codigo')
-            ->get();
-
-        $totalesMes = [];
-        foreach (array_keys(self::MESES) as $col) {
-            $totalesMes[$col] = round((float) $presupuesto->detalle->sum($col), 2);
-        }
+        $companiaId = $presupuesto->compania_id;
 
         return view('admin.presupuestos.show', [
-            'presupuesto' => $presupuesto,
-            'cuentas'     => $cuentas,
-            'meses'       => self::MESES,
-            'totalesMes'  => $totalesMes,
+            'presupuesto'   => $presupuesto,
+            'cuentas'       => CuentaContable::where('compania_id', $companiaId)
+                ->where('permite_movimiento', true)->where('activa', true)
+                ->orderBy('codigo')->get(),
+            'periodos'      => PeriodoContable::where('compania_id', $companiaId)
+                ->where('anio', $presupuesto->anio)->orderBy('mes')->get(),
+            'centrosCosto'  => CoreCentroCosto::where('compania_id', $companiaId)
+                ->where('activo', true)->orderBy('codigo')->get(),
+            'departamentos' => CoreDepartamento::where('compania_id', $companiaId)
+                ->where('activo', true)->orderBy('codigo')->get(),
+            'proyectos'     => CoreProyecto::where('compania_id', $companiaId)
+                ->orderBy('codigo')->get(),
+            'totales'       => [
+                'presupuestado' => round((float) $presupuesto->detalle->sum('monto_presupuestado'), 2),
+                'real'          => round((float) $presupuesto->detalle->sum('monto_real'), 2),
+                'variacion'     => round((float) $presupuesto->detalle->sum('variacion'), 2),
+            ],
         ]);
     }
 
@@ -127,11 +127,11 @@ class BudgetPresupuestoController extends Controller
         abort_unless($request->user()->can('presupuestos.gestionar'), 403);
         abort_unless($presupuesto->compania_id === $this->companiaActivaId($request), 404);
 
-        $escenarios = BudgetEscenario::where('compania_id', $presupuesto->compania_id)
-            ->orderBy('nombre')
-            ->get();
-
-        return view('admin.presupuestos.edit', compact('presupuesto', 'escenarios'));
+        return view('admin.presupuestos.edit', [
+            'presupuesto' => $presupuesto,
+            'escenarios'  => BudgetEscenario::where('compania_id', $presupuesto->compania_id)->orderBy('nombre')->get(),
+            'versiones'   => BudgetVersion::where('compania_id', $presupuesto->compania_id)->orderBy('nombre')->get(),
+        ]);
     }
 
     public function update(Request $request, BudgetPresupuesto $presupuesto): RedirectResponse
@@ -139,13 +139,7 @@ class BudgetPresupuestoController extends Controller
         abort_unless($request->user()->can('presupuestos.gestionar'), 403);
         abort_unless($presupuesto->compania_id === $this->companiaActivaId($request), 404);
 
-        $data = $request->validate([
-            'escenario_id' => ['required', 'integer'],
-            'nombre'       => ['required', 'string', 'max:150'],
-            'anio'         => ['required', 'integer', 'min:2000', 'max:2100'],
-        ]);
-
-        $this->resolverEscenario($request, (int) $data['escenario_id']);
+        $data = $this->validarCabecera($request, $presupuesto->compania_id, $presupuesto->id);
 
         $presupuesto->update([
             ...$data,
@@ -175,45 +169,38 @@ class BudgetPresupuestoController extends Controller
         return back()->with('status', 'Estado actualizado a: ' . (BudgetPresupuesto::ESTADOS[$data['estado']] ?? $data['estado']));
     }
 
-    // ── Detalle (líneas por cuenta) ─────────────────────────────────────────────
+    // ── Detalle (líneas por cuenta/periodo) ─────────────────────────────────────
 
     public function storeDetalle(Request $request, BudgetPresupuesto $presupuesto): RedirectResponse
     {
         abort_unless($request->user()->can('presupuestos.gestionar'), 403);
         abort_unless($presupuesto->compania_id === $this->companiaActivaId($request), 404);
 
-        $reglasMontos = [];
-        foreach (array_keys(self::MESES) as $col) {
-            $reglasMontos[$col] = ['nullable', 'numeric'];
-        }
-
         $data = $request->validate([
-            'cuenta_id' => ['required', 'integer'],
-            ...$reglasMontos,
+            'cuenta_id'           => ['required', 'integer'],
+            'periodo_id'          => ['nullable', 'integer'],
+            'centro_costo_id'     => ['nullable', 'integer'],
+            'departamento_id'     => ['nullable', 'integer'],
+            'proyecto_id'         => ['nullable', 'integer'],
+            'monto_presupuestado' => ['required', 'numeric'],
         ]);
 
-        $cuenta = CuentaContable::findOrFail($data['cuenta_id']);
-        abort_unless($cuenta->compania_id === $presupuesto->compania_id, 422, 'Cuenta inválida.');
-        abort_if(
-            $presupuesto->detalle()->where('cuenta_id', $cuenta->id)->exists(),
-            422,
-            'Esa cuenta ya tiene una línea en este presupuesto.'
-        );
+        $companiaId = $presupuesto->compania_id;
 
-        $montos = [];
-        $total  = 0;
-        foreach (array_keys(self::MESES) as $col) {
-            $monto       = round((float) ($data[$col] ?? 0), 2);
-            $montos[$col] = $monto;
-            $total       += $monto;
-        }
+        // La cuenta debe ser de la compañía. Las dimensiones, si se indican, también.
+        $cuenta = CuentaContable::findOrFail($data['cuenta_id']);
+        abort_unless($cuenta->compania_id === $companiaId, 422, 'Cuenta inválida.');
+        $this->validarPertenencia($data, $companiaId);
 
         BudgetPresupuestoDetalle::create([
-            'presupuesto_id' => $presupuesto->id,
-            'cuenta_id'      => $cuenta->id,
-            ...$montos,
-            'monto_total'    => round($total, 2),
-            'created_by'     => $request->user()->email,
+            'presupuesto_id'      => $presupuesto->id,
+            'cuenta_id'           => $cuenta->id,
+            'periodo_id'          => $data['periodo_id'] ?? null,
+            'centro_costo_id'     => $data['centro_costo_id'] ?? null,
+            'departamento_id'     => $data['departamento_id'] ?? null,
+            'proyecto_id'         => $data['proyecto_id'] ?? null,
+            'monto_presupuestado' => round((float) $data['monto_presupuestado'], 2),
+            'created_by'          => $request->user()->email,
         ]);
 
         return back()->with('status', "Línea para la cuenta {$cuenta->codigo} agregada.");
@@ -245,12 +232,50 @@ class BudgetPresupuestoController extends Controller
             ->with('status', 'Presupuesto eliminado.');
     }
 
-    // ── Helper ──────────────────────────────────────────────────────────────────
+    // ── Helpers ──────────────────────────────────────────────────────────────────
 
-    private function resolverEscenario(Request $request, int $escenarioId): BudgetEscenario
+    /** Valida la cabecera del presupuesto (compartido entre store/update). */
+    private function validarCabecera(Request $request, int $companiaId, ?int $ignoreId = null): array
     {
-        $escenario = BudgetEscenario::findOrFail($escenarioId);
-        abort_unless($escenario->compania_id === $this->companiaActivaId($request), 403);
-        return $escenario;
+        $data = $request->validate([
+            'nombre'       => [
+                'required', 'string', 'max:150',
+                Rule::unique('budget_presupuestos')
+                    ->where(fn ($q) => $q->where('compania_id', $companiaId)->where('anio', $request->input('anio')))
+                    ->ignore($ignoreId),
+            ],
+            'anio'         => ['required', 'integer', 'min:2000', 'max:2100'],
+            'escenario_id' => ['nullable', 'integer'],
+            'version_id'   => ['nullable', 'integer'],
+        ]);
+
+        if (! empty($data['escenario_id'])) {
+            $escenario = BudgetEscenario::findOrFail($data['escenario_id']);
+            abort_unless($escenario->compania_id === $companiaId, 422, 'Escenario inválido.');
+        }
+        if (! empty($data['version_id'])) {
+            $version = BudgetVersion::findOrFail($data['version_id']);
+            abort_unless($version->compania_id === $companiaId, 422, 'Versión inválida.');
+        }
+
+        return $data;
+    }
+
+    /** Verifica que las dimensiones indicadas pertenezcan a la compañía. */
+    private function validarPertenencia(array $data, int $companiaId): void
+    {
+        $checks = [
+            'periodo_id'      => PeriodoContable::class,
+            'centro_costo_id' => CoreCentroCosto::class,
+            'departamento_id' => CoreDepartamento::class,
+            'proyecto_id'     => CoreProyecto::class,
+        ];
+
+        foreach ($checks as $campo => $modelo) {
+            if (! empty($data[$campo])) {
+                $registro = $modelo::findOrFail($data[$campo]);
+                abort_unless($registro->compania_id === $companiaId, 422, 'Dimensión inválida.');
+            }
+        }
     }
 }

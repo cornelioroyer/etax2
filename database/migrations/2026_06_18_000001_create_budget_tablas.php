@@ -7,13 +7,26 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * Presupuestos. Un escenario agrupa presupuestos (p. ej. "Base 2026",
-     * "Conservador"); cada presupuesto es de un año y su detalle lleva una
-     * línea por cuenta contable con 12 montos mensuales. Cada bloque va con
-     * guarda hasTable para ser idempotente y no-op si la tabla ya existe.
+     * Presupuestos (Budget). Las tablas budget_* viven en el esquema maestro
+     * PostgreSQL (dev y prod); en tests (SQLite) hay que crearlas. Cada bloque
+     * va con guarda hasTable (no-op donde ya existen). El detalle es por cuenta
+     * y periodo, con dimensiones analíticas y comparación presupuestado/real.
      */
     public function up(): void
     {
+        if (! Schema::hasTable('budget_versiones')) {
+            Schema::create('budget_versiones', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('compania_id');
+                $table->string('nombre', 100);
+                $table->boolean('activa')->default(true);
+                $table->timestamps();
+                $table->string('created_by', 200)->nullable();
+                $table->string('updated_by', 200)->nullable();
+                $table->unique(['compania_id', 'nombre']);
+            });
+        }
+
         if (! Schema::hasTable('budget_escenarios')) {
             Schema::create('budget_escenarios', function (Blueprint $table) {
                 $table->id();
@@ -29,13 +42,15 @@ return new class extends Migration
             Schema::create('budget_presupuestos', function (Blueprint $table) {
                 $table->id();
                 $table->unsignedBigInteger('compania_id');
-                $table->unsignedBigInteger('escenario_id');
                 $table->string('nombre', 150);
-                $table->smallInteger('anio');
+                $table->integer('anio');
+                $table->unsignedBigInteger('version_id')->nullable();
+                $table->unsignedBigInteger('escenario_id')->nullable();
                 $table->string('estado', 30)->default('BORRADOR');
                 $table->timestamps();
                 $table->string('created_by', 200)->nullable();
                 $table->string('updated_by', 200)->nullable();
+                $table->unique(['compania_id', 'nombre', 'anio']);
             });
         }
 
@@ -43,11 +58,15 @@ return new class extends Migration
             Schema::create('budget_presupuestos_detalle', function (Blueprint $table) {
                 $table->id();
                 $table->unsignedBigInteger('presupuesto_id');
+                $table->unsignedBigInteger('periodo_id')->nullable();
                 $table->unsignedBigInteger('cuenta_id');
-                for ($mes = 1; $mes <= 12; $mes++) {
-                    $table->decimal('monto_' . str_pad((string) $mes, 2, '0', STR_PAD_LEFT), 18, 2)->default(0);
-                }
-                $table->decimal('monto_total', 18, 2)->default(0);
+                $table->unsignedBigInteger('centro_costo_id')->nullable();
+                $table->unsignedBigInteger('departamento_id')->nullable();
+                $table->unsignedBigInteger('proyecto_id')->nullable();
+                $table->decimal('monto_presupuestado', 18, 2)->default(0);
+                $table->decimal('monto_real', 18, 2)->default(0);
+                $table->decimal('variacion', 18, 2)->default(0);
+                $table->decimal('porcentaje_variacion', 8, 4)->default(0);
                 $table->timestamps();
                 $table->string('created_by', 200)->nullable();
                 $table->string('updated_by', 200)->nullable();
@@ -60,5 +79,6 @@ return new class extends Migration
         Schema::dropIfExists('budget_presupuestos_detalle');
         Schema::dropIfExists('budget_presupuestos');
         Schema::dropIfExists('budget_escenarios');
+        Schema::dropIfExists('budget_versiones');
     }
 };
