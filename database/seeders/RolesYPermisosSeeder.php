@@ -28,6 +28,7 @@ class RolesYPermisosSeeder extends Seeder
             'usuarios_compania.gestionar',
             // Módulos operativos
             'contabilidad.ver',
+            'contabilidad.gestionar',
             'compras.ver',
             'compras.gestionar',
             'ventas.ver',
@@ -48,14 +49,15 @@ class RolesYPermisosSeeder extends Seeder
             'edu.gestionar',
             'reportes.ver',
             'ia.ver',
+            'contactos.ver',
+            'contactos.gestionar',
             'cxc.ver',
             'cxc.gestionar',
             'cxp.ver',
             'cxp.gestionar',
-            'contabilidad.gestionar',
-            'usuarios_compania.ver',
             'fel.ver',
             'fel.gestionar',
+            'usuarios_compania.ver',
             // Visibilidad de campos sensibles
             'companias.campo.facturacion_fiscal',
         ];
@@ -84,6 +86,10 @@ class RolesYPermisosSeeder extends Seeder
             'edu.ver',
             'reportes.ver',
             'ia.ver',
+            'contactos.ver',
+            'cxc.ver',
+            'cxp.ver',
+            'fel.ver',
         ]);
     }
 }
