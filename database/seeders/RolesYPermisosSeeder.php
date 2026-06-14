@@ -94,6 +94,7 @@ class RolesYPermisosSeeder extends Seeder
         $usuario = Role::findOrCreate('usuario', 'web');
         $usuario->syncPermissions([
             'companias.ver',
+            'companias.crear', // todos los usuarios pueden crear compañías (quedan como admin de la nueva)
             'zonas.ver',
             'contabilidad.ver',
             'compras.ver',

@@ -46,9 +46,12 @@ class AppServiceProvider extends ServiceProvider
             // lo fija el middleware EstablecerCompaniaActiva.
             $companiaActiva = app(\Spatie\Permission\PermissionRegistrar::class)->getPermissionsTeamId();
 
+            // companias.crear se exceptúa: crear una compañía nueva no modifica
+            // datos de la compañía 1, y todos los usuarios pueden crearlas.
             if ((int) $companiaActiva === self::COMPANIA_SISTEMA
                 && str_contains($ability, '.')
-                && ! str_ends_with($ability, '.ver')) {
+                && ! str_ends_with($ability, '.ver')
+                && $ability !== 'companias.crear') {
                 return false;
             }
 
