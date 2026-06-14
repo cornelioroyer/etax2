@@ -14,8 +14,9 @@
             <div>
                 <label for="tipo_persona" class="block text-sm font-medium text-gray-700">Tipo de persona</label>
                 <select id="tipo_persona" name="tipo_persona" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                    <option value="JURIDICA" @selected(old('tipo_persona', $c->tipo_persona ?? 'JURIDICA') === 'JURIDICA')>Jurídica (empresa)</option>
-                    <option value="NATURAL" @selected(old('tipo_persona', $c->tipo_persona ?? '') === 'NATURAL')>Natural (persona)</option>
+                    <option value="NATURAL" @selected(old('tipo_persona', $c->tipo_persona ?? '') === 'NATURAL')>Natural (N)</option>
+                    <option value="JURIDICA" @selected(old('tipo_persona', $c->tipo_persona ?? 'JURIDICA') === 'JURIDICA')>Jurídica (J)</option>
+                    <option value="EXTRANJERO" @selected(old('tipo_persona', $c->tipo_persona ?? '') === 'EXTRANJERO')>Extranjero (E)</option>
                 </select>
             </div>
 

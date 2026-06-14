@@ -123,7 +123,7 @@ class ContactoController extends Controller
             ],
             'nombre' => ['required', 'string', 'max:200'],
             'razon_social' => ['nullable', 'string', 'max:250'],
-            'tipo_persona' => ['required', Rule::in(['NATURAL', 'JURIDICA'])],
+            'tipo_persona' => ['required', Rule::in(['NATURAL', 'JURIDICA', 'EXTRANJERO'])],
             'identificacion' => ['nullable', 'string', 'max:50'],
             'dv' => ['nullable', 'string', 'max:5'],
             'email' => ['nullable', 'string', 'email', 'max:150'],
