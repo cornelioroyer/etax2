@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Admin\AsientoController;
+use App\Http\Controllers\Admin\BudgetEscenarioController;
+use App\Http\Controllers\Admin\BudgetPresupuestoController;
 use App\Http\Controllers\Admin\CompaniaController;
 use App\Http\Controllers\Admin\ContactoController;
 use App\Http\Controllers\Admin\CuentaContableController;
@@ -665,6 +667,34 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('taller/ordenes/{orden}/control-calidad', [TallerOrdenController::class, 'storeControlCalidad'])->whereNumber('orden')->name('taller.ordenes.control-calidad.store');
         Route::post('taller/ordenes/{orden}/entrega', [TallerOrdenController::class, 'storeEntrega'])->whereNumber('orden')->name('taller.ordenes.entrega.store');
         Route::post('taller/ordenes/{orden}/facturacion', [TallerOrdenController::class, 'storeFacturacion'])->whereNumber('orden')->name('taller.ordenes.facturacion.store');
+    });
+
+    // ── Presupuestos ─────────────────────────────────────────────────────────
+    Route::prefix('presupuestos')->name('presupuestos.')->group(function () {
+        Route::middleware('permission:presupuestos.ver')->group(function () {
+            Route::get('escenarios', [BudgetEscenarioController::class, 'index'])->name('escenarios.index');
+            Route::get('/', [BudgetPresupuestoController::class, 'index'])->name('index');
+            Route::get('{presupuesto}', [BudgetPresupuestoController::class, 'show'])->whereNumber('presupuesto')->name('show');
+        });
+
+        Route::middleware('permission:presupuestos.gestionar')->group(function () {
+            // Escenarios
+            Route::get('escenarios/nuevo', [BudgetEscenarioController::class, 'create'])->name('escenarios.create');
+            Route::post('escenarios', [BudgetEscenarioController::class, 'store'])->name('escenarios.store');
+            Route::get('escenarios/{escenario}/editar', [BudgetEscenarioController::class, 'edit'])->whereNumber('escenario')->name('escenarios.edit');
+            Route::put('escenarios/{escenario}', [BudgetEscenarioController::class, 'update'])->whereNumber('escenario')->name('escenarios.update');
+            Route::delete('escenarios/{escenario}', [BudgetEscenarioController::class, 'destroy'])->whereNumber('escenario')->name('escenarios.destroy');
+
+            // Presupuestos
+            Route::get('nuevo', [BudgetPresupuestoController::class, 'create'])->name('create');
+            Route::post('/', [BudgetPresupuestoController::class, 'store'])->name('store');
+            Route::get('{presupuesto}/editar', [BudgetPresupuestoController::class, 'edit'])->whereNumber('presupuesto')->name('edit');
+            Route::put('{presupuesto}', [BudgetPresupuestoController::class, 'update'])->whereNumber('presupuesto')->name('update');
+            Route::delete('{presupuesto}', [BudgetPresupuestoController::class, 'destroy'])->whereNumber('presupuesto')->name('destroy');
+            Route::post('{presupuesto}/cambiar-estado', [BudgetPresupuestoController::class, 'cambiarEstado'])->whereNumber('presupuesto')->name('cambiar-estado');
+            Route::post('{presupuesto}/detalle', [BudgetPresupuestoController::class, 'storeDetalle'])->whereNumber('presupuesto')->name('detalle.store');
+            Route::delete('{presupuesto}/detalle/{detalle}', [BudgetPresupuestoController::class, 'destroyDetalle'])->whereNumber(['presupuesto', 'detalle'])->name('detalle.destroy');
+        });
     });
 
     // ── Ayuda / base de conocimientos ────────────────────────────────────────

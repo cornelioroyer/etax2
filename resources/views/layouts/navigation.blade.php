@@ -45,6 +45,17 @@
             ],
         ],
         [
+            'key' => 'presupuestos',
+            'label' => 'Presupuestos',
+            'icon' => 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2Z',
+            'active' => request()->routeIs('admin.presupuestos.*'),
+            'show' => $can('presupuestos.ver'),
+            'children' => [
+                ['label' => 'Presupuestos', 'href' => route('admin.presupuestos.index'), 'active' => request()->routeIs('admin.presupuestos.index') || request()->routeIs('admin.presupuestos.show') || request()->routeIs('admin.presupuestos.create') || request()->routeIs('admin.presupuestos.edit'), 'show' => $can('presupuestos.ver')],
+                ['label' => 'Escenarios', 'href' => route('admin.presupuestos.escenarios.index'), 'active' => request()->routeIs('admin.presupuestos.escenarios.*'), 'show' => $can('presupuestos.ver')],
+            ],
+        ],
+        [
             'key' => 'cxc',
             'label' => 'Cuentas por Cobrar',
             'icon' => 'M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z',
