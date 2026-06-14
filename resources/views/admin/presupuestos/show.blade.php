@@ -69,9 +69,23 @@
 
             {{-- Detalle: cuenta / periodo / dimensiones --}}
             <div class="bg-white shadow-sm sm:rounded-lg overflow-hidden">
-                <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+                <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-3">
                     <h3 class="text-sm font-semibold text-gray-700">Detalle por cuenta</h3>
-                    <span class="text-xs text-gray-500 font-mono">Presupuestado: {{ number_format($totales['presupuestado'], 2) }}</span>
+                    <div class="flex items-center gap-4">
+                        <span class="text-xs text-gray-500 font-mono">Presupuestado: {{ number_format($totales['presupuestado'], 2) }}</span>
+                        @can('presupuestos.gestionar')
+                            @if ($presupuesto->detalle->isNotEmpty())
+                                <form method="POST" action="{{ route('admin.presupuestos.calcular-real', $presupuesto) }}">
+                                    @csrf
+                                    <button type="submit"
+                                        class="rounded-md border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                                        title="Recalcula el real desde los asientos posteados del año">
+                                        ↻ Calcular real
+                                    </button>
+                                </form>
+                            @endif
+                        @endcan
+                    </div>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-xs divide-y divide-gray-200">
@@ -101,7 +115,12 @@
                                     <td class="px-3 py-2 text-gray-600">{{ $d->proyecto?->nombre ?? '—' }}</td>
                                     <td class="px-3 py-2 text-right font-mono font-semibold">{{ number_format($d->monto_presupuestado, 2) }}</td>
                                     <td class="px-3 py-2 text-right font-mono">{{ number_format($d->monto_real, 2) }}</td>
-                                    <td class="px-3 py-2 text-right font-mono {{ $d->variacion < 0 ? 'text-red-600' : 'text-gray-700' }}">{{ number_format($d->variacion, 2) }}</td>
+                                    <td class="px-3 py-2 text-right font-mono {{ $d->variacion < 0 ? 'text-red-600' : 'text-gray-700' }}">
+                                        {{ number_format($d->variacion, 2) }}
+                                        @if (! is_null($d->porcentaje_variacion))
+                                            <span class="text-[10px] text-gray-400">({{ number_format($d->porcentaje_variacion, 1) }}%)</span>
+                                        @endif
+                                    </td>
                                     @can('presupuestos.gestionar')
                                         <td class="px-3 py-2 text-right">
                                             <form method="POST" action="{{ route('admin.presupuestos.detalle.destroy', [$presupuesto, $d]) }}"

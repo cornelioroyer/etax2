@@ -13,6 +13,7 @@ use App\Models\CoreDepartamento;
 use App\Models\CoreProyecto;
 use App\Models\CuentaContable;
 use App\Models\PeriodoContable;
+use App\Services\PresupuestoReal;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -167,6 +168,20 @@ class BudgetPresupuestoController extends Controller
         ]);
 
         return back()->with('status', 'Estado actualizado a: ' . (BudgetPresupuesto::ESTADOS[$data['estado']] ?? $data['estado']));
+    }
+
+    // ── Calcular real (presupuesto vs. ejecutado) ───────────────────────────────
+
+    public function calcularReal(Request $request, BudgetPresupuesto $presupuesto, PresupuestoReal $servicio): RedirectResponse
+    {
+        abort_unless($request->user()->can('presupuestos.gestionar'), 403);
+        abort_unless($presupuesto->compania_id === $this->companiaActivaId($request), 404);
+
+        $lineas = $servicio->calcular($presupuesto);
+
+        return back()->with('status', $lineas > 0
+            ? "Real recalculado desde los asientos: {$lineas} línea(s) actualizada(s)."
+            : 'No hay líneas de detalle que recalcular.');
     }
 
     // ── Detalle (líneas por cuenta/periodo) ─────────────────────────────────────

@@ -704,6 +704,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
             Route::put('{presupuesto}', [BudgetPresupuestoController::class, 'update'])->whereNumber('presupuesto')->name('update');
             Route::delete('{presupuesto}', [BudgetPresupuestoController::class, 'destroy'])->whereNumber('presupuesto')->name('destroy');
             Route::post('{presupuesto}/cambiar-estado', [BudgetPresupuestoController::class, 'cambiarEstado'])->whereNumber('presupuesto')->name('cambiar-estado');
+            Route::post('{presupuesto}/calcular-real', [BudgetPresupuestoController::class, 'calcularReal'])->whereNumber('presupuesto')->name('calcular-real');
             Route::post('{presupuesto}/detalle', [BudgetPresupuestoController::class, 'storeDetalle'])->whereNumber('presupuesto')->name('detalle.store');
             Route::delete('{presupuesto}/detalle/{detalle}', [BudgetPresupuestoController::class, 'destroyDetalle'])->whereNumber(['presupuesto', 'detalle'])->name('detalle.destroy');
         });
