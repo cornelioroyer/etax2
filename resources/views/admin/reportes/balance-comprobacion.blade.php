@@ -65,8 +65,8 @@
                         <p>{{ $generado->format('d/m/Y H:i') }}</p>
                     </div>
 
-                    <h2 class="text-xl font-extrabold uppercase tracking-wider text-[#0d2d5e]">Balance de Comprobación</h2>
-                    <p class="mt-1 text-lg font-bold text-[#005293]">{{ $compania->nombre ?? '' }}</p>
+                    <h2 class="text-xl font-extrabold uppercase tracking-wider" style="color:#0d2d5e">Balance de Comprobación</h2>
+                    <p class="mt-1 text-lg font-bold" style="color:#005293">{{ $compania->nombre ?? '' }}</p>
                     @if (!empty($compania?->ruc))
                         <p class="text-xs text-slate-500">RUC {{ $compania->ruc }}{{ $compania->dv ? ' DV '.$compania->dv : '' }}</p>
                     @endif
@@ -84,13 +84,13 @@
                         <table class="min-w-full text-sm">
                             <thead>
                                 <tr class="text-xs font-bold uppercase tracking-wide text-white">
-                                    <th class="bg-[#0a2347] px-3 py-3 text-left">Cuenta</th>
-                                    <th class="bg-[#0a2347] px-3 py-3 text-left">Descripción</th>
-                                    <th class="bg-[#0d2d5e] px-3 py-3 text-right">Balance Inicial</th>
-                                    <th class="bg-[#0d2d5e] px-3 py-3 text-right">Débito</th>
-                                    <th class="bg-[#0d2d5e] px-3 py-3 text-right">Crédito</th>
-                                    <th class="bg-[#005293] px-3 py-3 text-right">Corriente</th>
-                                    <th class="bg-[#005293] px-3 py-3 text-right">Balance Final</th>
+                                    <th class="px-3 py-3 text-left" style="background-color:#0a2347">Cuenta</th>
+                                    <th class="px-3 py-3 text-left" style="background-color:#0a2347">Descripción</th>
+                                    <th class="px-3 py-3 text-right" style="background-color:#0d2d5e">Balance Inicial</th>
+                                    <th class="px-3 py-3 text-right" style="background-color:#0d2d5e">Débito</th>
+                                    <th class="px-3 py-3 text-right" style="background-color:#0d2d5e">Crédito</th>
+                                    <th class="px-3 py-3 text-right" style="background-color:#005293">Corriente</th>
+                                    <th class="px-3 py-3 text-right" style="background-color:#005293">Balance Final</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100">
@@ -130,12 +130,12 @@
                             @if ($filas->isNotEmpty())
                                 <tfoot>
                                     <tr class="text-white">
-                                        <td class="bg-[#0a2347] px-3 py-3 text-base font-bold uppercase tracking-wide" colspan="2">Totales</td>
-                                        <td class="bg-[#0d2d5e] px-3 py-3 text-right text-sm font-bold tabular-nums">{{ $fmt($totales['inicial']) }}</td>
-                                        <td class="bg-[#0d2d5e] px-3 py-3 text-right text-sm font-bold tabular-nums {{ $cuadra ? '' : 'text-red-300' }}">{{ $fmt($totales['debito']) }}</td>
-                                        <td class="bg-[#0d2d5e] px-3 py-3 text-right text-sm font-bold tabular-nums {{ $cuadra ? '' : 'text-red-300' }}">{{ $fmt($totales['credito']) }}</td>
-                                        <td class="bg-[#005293] px-3 py-3 text-right text-sm font-bold tabular-nums">{{ $fmt($totales['corriente']) }}</td>
-                                        <td class="bg-[#005293] px-3 py-3 text-right text-sm font-bold tabular-nums">{{ $fmt($totales['final']) }}</td>
+                                        <td class="px-3 py-3 text-base font-bold uppercase tracking-wide" colspan="2" style="background-color:#0a2347">Totales</td>
+                                        <td class="px-3 py-3 text-right text-sm font-bold tabular-nums" style="background-color:#0d2d5e">{{ $fmt($totales['inicial']) }}</td>
+                                        <td class="px-3 py-3 text-right text-sm font-bold tabular-nums {{ $cuadra ? '' : 'text-red-300' }}" style="background-color:#0d2d5e">{{ $fmt($totales['debito']) }}</td>
+                                        <td class="px-3 py-3 text-right text-sm font-bold tabular-nums {{ $cuadra ? '' : 'text-red-300' }}" style="background-color:#0d2d5e">{{ $fmt($totales['credito']) }}</td>
+                                        <td class="px-3 py-3 text-right text-sm font-bold tabular-nums" style="background-color:#005293">{{ $fmt($totales['corriente']) }}</td>
+                                        <td class="px-3 py-3 text-right text-sm font-bold tabular-nums" style="background-color:#005293">{{ $fmt($totales['final']) }}</td>
                                     </tr>
                                 </tfoot>
                             @endif
