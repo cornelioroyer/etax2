@@ -64,18 +64,30 @@
             </form>
 
             {{-- Tabla --}}
+            @php
+                $sortUrl = fn(string $col) => route('admin.ventas.facturas.index', array_merge(
+                    request()->except(['sort','dir','page']),
+                    ['sort' => $col, 'dir' => ($sort === $col && $dir === 'asc') ? 'desc' : 'asc']
+                ));
+                $sortIcon = function(string $col) use ($sort, $dir): string {
+                    if ($sort !== $col) return '<svg class="inline w-3 h-3 ml-0.5 text-gray-300" viewBox="0 0 16 16" fill="currentColor"><path d="M5 8l3-4 3 4H5zm0 0l3 4 3-4H5z"/></svg>';
+                    return $dir === 'asc'
+                        ? '<svg class="inline w-3 h-3 ml-0.5 text-blue-500" viewBox="0 0 16 16" fill="currentColor"><path d="M5 10l3-5 3 5H5z"/></svg>'
+                        : '<svg class="inline w-3 h-3 ml-0.5 text-blue-500" viewBox="0 0 16 16" fill="currentColor"><path d="M11 6l-3 5-3-5h6z"/></svg>';
+                };
+            @endphp
             <div class="bg-white shadow-sm sm:rounded-lg overflow-hidden">
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200 text-sm">
                         <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                             <tr>
-                                <th class="px-4 py-3">Número</th>
-                                <th class="px-4 py-3">Fecha</th>
+                                <th class="px-4 py-3"><a href="{{ $sortUrl('numero') }}" class="hover:text-gray-700">Número{!! $sortIcon('numero') !!}</a></th>
+                                <th class="px-4 py-3"><a href="{{ $sortUrl('fecha') }}" class="hover:text-gray-700">Fecha{!! $sortIcon('fecha') !!}</a></th>
                                 <th class="px-4 py-3">Cliente</th>
-                                <th class="px-4 py-3 hidden md:table-cell">Vence</th>
-                                <th class="px-4 py-3 text-right">Total</th>
-                                <th class="px-4 py-3 text-right">Saldo</th>
-                                <th class="px-4 py-3">Estado</th>
+                                <th class="px-4 py-3 hidden md:table-cell"><a href="{{ $sortUrl('fecha_vencimiento') }}" class="hover:text-gray-700">Vence{!! $sortIcon('fecha_vencimiento') !!}</a></th>
+                                <th class="px-4 py-3 text-right"><a href="{{ $sortUrl('total') }}" class="hover:text-gray-700">Total{!! $sortIcon('total') !!}</a></th>
+                                <th class="px-4 py-3 text-right"><a href="{{ $sortUrl('saldo') }}" class="hover:text-gray-700">Saldo{!! $sortIcon('saldo') !!}</a></th>
+                                <th class="px-4 py-3"><a href="{{ $sortUrl('estado') }}" class="hover:text-gray-700">Estado{!! $sortIcon('estado') !!}</a></th>
                                 <th class="px-4 py-3 hidden md:table-cell">FEL</th>
                             </tr>
                         </thead>

@@ -84,12 +84,19 @@
                     <div class="flex flex-wrap gap-2">
                         @if ($factura->asiento)
                             <a href="{{ route('admin.asientos.show', $factura->asiento) }}"
-                               class="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:border-slate-300 hover:text-slate-900">
+                               class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">
                                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 3h4M5.25 4.5h13.5a.75.75 0 0 1 .75.75v15l-2.625-1.5L14.25 20.25l-2.25-1.5-2.25 1.5-2.625-1.5L4.5 20.25v-15a.75.75 0 0 1 .75-.75Z" />
                                 </svg>
-                                Ver asiento
+                                Ver asiento contable
                             </a>
+                        @elseif ($factura->estado !== 'BORRADOR')
+                            <span class="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-400 cursor-default">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 3h4M5.25 4.5h13.5a.75.75 0 0 1 .75.75v15l-2.625-1.5L14.25 20.25l-2.25-1.5-2.25 1.5-2.625-1.5L4.5 20.25v-15a.75.75 0 0 1 .75-.75Z" />
+                                </svg>
+                                Sin asiento contable
+                            </span>
                         @endif
 
                         @can('ventas.gestionar')
@@ -117,6 +124,61 @@
                         @endcan
                     </div>
             </div>
+
+            {{-- Asiento contable --}}
+            @if ($factura->asiento)
+                @php $asiento = $factura->asiento; $detalle = $asiento->detalle ?? collect(); @endphp
+                <div class="bg-white shadow-sm sm:rounded-lg overflow-hidden">
+                    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                        <h3 class="text-sm font-semibold text-gray-700">
+                            Asiento contable —
+                            <a href="{{ route('admin.asientos.show', $asiento) }}" class="text-indigo-600 hover:underline">{{ $asiento->numero }}</a>
+                            <span class="ml-2 text-gray-400 font-normal">{{ $asiento->fecha->format('d/m/Y') }}</span>
+                        </h3>
+                        <a href="{{ route('admin.asientos.show', $asiento) }}"
+                           class="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 hover:underline">
+                            Ver completo
+                            <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5 10a.75.75 0 01.75-.75h6.638L10.23 7.29a.75.75 0 111.04-1.08l3.5 3.25a.75.75 0 010 1.08l-3.5 3.25a.75.75 0 11-1.04-1.08l2.158-1.96H5.75A.75.75 0 015 10z" clip-rule="evenodd"/></svg>
+                        </a>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full text-sm divide-y divide-gray-100">
+                            <thead class="bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                <tr>
+                                    <th class="px-4 py-2 text-left">Cuenta</th>
+                                    <th class="px-4 py-2 text-left hidden md:table-cell">Descripción</th>
+                                    <th class="px-4 py-2 text-right">Débito</th>
+                                    <th class="px-4 py-2 text-right">Crédito</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-50">
+                                @foreach ($detalle as $linea)
+                                    <tr>
+                                        <td class="px-4 py-2 font-mono text-xs">
+                                            {{ $linea->cuenta->codigo ?? '—' }}
+                                            <span class="font-sans font-normal text-gray-600">{{ $linea->cuenta->nombre ?? '' }}</span>
+                                        </td>
+                                        <td class="px-4 py-2 text-gray-500 hidden md:table-cell">{{ $linea->descripcion }}</td>
+                                        <td class="px-4 py-2 text-right">
+                                            @if ((float) $linea->debito > 0) B/. {{ number_format((float) $linea->debito, 2) }} @endif
+                                        </td>
+                                        <td class="px-4 py-2 text-right">
+                                            @if ((float) $linea->credito > 0) B/. {{ number_format((float) $linea->credito, 2) }} @endif
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                            <tfoot class="border-t-2 border-gray-200 text-xs font-semibold">
+                                <tr>
+                                    <td colspan="2" class="px-4 py-2 text-right text-gray-500 hidden md:table-cell">Totales</td>
+                                    <td class="px-4 py-2 text-right">B/. {{ number_format((float) $asiento->total_debito, 2) }}</td>
+                                    <td class="px-4 py-2 text-right">B/. {{ number_format((float) $asiento->total_credito, 2) }}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            @endif
 
             {{-- Detalle --}}
             <div class="bg-white shadow-sm sm:rounded-lg overflow-hidden">

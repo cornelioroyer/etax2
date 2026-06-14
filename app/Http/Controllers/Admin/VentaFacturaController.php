@@ -238,7 +238,12 @@ class VentaFacturaController extends Controller
             'desde'      => ['nullable', 'date'],
             'hasta'      => ['nullable', 'date'],
             'q'          => ['nullable', 'string', 'max:100'],
+            'sort'       => ['nullable', Rule::in(['numero', 'fecha', 'fecha_vencimiento', 'total', 'saldo', 'estado'])],
+            'dir'        => ['nullable', Rule::in(['asc', 'desc'])],
         ]);
+
+        $sort = $filtros['sort'] ?? 'fecha';
+        $dir  = $filtros['dir']  ?? 'desc';
 
         $consulta = VentaFactura::query()
             ->with('cliente')
@@ -254,8 +259,8 @@ class VentaFacturaController extends Controller
                     ->orWhereHas('cliente', fn ($c) => $c->whereRaw('LOWER(nombre) LIKE ?', [$b]))
                 );
             })
-            ->orderByDesc('fecha')
-            ->orderByDesc('numero');
+            ->orderBy($sort, $dir)
+            ->when($sort !== 'numero', fn ($q) => $q->orderBy('numero', $dir));
 
         if ($request->query('export')) {
             $todas = (clone $consulta)->get();
@@ -293,6 +298,8 @@ class VentaFacturaController extends Controller
             'filtros'    => $filtros,
             'clientes'   => $this->clientes($companiaId),
             'saldoTotal' => (float) $saldoTotal,
+            'sort'       => $sort,
+            'dir'        => $dir,
         ]);
     }
 
@@ -300,7 +307,7 @@ class VentaFacturaController extends Controller
     {
         abort_unless($factura->compania_id === $this->companiaActivaId($request), 404);
 
-        $factura->load(['cliente', 'detalle.impuesto', 'detalle.cuentaIngreso', 'asiento', 'cotizacion', 'cxcDocumento']);
+        $factura->load(['cliente', 'detalle.impuesto', 'detalle.cuentaIngreso', 'asiento.detalle.cuenta', 'cotizacion', 'cxcDocumento']);
 
         return view('admin.ventas.facturas.show', ['factura' => $factura]);
     }
