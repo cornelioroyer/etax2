@@ -12,11 +12,6 @@
             </div>
 
             <div>
-                <label for="razon_social" class="block text-sm font-medium text-gray-700">Razón social</label>
-                <input id="razon_social" name="razon_social" value="{{ old('razon_social', $c->razon_social ?? '') }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-            </div>
-
-            <div>
                 <label for="tipo_persona" class="block text-sm font-medium text-gray-700">Tipo de persona</label>
                 <select id="tipo_persona" name="tipo_persona" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     <option value="JURIDICA" @selected(old('tipo_persona', $c->tipo_persona ?? 'JURIDICA') === 'JURIDICA')>Jurídica (empresa)</option>
@@ -34,12 +29,6 @@
                     <label for="dv" class="block text-sm font-medium text-gray-700">DV</label>
                     <input id="dv" name="dv" maxlength="5" value="{{ old('dv', $c->dv ?? '') }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                 </div>
-            </div>
-
-            <div>
-                <label for="codigo" class="block text-sm font-medium text-gray-700">Código interno <span class="text-xs text-gray-400">(opcional)</span></label>
-                <input id="codigo" name="codigo" value="{{ old('codigo', $c->codigo ?? '') }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                @error('codigo') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
             </div>
 
             <div>
