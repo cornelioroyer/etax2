@@ -21,7 +21,7 @@
             <div class="flex flex-wrap items-center gap-2">
                 <a href="{{ route('admin.contactos.index') }}" class="rounded-full px-3 py-1 text-xs font-semibold {{ $tipo === '' ? 'bg-[#0d2d5e] text-white' : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-50' }}">Todos</a>
                 @foreach ($tipos as $t)
-                    <a href="{{ route('admin.contactos.index', ['tipo' => $t->codigo]) }}" class="rounded-full px-3 py-1 text-xs font-semibold {{ $tipo === $t->codigo ? 'bg-[#0d2d5e] text-white' : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-50' }}">{{ $t->nombre }}s</a>
+                    <a href="{{ route('admin.contactos.index', ['tipo' => $t->codigo]) }}" class="rounded-full px-3 py-1 text-xs font-semibold {{ $tipo === $t->codigo ? 'bg-[#0d2d5e] text-white' : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-50' }}">{{ $t->nombre . (\Illuminate\Support\Str::endsWith(mb_strtolower($t->nombre), ['a','e','i','o','u']) ? 's' : 'es') }}</a>
                 @endforeach
 
                 <form method="GET" action="{{ route('admin.contactos.index') }}" class="ml-auto flex gap-2">
