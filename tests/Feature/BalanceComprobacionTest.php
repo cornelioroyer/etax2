@@ -73,6 +73,6 @@ class BalanceComprobacionTest extends TestCase
             ->withSession(['compania_activa_id' => $compania->id])
             ->get(route('admin.reportes.comprobacion'))
             ->assertOk()
-            ->assertSee('no tiene asientos posteados');
+            ->assertSee('no tiene períodos contables');
     }
 }
