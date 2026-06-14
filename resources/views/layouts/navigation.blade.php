@@ -166,6 +166,28 @@
             ],
         ],
         [
+            'key' => 'activos',
+            'label' => 'Activos Fijos',
+            'icon' => 'M4.5 20.25h15M6 20.25V6.75A2.25 2.25 0 0 1 8.25 4.5h7.5A2.25 2.25 0 0 1 18 6.75v13.5M9 9h6M9 12.75h6M9 16.5h3',
+            'active' => request()->routeIs('admin.activos.*'),
+            'show' => $can('activos.ver'),
+            'children' => [
+                ['label' => 'Registro de activos', 'href' => route('admin.activos.index'), 'active' => request()->routeIs('admin.activos.index') || request()->routeIs('admin.activos.show') || request()->routeIs('admin.activos.create'), 'show' => $can('activos.ver')],
+                ['label' => 'Categorías', 'href' => route('admin.activos.categorias.index'), 'active' => request()->routeIs('admin.activos.categorias.*'), 'show' => $can('activos.ver')],
+                ['label' => 'Ubicaciones', 'href' => route('admin.activos.ubicaciones.index'), 'active' => request()->routeIs('admin.activos.ubicaciones.*'), 'show' => $can('activos.ver')],
+            ],
+        ],
+        [
+            'key' => 'ia',
+            'label' => 'Documentos IA',
+            'icon' => 'M9 3.75h6M9 20.25h6M4.5 9v6M19.5 9v6M7.5 6.75h9v10.5h-9V6.75ZM10.5 10.5h.008v.008H10.5V10.5Zm3 0h.008v.008H13.5V10.5Zm-3 3h3',
+            'show' => $can('ia.ver'),
+            'children' => [
+                ['label' => 'Por registrar', 'href' => null, 'active' => false, 'show' => $can('ia.ver')],
+                ['label' => 'Fuentes (Drive)', 'href' => null, 'active' => false, 'show' => $can('ia.ver')],
+            ],
+        ],
+        [
             'key' => 'ph',
             'label' => 'Prop. Horizontal',
             'icon' => 'M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.008v.008h-.008v-.008Zm0 3h.008v.008h-.008v-.008Zm0 3h.008v.008h-.008v-.008Z',
@@ -230,28 +252,6 @@
                 ['label' => 'Planes de cobro', 'href' => route('admin.edu.planes-cobro.index'), 'active' => request()->routeIs('admin.edu.planes-cobro.*'), 'show' => $can('edu.ver')],
                 ['label' => 'Generaciones de cobro', 'href' => route('admin.edu.generaciones-cobro.index'), 'active' => request()->routeIs('admin.edu.generaciones-cobro.*'), 'show' => $can('edu.ver')],
                 ['label' => 'Comunicados', 'href' => route('admin.edu.comunicados.index'), 'active' => request()->routeIs('admin.edu.comunicados.*'), 'show' => $can('edu.ver')],
-            ],
-        ],
-        [
-            'key' => 'activos',
-            'label' => 'Activos Fijos',
-            'icon' => 'M4.5 20.25h15M6 20.25V6.75A2.25 2.25 0 0 1 8.25 4.5h7.5A2.25 2.25 0 0 1 18 6.75v13.5M9 9h6M9 12.75h6M9 16.5h3',
-            'active' => request()->routeIs('admin.activos.*'),
-            'show' => $can('activos.ver'),
-            'children' => [
-                ['label' => 'Registro de activos', 'href' => route('admin.activos.index'), 'active' => request()->routeIs('admin.activos.index') || request()->routeIs('admin.activos.show') || request()->routeIs('admin.activos.create'), 'show' => $can('activos.ver')],
-                ['label' => 'Categorías', 'href' => route('admin.activos.categorias.index'), 'active' => request()->routeIs('admin.activos.categorias.*'), 'show' => $can('activos.ver')],
-                ['label' => 'Ubicaciones', 'href' => route('admin.activos.ubicaciones.index'), 'active' => request()->routeIs('admin.activos.ubicaciones.*'), 'show' => $can('activos.ver')],
-            ],
-        ],
-        [
-            'key' => 'ia',
-            'label' => 'Documentos IA',
-            'icon' => 'M9 3.75h6M9 20.25h6M4.5 9v6M19.5 9v6M7.5 6.75h9v10.5h-9V6.75ZM10.5 10.5h.008v.008H10.5V10.5Zm3 0h.008v.008H13.5V10.5Zm-3 3h3',
-            'show' => $can('ia.ver'),
-            'children' => [
-                ['label' => 'Por registrar', 'href' => null, 'active' => false, 'show' => $can('ia.ver')],
-                ['label' => 'Fuentes (Drive)', 'href' => null, 'active' => false, 'show' => $can('ia.ver')],
             ],
         ],
         [
