@@ -47,6 +47,8 @@ class RolesYPermisosSeeder extends Seeder
             'ph.gestionar',
             'edu.ver',
             'edu.gestionar',
+            'dimensiones.ver',
+            'dimensiones.gestionar',
             'reportes.ver',
             'ia.ver',
             'contactos.ver',
@@ -70,8 +72,18 @@ class RolesYPermisosSeeder extends Seeder
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
         // Roles globales (team_id null): se asignan a usuarios POR compañía.
+        // Admin de compañía: administra SUS compañías (ver/editar/crear) y los
+        // usuarios de ellas, con todo lo operativo. NO tiene permisos de nivel
+        // sistema (eso es exclusivo del super_admin / is_admin): no puede borrar
+        // compañías ni gestionar el catálogo de zonas.
+        $permisosSoloSistema = [
+            'companias.eliminar',
+            'zonas.crear',
+            'zonas.editar',
+            'zonas.eliminar',
+        ];
         $adminCompania = Role::findOrCreate('admin_compania', 'web');
-        $adminCompania->syncPermissions($permisos);
+        $adminCompania->syncPermissions(array_values(array_diff($permisos, $permisosSoloSistema)));
 
         $usuario = Role::findOrCreate('usuario', 'web');
         $usuario->syncPermissions([
@@ -87,6 +99,7 @@ class RolesYPermisosSeeder extends Seeder
             'taller.ver',
             'ph.ver',
             'edu.ver',
+            'dimensiones.ver',
             'reportes.ver',
             'ia.ver',
             'contactos.ver',

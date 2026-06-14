@@ -56,6 +56,22 @@ class CompaniaController extends Controller
 
         $compania = Compania::create($data);
 
+        // Si quien la crea no es super-admin (is_admin), se le da acceso como
+        // admin_compania a la nueva compañía; si no, no podría verla luego.
+        if (! $request->user()->is_admin) {
+            $rolAdminId = DB::table('seg_roles')->where('name', 'admin_compania')->value('id');
+
+            if ($rolAdminId) {
+                DB::table('seg_usuarios_roles')->insert([
+                    'rol_id'      => $rolAdminId,
+                    'model_type'  => \App\Models\User::class,
+                    'model_id'    => $request->user()->id,
+                    'compania_id' => $compania->id,
+                ]);
+                app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+            }
+        }
+
         $files = [];
 
         foreach (['logo' => 'logo_url', 'sello' => 'sello_url'] as $campo => $columna) {
