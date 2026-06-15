@@ -32,8 +32,9 @@ class VentaFacturaController extends Controller
         $companiaId = $this->companiaActivaId($request);
 
         return view('admin.ventas.facturas.create', [
-            'clientes'  => $this->clientes($companiaId),
-            'impuestos' => TaxImpuesto::itbmsGlobales(),
+            'clientes'      => $this->clientes($companiaId),
+            'impuestos'     => TaxImpuesto::itbmsGlobales(),
+            'numeroPreview' => VentaFactura::siguienteNumero($companiaId),
         ]);
     }
 
@@ -55,6 +56,16 @@ class VentaFacturaController extends Controller
 
         $usuario = $request->user();
         $accion  = $request->input('accion', 'emitir');
+
+        // Numeración: automática (siguienteNumero) o manual escrita por el usuario.
+        $numeracion   = $request->input('numeracion') === 'manual' ? 'manual' : 'auto';
+        $numeroManual = trim((string) $request->input('numero_manual', ''));
+        if ($accion === 'emitir' && $numeracion === 'manual') {
+            $request->validate(['numero_manual' => ['required', 'string', 'max:50']]);
+            if ($this->numeroExiste($companiaId, $numeroManual)) {
+                return back()->withInput()->withErrors(['numero_manual' => 'Ya existe un documento con el número '.$numeroManual.'.']);
+            }
+        }
 
         $impuestos = TaxImpuesto::whereIn('id', collect($data['lineas'])->pluck('impuesto_id')->unique())->get()->keyBy('id');
 
@@ -120,8 +131,8 @@ class VentaFacturaController extends Controller
             return back()->withInput()->withErrors(['cliente_id' => 'La compañía no tiene configurada la cuenta default CXC.']);
         }
 
-        $factura = DB::transaction(function () use ($companiaId, $data, $usuario, $lineasCalc, $subtotal, $itbms, $total, $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId) {
-            $numero = VentaFactura::siguienteNumero($companiaId);
+        $factura = DB::transaction(function () use ($companiaId, $data, $usuario, $lineasCalc, $subtotal, $itbms, $total, $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId, $numeracion, $numeroManual) {
+            $numero = $numeracion === 'manual' ? $numeroManual : VentaFactura::siguienteNumero($companiaId);
 
             $factura = VentaFactura::create([
                 'compania_id'       => $companiaId,
@@ -321,9 +332,10 @@ class VentaFacturaController extends Controller
         $factura->load('detalle');
 
         return view('admin.ventas.facturas.create', [
-            'clientes'  => $this->clientes($companiaId),
-            'impuestos' => TaxImpuesto::itbmsGlobales(),
-            'factura'   => $factura,
+            'clientes'      => $this->clientes($companiaId),
+            'impuestos'     => TaxImpuesto::itbmsGlobales(),
+            'factura'       => $factura,
+            'numeroPreview' => VentaFactura::siguienteNumero($companiaId),
         ]);
     }
 
@@ -419,6 +431,16 @@ class VentaFacturaController extends Controller
             return back()->withErrors(['factura' => 'La compañía no tiene configurada la cuenta default CXC.']);
         }
 
+        // Numeración manual opcional al emitir un borrador.
+        $numeracion   = $request->input('numeracion') === 'manual' ? 'manual' : 'auto';
+        $numeroManual = trim((string) $request->input('numero_manual', ''));
+        if ($numeracion === 'manual') {
+            $request->validate(['numero_manual' => ['required', 'string', 'max:50']]);
+            if ($this->numeroExiste($companiaId, $numeroManual)) {
+                return back()->withInput()->withErrors(['numero_manual' => 'Ya existe un documento con el número '.$numeroManual.'.']);
+            }
+        }
+
         $usuario = $request->user();
         $factura->load(['detalle', 'cliente']);
 
@@ -437,8 +459,8 @@ class VentaFacturaController extends Controller
             'total_linea'    => (float) $d->total_linea,
         ])->all();
 
-        DB::transaction(function () use ($factura, $companiaId, $usuario, $lineasCalc, $subtotal, $itbms, $total, $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId) {
-            $numero = VentaFactura::siguienteNumero($companiaId);
+        DB::transaction(function () use ($factura, $companiaId, $usuario, $lineasCalc, $subtotal, $itbms, $total, $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId, $numeracion, $numeroManual) {
+            $numero = $numeracion === 'manual' ? $numeroManual : VentaFactura::siguienteNumero($companiaId);
             $factura->update(['numero' => $numero, 'estado' => VentaFactura::ESTADO_EMITIDA, 'updated_by' => $usuario->email]);
 
             foreach ($factura->detalle as $d) {
@@ -554,6 +576,15 @@ class VentaFacturaController extends Controller
 
         return redirect()->route('admin.ventas.facturas.show', $factura)
             ->with('status', "Factura {$factura->numero} anulada.");
+    }
+
+    /**
+     * ¿El número manual ya está en uso (en facturas de venta o en CxC) para la compañía?
+     */
+    private function numeroExiste(int $companiaId, string $numero): bool
+    {
+        return VentaFactura::where('compania_id', $companiaId)->where('numero', $numero)->exists()
+            || CxcDocumento::where('compania_id', $companiaId)->where('numero', $numero)->exists();
     }
 
     private function clientes(int $companiaId)

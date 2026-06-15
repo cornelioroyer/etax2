@@ -32,7 +32,27 @@
                     @csrf
                     @isset($factura) @method('PUT') @endisset
 
-                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
+                        <div x-data="{
+                                manual: {{ old('numeracion') === 'manual' ? 'true' : 'false' }},
+                                auto: @js($numeroPreview),
+                                valor: @js(old('numero_manual', $numeroPreview)),
+                             }">
+                            <div class="flex items-center justify-between">
+                                <x-input-label for="numero_manual" value="Número" />
+                                <label class="flex cursor-pointer items-center gap-1 text-xs text-gray-500">
+                                    <input type="checkbox" x-model="manual" @change="if (! manual) valor = auto"
+                                           class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                    Manual
+                                </label>
+                            </div>
+                            <input type="hidden" name="numeracion" :value="manual ? 'manual' : 'auto'">
+                            <x-text-input id="numero_manual" name="numero_manual" type="text" class="mt-1 block w-full"
+                                          x-model="valor" x-bind:readonly="! manual"
+                                          x-bind:class="manual ? '' : 'bg-gray-100 text-gray-500'" />
+                            <p class="mt-1 text-xs text-gray-400" x-show="! manual">Se asignará automáticamente al emitir.</p>
+                            <x-input-error :messages="$errors->get('numero_manual')" class="mt-1" />
+                        </div>
                         <div>
                             <x-input-label for="cliente_id" value="Cliente *" />
                             <select id="cliente_id" name="cliente_id" required
