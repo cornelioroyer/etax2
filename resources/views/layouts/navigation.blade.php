@@ -36,21 +36,6 @@
             ],
         ],
         [
-            'key' => 'cxp',
-            'label' => 'Cuentas por Pagar',
-            'icon' => 'M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z',
-            'show' => $can('cxp.ver') || $can('contactos.ver'),
-            'active' => (request()->routeIs('admin.contactos.*') && request('tipo') === 'PROVEEDOR') || request()->routeIs('admin.cxp.*'),
-            'children' => [
-                ['label' => 'Proveedores', 'href' => route('admin.contactos.index', ['tipo' => 'PROVEEDOR']), 'active' => request()->routeIs('admin.contactos.*') && request('tipo') === 'PROVEEDOR', 'show' => $can('contactos.ver')],
-                ['label' => 'Facturas por pagar', 'href' => route('admin.cxp.facturas.index'), 'active' => request()->routeIs('admin.cxp.facturas.*'), 'show' => $can('cxp.ver')],
-                ['label' => 'Pagos', 'href' => route('admin.cxp.pagos.index'), 'active' => request()->routeIs('admin.cxp.pagos.*'), 'show' => $can('cxp.ver')],
-                ['label' => 'Notas crédito/débito', 'href' => route('admin.cxp.notas.index'), 'active' => request()->routeIs('admin.cxp.notas.*'), 'show' => $can('cxp.ver')],
-                ['label' => 'Antigüedad de saldos', 'href' => route('admin.cxp.antiguedad'), 'active' => request()->routeIs('admin.cxp.antiguedad'), 'show' => $can('cxp.ver')],
-                ['label' => 'Estado de cuenta', 'href' => route('admin.cxp.estado-cuenta'), 'active' => request()->routeIs('admin.cxp.estado-cuenta'), 'show' => $can('cxp.ver')],
-            ],
-        ],
-        [
             'key' => 'ventas',
             'label' => 'Ventas',
             'icon' => 'M4.5 6.75h15M6 6.75l1.5 12h9l1.5-12M9 10.5h6M9.75 3h4.5',
@@ -74,6 +59,21 @@
                 ['label' => 'Documentos emitidos', 'href' => route('admin.fel.index'), 'active' => request()->routeIs('admin.fel.index'), 'show' => $can('fel.ver')],
                 ['label' => 'Nueva factura', 'href' => route('admin.fel.create'), 'active' => request()->routeIs('admin.fel.create'), 'show' => $can('fel.gestionar')],
                 ['label' => 'Configuración', 'href' => route('admin.fel.configuracion'), 'active' => request()->routeIs('admin.fel.configuracion'), 'show' => $can('fel.gestionar')],
+            ],
+        ],
+        [
+            'key' => 'cxp',
+            'label' => 'Cuentas por Pagar',
+            'icon' => 'M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z',
+            'show' => $can('cxp.ver') || $can('contactos.ver'),
+            'active' => (request()->routeIs('admin.contactos.*') && request('tipo') === 'PROVEEDOR') || request()->routeIs('admin.cxp.*'),
+            'children' => [
+                ['label' => 'Proveedores', 'href' => route('admin.contactos.index', ['tipo' => 'PROVEEDOR']), 'active' => request()->routeIs('admin.contactos.*') && request('tipo') === 'PROVEEDOR', 'show' => $can('contactos.ver')],
+                ['label' => 'Facturas por pagar', 'href' => route('admin.cxp.facturas.index'), 'active' => request()->routeIs('admin.cxp.facturas.*'), 'show' => $can('cxp.ver')],
+                ['label' => 'Pagos', 'href' => route('admin.cxp.pagos.index'), 'active' => request()->routeIs('admin.cxp.pagos.*'), 'show' => $can('cxp.ver')],
+                ['label' => 'Notas crédito/débito', 'href' => route('admin.cxp.notas.index'), 'active' => request()->routeIs('admin.cxp.notas.*'), 'show' => $can('cxp.ver')],
+                ['label' => 'Antigüedad de saldos', 'href' => route('admin.cxp.antiguedad'), 'active' => request()->routeIs('admin.cxp.antiguedad'), 'show' => $can('cxp.ver')],
+                ['label' => 'Estado de cuenta', 'href' => route('admin.cxp.estado-cuenta'), 'active' => request()->routeIs('admin.cxp.estado-cuenta'), 'show' => $can('cxp.ver')],
             ],
         ],
         [
