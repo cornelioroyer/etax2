@@ -58,9 +58,11 @@ class VentaFacturaController extends Controller
         $accion  = $request->input('accion', 'emitir');
 
         // Numeración: automática (siguienteNumero) o manual escrita por el usuario.
+        // Si es manual se valida tanto al emitir como al guardar borrador (en el
+        // borrador el número queda reservado en extra y se aplica al emitir).
         $numeracion   = $request->input('numeracion') === 'manual' ? 'manual' : 'auto';
         $numeroManual = trim((string) $request->input('numero_manual', ''));
-        if ($accion === 'emitir' && $numeracion === 'manual') {
+        if ($numeracion === 'manual') {
             $request->validate(['numero_manual' => ['required', 'string', 'max:50']]);
             if ($this->numeroExiste($companiaId, $numeroManual)) {
                 return back()->withInput()->withErrors(['numero_manual' => 'Ya existe un documento con el número '.$numeroManual.'.']);
@@ -86,7 +88,7 @@ class VentaFacturaController extends Controller
         $total    = round($subtotal + $itbms, 2);
 
         if ($accion === 'borrador') {
-            $factura = DB::transaction(function () use ($companiaId, $data, $usuario, $lineasCalc, $subtotal, $itbms, $total) {
+            $factura = DB::transaction(function () use ($companiaId, $data, $usuario, $lineasCalc, $subtotal, $itbms, $total, $numeracion, $numeroManual) {
                 $factura = VentaFactura::create([
                     'compania_id'       => $companiaId,
                     'cliente_id'        => $data['cliente_id'],
@@ -100,6 +102,7 @@ class VentaFacturaController extends Controller
                     'saldo'             => $total,
                     'estado'            => VentaFactura::ESTADO_BORRADOR,
                     'notas'             => $data['notas'] ?? null,
+                    'extra'             => $numeracion === 'manual' ? ['numero_manual' => $numeroManual] : [],
                     'created_by'        => $usuario->email,
                 ]);
                 foreach ($lineasCalc as $linea) {
@@ -360,6 +363,16 @@ class VentaFacturaController extends Controller
 
         $usuario   = $request->user();
         $accion    = $request->input('accion', 'borrador');
+
+        $numeracion   = $request->input('numeracion') === 'manual' ? 'manual' : 'auto';
+        $numeroManual = trim((string) $request->input('numero_manual', ''));
+        if ($numeracion === 'manual') {
+            $request->validate(['numero_manual' => ['required', 'string', 'max:50']]);
+            if ($this->numeroExiste($companiaId, $numeroManual)) {
+                return back()->withInput()->withErrors(['numero_manual' => 'Ya existe un documento con el número '.$numeroManual.'.']);
+            }
+        }
+
         $impuestos = TaxImpuesto::whereIn('id', collect($data['lineas'])->pluck('impuesto_id')->unique())->get()->keyBy('id');
 
         $subtotal = 0; $itbms = 0; $lineasCalc = [];
@@ -375,7 +388,7 @@ class VentaFacturaController extends Controller
         $itbms    = round($itbms, 2);
         $total    = round($subtotal + $itbms, 2);
 
-        DB::transaction(function () use ($factura, $data, $usuario, $lineasCalc, $subtotal, $itbms, $total) {
+        DB::transaction(function () use ($factura, $data, $usuario, $lineasCalc, $subtotal, $itbms, $total, $numeracion, $numeroManual) {
             $factura->update([
                 'cliente_id'        => $data['cliente_id'],
                 'fecha'             => $data['fecha'],
@@ -385,6 +398,7 @@ class VentaFacturaController extends Controller
                 'total'             => $total,
                 'saldo'             => $total,
                 'notas'             => $data['notas'] ?? null,
+                'extra'             => $numeracion === 'manual' ? ['numero_manual' => $numeroManual] : [],
                 'updated_by'        => $usuario->email,
             ]);
 
@@ -431,11 +445,21 @@ class VentaFacturaController extends Controller
             return back()->withErrors(['factura' => 'La compañía no tiene configurada la cuenta default CXC.']);
         }
 
-        // Numeración manual opcional al emitir un borrador.
-        $numeracion   = $request->input('numeracion') === 'manual' ? 'manual' : 'auto';
-        $numeroManual = trim((string) $request->input('numero_manual', ''));
+        // Numeración manual opcional al emitir un borrador. Si la petición trae
+        // los campos del formulario (emisión desde editar) se usan esos; si no
+        // (botón "Emitir" del detalle) se respeta el número reservado en el borrador.
+        if ($request->has('numeracion')) {
+            $numeracion   = $request->input('numeracion') === 'manual' ? 'manual' : 'auto';
+            $numeroManual = trim((string) $request->input('numero_manual', ''));
+        } else {
+            $guardado     = data_get($factura->extra, 'numero_manual');
+            $numeracion   = $guardado ? 'manual' : 'auto';
+            $numeroManual = (string) ($guardado ?? '');
+        }
         if ($numeracion === 'manual') {
-            $request->validate(['numero_manual' => ['required', 'string', 'max:50']]);
+            if ($numeroManual === '') {
+                return back()->withErrors(['numero_manual' => 'El número manual es obligatorio.']);
+            }
             if ($this->numeroExiste($companiaId, $numeroManual)) {
                 return back()->withInput()->withErrors(['numero_manual' => 'Ya existe un documento con el número '.$numeroManual.'.']);
             }
@@ -461,7 +485,7 @@ class VentaFacturaController extends Controller
 
         DB::transaction(function () use ($factura, $companiaId, $usuario, $lineasCalc, $subtotal, $itbms, $total, $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId, $numeracion, $numeroManual) {
             $numero = $numeracion === 'manual' ? $numeroManual : VentaFactura::siguienteNumero($companiaId);
-            $factura->update(['numero' => $numero, 'estado' => VentaFactura::ESTADO_EMITIDA, 'updated_by' => $usuario->email]);
+            $factura->update(['numero' => $numero, 'estado' => VentaFactura::ESTADO_EMITIDA, 'extra' => [], 'updated_by' => $usuario->email]);
 
             foreach ($factura->detalle as $d) {
                 if (! $d->cuenta_ingreso_id) {

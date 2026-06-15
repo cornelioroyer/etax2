@@ -136,12 +136,25 @@ class CxcDocumento extends Model
         // advisory lock por compañía+prefijo para serializar la numeración.
         self::bloquearNumeracion($companiaId.'-'.$prefijo);
 
-        $ultimo = self::where('compania_id', $companiaId)
+        $len  = strlen($prefijo);
+        $base = self::where('compania_id', $companiaId)
             ->where('tipo_documento', $tipo)
-            ->where('numero', 'like', $prefijo.'%')
-            ->max('numero');
+            ->where('numero', 'like', $prefijo.'%');
 
-        $siguiente = $ultimo ? ((int) substr($ultimo, 3)) + 1 : 1;
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            // Solo cuenta números con formato estricto PREFIJO+dígitos y toma el
+            // máximo NUMÉRICO (no lexical), así un número manual con otro formato
+            // —p.ej. FC-A100— no envenena el correlativo automático ni provoca
+            // colisiones por ancho variable.
+            $maxNum = (clone $base)
+                ->where('numero', '~', '^'.$prefijo.'[0-9]+$')
+                ->selectRaw('MAX(CAST(SUBSTRING(numero FROM '.($len + 1).') AS INTEGER)) AS n')
+                ->value('n');
+            $siguiente = ((int) $maxNum) + 1;
+        } else {
+            $ultimo    = $base->max('numero');
+            $siguiente = $ultimo ? ((int) substr($ultimo, $len)) + 1 : 1;
+        }
 
         return $prefijo.str_pad((string) $siguiente, 6, '0', STR_PAD_LEFT);
     }

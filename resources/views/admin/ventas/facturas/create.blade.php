@@ -25,6 +25,9 @@
                     $lineasIniciales = isset($factura)
                         ? $factura->detalle->map(fn($d) => ['descripcion'=>$d->descripcion,'cantidad'=>$d->cantidad,'precio_unitario'=>$d->precio_unitario,'impuesto_id'=>$d->impuesto_id])->values()->toJson()
                         : (old('lineas') ? collect(old('lineas'))->values()->toJson() : '[]');
+                    $numeroManualGuardado = isset($factura) ? (string) data_get($factura->extra, 'numero_manual', '') : '';
+                    $manualInicial = old('numeracion', $numeroManualGuardado !== '' ? 'manual' : 'auto') === 'manual';
+                    $valorInicial  = old('numero_manual', $numeroManualGuardado !== '' ? $numeroManualGuardado : $numeroPreview);
                 @endphp
                 <form method="POST"
                       action="{{ isset($factura) ? route('admin.ventas.facturas.update', $factura) : route('admin.ventas.facturas.store') }}"
@@ -34,9 +37,9 @@
 
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
                         <div x-data="{
-                                manual: {{ old('numeracion') === 'manual' ? 'true' : 'false' }},
+                                manual: {{ $manualInicial ? 'true' : 'false' }},
                                 auto: @js($numeroPreview),
-                                valor: @js(old('numero_manual', $numeroPreview)),
+                                valor: @js($valorInicial),
                              }">
                             <div class="flex items-center justify-between">
                                 <x-input-label for="numero_manual" value="Número" />
