@@ -77,7 +77,7 @@ class CxpTest extends TestCase
         return $this->actingAs($this->admin)->withSession(['compania_activa_id' => $this->compania->id]);
     }
 
-    private function crearFactura(float $precio = 100, int $tasa = 7, string $numero = 'A-1001'): CxpDocumento
+    private function crearBorrador(float $precio = 100, int $tasa = 7, string $numero = 'A-1001'): CxpDocumento
     {
         $this->actuar()->post(route('admin.cxp.facturas.store'), [
             'proveedor_id' => $this->proveedor->id,
@@ -90,6 +90,16 @@ class CxpTest extends TestCase
         ])->assertSessionHasNoErrors();
 
         return CxpDocumento::where('tipo_documento', 'FACTURA')->latest('id')->firstOrFail();
+    }
+
+    private function crearFactura(float $precio = 100, int $tasa = 7, string $numero = 'A-1001'): CxpDocumento
+    {
+        $borrador = $this->crearBorrador($precio, $tasa, $numero);
+
+        $this->actuar()->post(route('admin.cxp.facturas.contabilizar', $borrador))
+            ->assertSessionHasNoErrors();
+
+        return $borrador->fresh();
     }
 
     public function test_listado_de_facturas_se_muestra(): void
@@ -224,5 +234,71 @@ class CxpTest extends TestCase
             ->assertOk()
             ->assertSee('Antigüedad de saldos')
             ->assertSee('PROVEEDOR PRUEBA');
+    }
+
+    public function test_store_crea_borrador_sin_asiento(): void
+    {
+        $borrador = $this->crearBorrador(100, 7);
+
+        $this->assertSame('BORRADOR', $borrador->estado);
+        $this->assertNull($borrador->asiento_id);
+        $this->assertSame('107.00', (string) $borrador->total);
+        $this->assertSame('107.00', (string) $borrador->saldo);
+        $this->assertCount(1, $borrador->detalle);
+    }
+
+    public function test_editar_borrador_actualiza_lineas_y_totales(): void
+    {
+        $borrador = $this->crearBorrador(100, 7);
+
+        $this->actuar()->put(route('admin.cxp.facturas.update', $borrador), [
+            'proveedor_id' => $this->proveedor->id,
+            'numero' => 'A-1001',
+            'fecha' => '2026-06-12',
+            'fecha_vencimiento' => '2026-07-12',
+            'lineas' => [
+                ['descripcion' => 'Linea corregida', 'cantidad' => 2, 'precio_unitario' => 50, 'tasa_itbms' => 10, 'cuenta_id' => $this->gasto->id],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $borrador->refresh();
+        $this->assertSame('BORRADOR', $borrador->estado);
+        $this->assertSame('110.00', (string) $borrador->total);
+        $this->assertCount(1, $borrador->detalle);
+        $this->assertSame('Linea corregida', $borrador->detalle[0]->descripcion);
+        $this->assertNull($borrador->asiento_id);
+    }
+
+    public function test_contabilizar_borrador_genera_asiento_y_bloquea_edicion(): void
+    {
+        $borrador = $this->crearBorrador(100, 7);
+
+        $this->actuar()->post(route('admin.cxp.facturas.contabilizar', $borrador))
+            ->assertSessionHasNoErrors();
+
+        $borrador->refresh();
+        $this->assertSame('PENDIENTE', $borrador->estado);
+        $this->assertNotNull($borrador->asiento);
+        $this->assertSame('POSTEADO', $borrador->asiento->estado);
+
+        // Una factura ya contabilizada no puede editarse ni eliminarse.
+        $this->actuar()->get(route('admin.cxp.facturas.edit', $borrador))
+            ->assertRedirect(route('admin.cxp.facturas.show', $borrador));
+
+        $this->actuar()->delete(route('admin.cxp.facturas.destroy', $borrador))
+            ->assertSessionHasErrors('documento');
+
+        $this->assertDatabaseHas('cxp_documentos', ['id' => $borrador->id]);
+    }
+
+    public function test_eliminar_borrador_lo_borra(): void
+    {
+        $borrador = $this->crearBorrador(100, 7);
+
+        $this->actuar()->delete(route('admin.cxp.facturas.destroy', $borrador))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseMissing('cxp_documentos', ['id' => $borrador->id]);
+        $this->assertDatabaseMissing('cxp_documentos_detalle', ['documento_id' => $borrador->id]);
     }
 }

@@ -215,6 +215,10 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('cxp/notas/{documento}/anular', [CxpNotaController::class, 'anular'])->whereNumber('documento')->name('cxp.notas.anular');
         Route::get('cxp/facturas/nueva', [CxpFacturaController::class, 'create'])->name('cxp.facturas.create');
         Route::post('cxp/facturas', [CxpFacturaController::class, 'store'])->name('cxp.facturas.store');
+        Route::get('cxp/facturas/{documento}/editar', [CxpFacturaController::class, 'edit'])->whereNumber('documento')->name('cxp.facturas.edit');
+        Route::put('cxp/facturas/{documento}', [CxpFacturaController::class, 'update'])->whereNumber('documento')->name('cxp.facturas.update');
+        Route::post('cxp/facturas/{documento}/contabilizar', [CxpFacturaController::class, 'contabilizar'])->whereNumber('documento')->name('cxp.facturas.contabilizar');
+        Route::delete('cxp/facturas/{documento}', [CxpFacturaController::class, 'destroy'])->whereNumber('documento')->name('cxp.facturas.destroy');
         Route::post('cxp/facturas/{documento}/anular', [CxpFacturaController::class, 'anular'])->whereNumber('documento')->name('cxp.facturas.anular');
         Route::get('cxp/pagos/nuevo', [CxpPagoController::class, 'create'])->name('cxp.pagos.create');
         Route::post('cxp/pagos', [CxpPagoController::class, 'store'])->name('cxp.pagos.store');

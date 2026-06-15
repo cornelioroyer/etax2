@@ -51,7 +51,7 @@
                         <x-input-label for="estado" value="Estado" />
                         <select id="estado" name="estado" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                             <option value="">Todos</option>
-                            @foreach (['PENDIENTE', 'PARCIAL', 'PAGADO', 'ANULADO'] as $estado)
+                            @foreach (['BORRADOR', 'PENDIENTE', 'PARCIAL', 'PAGADO', 'ANULADO'] as $estado)
                                 <option value="{{ $estado }}" @selected(($filtros['estado'] ?? '') === $estado)>{{ ucfirst(strtolower($estado)) }}</option>
                             @endforeach
                         </select>

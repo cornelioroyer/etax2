@@ -85,7 +85,7 @@ class CxpFacturaController extends Controller
 
         $saldoTotal = (float) CxpDocumento::where('compania_id', $companiaId)
             ->where('tipo_documento', CxpDocumento::TIPO_FACTURA)
-            ->where('estado', '!=', CxpDocumento::ESTADO_ANULADO)
+            ->whereNotIn('estado', [CxpDocumento::ESTADO_ANULADO, CxpDocumento::ESTADO_BORRADOR])
             ->selectRaw('COALESCE(SUM(saldo), 0) AS saldo')
             ->value('saldo');
 
@@ -117,6 +117,149 @@ class CxpFacturaController extends Controller
         $companiaId = $this->companiaActivaId($request);
         $usuario = $request->user();
 
+        $data = $this->datosValidados($request, $companiaId);
+        [$lineas, $subtotal, $impuesto, $total] = $this->calcularLineas($data['lineas']);
+
+        $factura = DB::transaction(function () use ($companiaId, $data, $lineas, $subtotal, $impuesto, $total, $usuario) {
+            $factura = CxpDocumento::create([
+                'compania_id' => $companiaId,
+                'proveedor_id' => $data['proveedor_id'],
+                'tipo_documento' => CxpDocumento::TIPO_FACTURA,
+                'numero' => $data['numero'],
+                'fecha' => $data['fecha'],
+                'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
+                'subtotal' => $subtotal,
+                'descuento' => 0,
+                'impuesto' => $impuesto,
+                'total' => $total,
+                'saldo' => $total,
+                'estado' => CxpDocumento::ESTADO_BORRADOR,
+                'created_by' => $usuario->email,
+            ]);
+
+            foreach ($lineas as $linea) {
+                CxpDocumentoDetalle::create($linea + ['documento_id' => $factura->id, 'created_by' => $usuario->email]);
+            }
+
+            return $factura;
+        });
+
+        return redirect()->route('admin.cxp.facturas.show', $factura)
+            ->with('status', "Factura {$factura->numero} guardada como borrador. Revísala y contabilízala cuando esté lista.");
+    }
+
+    public function show(Request $request, CxpDocumento $documento): View
+    {
+        $this->autorizarFactura($request, $documento);
+
+        $documento->load(['proveedor', 'detalle.cuenta', 'asiento', 'aplicacionesComoDestino.origen']);
+
+        return view('admin.cxp.facturas.show', ['factura' => $documento]);
+    }
+
+    public function edit(Request $request, CxpDocumento $documento): View|RedirectResponse
+    {
+        $companiaId = $this->companiaActivaId($request);
+        $this->autorizarFactura($request, $documento);
+
+        if (! $documento->esBorrador()) {
+            return redirect()->route('admin.cxp.facturas.show', $documento)
+                ->withErrors(['documento' => 'Solo se pueden editar facturas en borrador. Una factura contabilizada debe anularse.']);
+        }
+
+        $documento->load('detalle');
+
+        return view('admin.cxp.facturas.edit', [
+            'factura' => $documento,
+            'proveedores' => $this->proveedores($companiaId),
+            'cuentas' => CuentaContable::where('compania_id', $companiaId)
+                ->where('permite_movimiento', true)
+                ->where('activa', true)
+                ->orderBy('codigo')
+                ->get(['id', 'codigo', 'nombre']),
+            'cuentaGastoId' => CuentaDefault::idPara($companiaId, 'GASTO_DEFAULT'),
+        ]);
+    }
+
+    public function update(Request $request, CxpDocumento $documento): RedirectResponse
+    {
+        $companiaId = $this->companiaActivaId($request);
+        $this->autorizarFactura($request, $documento);
+
+        if (! $documento->esBorrador()) {
+            return redirect()->route('admin.cxp.facturas.show', $documento)
+                ->withErrors(['documento' => 'Solo se pueden editar facturas en borrador.']);
+        }
+
+        $usuario = $request->user();
+        $data = $this->datosValidados($request, $companiaId, $documento->id);
+        [$lineas, $subtotal, $impuesto, $total] = $this->calcularLineas($data['lineas']);
+
+        DB::transaction(function () use ($documento, $data, $lineas, $subtotal, $impuesto, $total, $usuario) {
+            $documento->update([
+                'proveedor_id' => $data['proveedor_id'],
+                'numero' => $data['numero'],
+                'fecha' => $data['fecha'],
+                'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
+                'subtotal' => $subtotal,
+                'impuesto' => $impuesto,
+                'total' => $total,
+                'saldo' => $total,
+                'updated_by' => $usuario->email,
+            ]);
+
+            $documento->detalle()->delete();
+
+            foreach ($lineas as $linea) {
+                CxpDocumentoDetalle::create($linea + ['documento_id' => $documento->id, 'created_by' => $usuario->email]);
+            }
+        });
+
+        return redirect()->route('admin.cxp.facturas.show', $documento)
+            ->with('status', "Borrador {$documento->numero} actualizado.");
+    }
+
+    public function contabilizar(Request $request, CxpDocumento $documento): RedirectResponse
+    {
+        $this->autorizarFactura($request, $documento);
+
+        if (! $documento->esBorrador()) {
+            return back()->withErrors(['documento' => 'La factura ya está contabilizada o anulada.']);
+        }
+
+        $usuario = $request->user();
+        $documento->load(['proveedor', 'detalle']);
+
+        DB::transaction(function () use ($documento, $usuario) {
+            $this->contabilizarFactura($documento, $usuario);
+        });
+
+        return redirect()->route('admin.cxp.facturas.show', $documento)
+            ->with('status', "Factura {$documento->numero} contabilizada. Asiento {$documento->fresh()->asiento->numero}.");
+    }
+
+    public function destroy(Request $request, CxpDocumento $documento): RedirectResponse
+    {
+        $this->autorizarFactura($request, $documento);
+
+        if (! $documento->esBorrador()) {
+            return back()->withErrors(['documento' => 'Solo se pueden eliminar facturas en borrador. Una factura contabilizada debe anularse.']);
+        }
+
+        $numero = $documento->numero;
+
+        DB::transaction(function () use ($documento) {
+            $documento->detalle()->delete();
+            $documento->delete();
+        });
+
+        return redirect()->route('admin.cxp.facturas.index')
+            ->with('status', "Borrador {$numero} eliminado.");
+    }
+
+    /** Valida los datos del formulario y verifica que el número no esté duplicado. */
+    private function datosValidados(Request $request, int $companiaId, ?int $exceptoId = null): array
+    {
         $data = $request->validate([
             'proveedor_id' => [
                 'required', 'integer',
@@ -140,6 +283,7 @@ class CxpFacturaController extends Controller
             ->where('proveedor_id', $data['proveedor_id'])
             ->where('tipo_documento', CxpDocumento::TIPO_FACTURA)
             ->where('numero', $data['numero'])
+            ->when($exceptoId, fn ($q, $id) => $q->where('id', '!=', $id))
             ->exists();
 
         if ($duplicada) {
@@ -148,20 +292,21 @@ class CxpFacturaController extends Controller
             ]);
         }
 
-        $cuentaCxpId = CuentaDefault::idPara($companiaId, 'CXP');
-        $cuentaItbmsId = CuentaDefault::idPara($companiaId, 'ITBMS_CREDITO');
+        return $data;
+    }
 
-        if (! $cuentaCxpId) {
-            throw ValidationException::withMessages([
-                'proveedor_id' => 'La compañía no tiene configurada la cuenta default CXP (Cuentas por Pagar). Aplica una plantilla de plan de cuentas o configúrala.',
-            ]);
-        }
-
+    /**
+     * Calcula líneas normalizadas y los totales (subtotal/ITBMS/total).
+     *
+     * @return array{0: array<int, array<string, mixed>>, 1: float, 2: float, 3: float}
+     */
+    private function calcularLineas(array $lineasInput): array
+    {
         $lineas = [];
         $subtotal = 0.0;
         $impuesto = 0.0;
 
-        foreach (array_values($data['lineas']) as $i => $linea) {
+        foreach (array_values($lineasInput) as $i => $linea) {
             $cantidad = round((float) $linea['cantidad'], 4);
             $precio = round((float) $linea['precio_unitario'], 4);
             $base = round($cantidad * $precio, 2);
@@ -189,98 +334,95 @@ class CxpFacturaController extends Controller
             throw ValidationException::withMessages(['lineas' => 'El total de la factura debe ser mayor que cero.']);
         }
 
-        if ($impuesto > 0 && ! $cuentaItbmsId) {
+        return [$lineas, $subtotal, $impuesto, $total];
+    }
+
+    /**
+     * Postea el asiento de una factura en borrador y la deja en estado PENDIENTE.
+     * Debe llamarse dentro de una transacción.
+     */
+    private function contabilizarFactura(CxpDocumento $factura, $usuario): void
+    {
+        $companiaId = $factura->compania_id;
+        $impuesto = round((float) $factura->impuesto, 2);
+
+        $cuentaCxpId = CuentaDefault::idPara($companiaId, 'CXP');
+        $cuentaItbmsId = CuentaDefault::idPara($companiaId, 'ITBMS_CREDITO');
+
+        if (! $cuentaCxpId) {
             throw ValidationException::withMessages([
-                'lineas' => 'La compañía no tiene configurada la cuenta default ITBMS_CREDITO; no se puede registrar ITBMS de compras.',
+                'documento' => 'La compañía no tiene configurada la cuenta default CXP (Cuentas por Pagar). Aplica una plantilla de plan de cuentas o configúrala.',
             ]);
         }
 
-        $factura = DB::transaction(function () use ($companiaId, $data, $lineas, $subtotal, $impuesto, $total, $cuentaCxpId, $cuentaItbmsId, $usuario) {
-            $factura = CxpDocumento::create([
-                'compania_id' => $companiaId,
-                'proveedor_id' => $data['proveedor_id'],
-                'tipo_documento' => CxpDocumento::TIPO_FACTURA,
-                'numero' => $data['numero'],
-                'fecha' => $data['fecha'],
-                'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
-                'subtotal' => $subtotal,
-                'descuento' => 0,
-                'impuesto' => $impuesto,
-                'total' => $total,
-                'saldo' => $total,
-                'estado' => CxpDocumento::ESTADO_PENDIENTE,
-                'created_by' => $usuario->email,
+        if ($impuesto > 0 && ! $cuentaItbmsId) {
+            throw ValidationException::withMessages([
+                'documento' => 'La compañía no tiene configurada la cuenta default ITBMS_CREDITO; no se puede contabilizar el ITBMS de compras.',
             ]);
+        }
 
-            foreach ($lineas as $linea) {
-                CxpDocumentoDetalle::create($linea + ['documento_id' => $factura->id, 'created_by' => $usuario->email]);
-            }
+        // Asiento: débito gasto/costo por línea, débito ITBMS crédito fiscal, crédito CXP
+        $lineasAsiento = [];
 
-            // Asiento: débito gasto/costo por línea, débito ITBMS crédito fiscal, crédito CXP
-            $lineasAsiento = [];
-
-            foreach ($lineas as $linea) {
-                $base = round($linea['total_linea'] - $linea['impuesto_monto'], 2);
-                $lineasAsiento[] = [
-                    'cuenta_id' => $linea['cuenta_id'],
-                    'descripcion' => $linea['descripcion'],
-                    'debito' => $base,
-                    'credito' => 0,
-                ];
-            }
-
-            if ($impuesto > 0) {
-                $lineasAsiento[] = [
-                    'cuenta_id' => $cuentaItbmsId,
-                    'descripcion' => "ITBMS factura {$factura->numero}",
-                    'debito' => $impuesto,
-                    'credito' => 0,
-                ];
-            }
-
+        foreach ($factura->detalle as $linea) {
+            $base = round((float) $linea->total_linea - (float) $linea->impuesto_monto, 2);
             $lineasAsiento[] = [
-                'cuenta_id' => $cuentaCxpId,
-                'contacto_id' => (int) $data['proveedor_id'],
-                'descripcion' => "Factura {$factura->numero}",
-                'debito' => 0,
-                'credito' => $total,
+                'cuenta_id' => $linea->cuenta_id,
+                'descripcion' => $linea->descripcion,
+                'debito' => $base,
+                'credito' => 0,
             ];
+        }
 
-            $asiento = app(AsientoAutomatico::class)->postear(
-                $companiaId,
-                $data['fecha'],
-                "Factura de compra {$factura->numero} — ".$factura->proveedor->nombre,
-                $factura->numero,
-                $lineasAsiento,
-                'CXP',
-                'cxp_documentos',
-                $factura->id,
-                $usuario,
-            );
+        if ($impuesto > 0) {
+            $lineasAsiento[] = [
+                'cuenta_id' => $cuentaItbmsId,
+                'descripcion' => "ITBMS factura {$factura->numero}",
+                'debito' => $impuesto,
+                'credito' => 0,
+            ];
+        }
 
-            $factura->update(['asiento_id' => $asiento->id]);
+        $lineasAsiento[] = [
+            'cuenta_id' => $cuentaCxpId,
+            'contacto_id' => $factura->proveedor_id,
+            'descripcion' => "Factura {$factura->numero}",
+            'debito' => 0,
+            'credito' => round((float) $factura->total, 2),
+        ];
 
-            return $factura;
-        });
+        $asiento = app(AsientoAutomatico::class)->postear(
+            $companiaId,
+            $factura->fecha->format('Y-m-d'),
+            "Factura de compra {$factura->numero} — ".$factura->proveedor->nombre,
+            $factura->numero,
+            $lineasAsiento,
+            'CXP',
+            'cxp_documentos',
+            $factura->id,
+            $usuario,
+        );
 
-        return redirect()->route('admin.cxp.facturas.show', $factura)
-            ->with('status', "Factura {$factura->numero} registrada y contabilizada.");
+        $factura->update([
+            'asiento_id' => $asiento->id,
+            'estado' => CxpDocumento::ESTADO_PENDIENTE,
+            'updated_by' => $usuario->email,
+        ]);
     }
 
-    public function show(Request $request, CxpDocumento $documento): View
+    private function autorizarFactura(Request $request, CxpDocumento $documento): void
     {
         abort_unless($documento->compania_id === $this->companiaActivaId($request), 404);
         abort_unless($documento->tipo_documento === CxpDocumento::TIPO_FACTURA, 404);
-
-        $documento->load(['proveedor', 'detalle.cuenta', 'asiento', 'aplicacionesComoDestino.origen']);
-
-        return view('admin.cxp.facturas.show', ['factura' => $documento]);
     }
 
     public function anular(Request $request, CxpDocumento $documento): RedirectResponse
     {
-        abort_unless($documento->compania_id === $this->companiaActivaId($request), 404);
-        abort_unless($documento->tipo_documento === CxpDocumento::TIPO_FACTURA, 404);
+        $this->autorizarFactura($request, $documento);
+
+        if ($documento->esBorrador()) {
+            return back()->withErrors(['documento' => 'La factura está en borrador (sin contabilizar); elimínala en lugar de anularla.']);
+        }
 
         if ($documento->esAnulado()) {
             return back()->withErrors(['documento' => 'La factura ya está anulada.']);

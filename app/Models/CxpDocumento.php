@@ -19,6 +19,8 @@ class CxpDocumento extends Model
 
     public const TIPO_NOTA_DEBITO = 'NOTA_DEBITO';
 
+    public const ESTADO_BORRADOR = 'BORRADOR';
+
     public const ESTADO_PENDIENTE = 'PENDIENTE';
 
     public const ESTADO_PARCIAL = 'PARCIAL';
@@ -90,6 +92,12 @@ class CxpDocumento extends Model
     public function esAnulado(): bool
     {
         return $this->estado === self::ESTADO_ANULADO;
+    }
+
+    /** Borrador: aún no contabilizada (sin asiento), editable y eliminable. */
+    public function esBorrador(): bool
+    {
+        return $this->estado === self::ESTADO_BORRADOR;
     }
 
     /**

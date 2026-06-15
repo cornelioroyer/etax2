@@ -1,5 +1,6 @@
 @php
     [$clase, $texto] = match ($estado) {
+        'BORRADOR' => ['bg-gray-200 text-gray-700', 'Borrador'],
         'PENDIENTE' => ['bg-amber-100 text-amber-800', 'Pendiente'],
         'PARCIAL' => ['bg-blue-100 text-blue-800', 'Parcial'],
         'PAGADO' => ['bg-green-100 text-green-800', 'Pagado'],

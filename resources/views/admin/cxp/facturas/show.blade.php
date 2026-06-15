@@ -41,6 +41,8 @@
                             <dd class="font-medium">
                                 @if ($factura->asiento)
                                     <a href="{{ route('admin.asientos.show', $factura->asiento) }}" class="text-blue-700 hover:underline">{{ $factura->asiento->numero }}</a>
+                                @elseif ($factura->esBorrador())
+                                    <span class="text-gray-500">Sin contabilizar</span>
                                 @else
                                     —
                                 @endif
@@ -52,17 +54,45 @@
                         </div>
                     </dl>
 
-                    @can('cxp.gestionar')
-                        @if (! $factura->esAnulado())
-                            <form method="POST" action="{{ route('admin.cxp.facturas.anular', $factura) }}"
-                                  onsubmit="return confirm('¿Anular la factura {{ $factura->numero }}? También se anulará su asiento contable.');">
-                                @csrf
-                                <button class="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">
-                                    Anular factura
-                                </button>
-                            </form>
+                    <div class="flex flex-wrap items-center gap-2">
+                        @if ($factura->asiento)
+                            <a href="{{ route('admin.asientos.show', $factura->asiento) }}"
+                               class="rounded-md border border-blue-300 bg-white px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">
+                                Ver asiento
+                            </a>
                         @endif
-                    @endcan
+                        @can('cxp.gestionar')
+                            @if ($factura->esBorrador())
+                                <a href="{{ route('admin.cxp.facturas.edit', $factura) }}"
+                                   class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                                    Editar
+                                </a>
+                                <form method="POST" action="{{ route('admin.cxp.facturas.contabilizar', $factura) }}"
+                                      onsubmit="return confirm('¿Contabilizar la factura {{ $factura->numero }}? Se generará el asiento contable y ya no podrá editarse.');">
+                                    @csrf
+                                    <button class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
+                                        Contabilizar
+                                    </button>
+                                </form>
+                                <form method="POST" action="{{ route('admin.cxp.facturas.destroy', $factura) }}"
+                                      onsubmit="return confirm('¿Eliminar el borrador {{ $factura->numero }}? Esta acción no se puede deshacer.');">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button class="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">
+                                        Eliminar
+                                    </button>
+                                </form>
+                            @elseif (! $factura->esAnulado())
+                                <form method="POST" action="{{ route('admin.cxp.facturas.anular', $factura) }}"
+                                      onsubmit="return confirm('¿Anular la factura {{ $factura->numero }}? También se anulará su asiento contable.');">
+                                    @csrf
+                                    <button class="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">
+                                        Anular factura
+                                    </button>
+                                </form>
+                            @endif
+                        @endcan
+                    </div>
                 </div>
             </div>
 
