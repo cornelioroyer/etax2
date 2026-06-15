@@ -49,12 +49,16 @@ class ContactoController extends Controller
         abort_unless($request->user()->can('contactos.crear'), 403);
 
         $companiaId = $this->companiaActivaId($request);
+        $tipoPreseleccionado = strtoupper(trim((string) $request->query('tipo', '')));
 
         return view('admin.contactos.create', [
             'tipos' => TipoContacto::orderBy('id')->get(),
-            'tipoPreseleccionado' => strtoupper(trim((string) $request->query('tipo', ''))),
+            'tipoPreseleccionado' => $tipoPreseleccionado,
             'cuentas' => $this->cuentasGasto($companiaId),
-            'cuentaGastoDefault' => CuentaDefault::idPara($companiaId, 'GASTO_DEFAULT'),
+            // Solo precarga la cuenta de gasto cuando se crea un proveedor.
+            'cuentaGastoDefault' => $tipoPreseleccionado === 'PROVEEDOR'
+                ? CuentaDefault::idPara($companiaId, 'GASTO_DEFAULT')
+                : null,
         ]);
     }
 
