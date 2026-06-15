@@ -48,7 +48,7 @@
             <div class="md:col-span-2">
                 <label for="cuenta_gasto_id" class="block text-sm font-medium text-gray-700">Cuenta de gasto por defecto <span class="text-xs text-gray-400">(proveedor, opcional)</span></label>
                 @php($cuentaGastoSel = old('cuenta_gasto_id', $c->cuenta_gasto_id ?? ($cuentaGastoDefault ?? '')))
-                <select id="cuenta_gasto_id" name="cuenta_gasto_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                <select id="cuenta_gasto_id" name="cuenta_gasto_id" class="cuenta-gasto-select mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     <option value="">— Usar gasto por defecto de la compañía —</option>
                     @foreach (($cuentas ?? []) as $cuenta)
                         <option value="{{ $cuenta->id }}" @selected((string) $cuentaGastoSel === (string) $cuenta->id)>{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
@@ -104,3 +104,17 @@
         <button class="rounded-md bg-[#0d2d5e] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-900">Guardar</button>
     </div>
 </div>
+
+{{-- Selector de cuenta de gasto con búsqueda (TomSelect) --}}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2/dist/css/tom-select.bootstrap5.min.css">
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
+<script>
+    document.querySelectorAll('.cuenta-gasto-select').forEach(function (el) {
+        new TomSelect(el, {
+            allowEmptyOption: true,
+            placeholder: '— Buscar cuenta por código o nombre —',
+            searchField: ['text'],
+            maxOptions: 300,
+        });
+    });
+</script>
