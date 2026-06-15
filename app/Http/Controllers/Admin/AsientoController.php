@@ -189,10 +189,13 @@ class AsientoController extends Controller
             return back()->withErrors(['asiento' => 'Solo se pueden anular asientos posteados; los borradores se eliminan.']);
         }
 
-        $asiento->update([
+        // El AsientoObserver retira los movimientos bancarios reflejados; si
+        // alguno está conciliado lanza ValidationException y la transacción
+        // revierte la anulación.
+        DB::transaction(fn () => $asiento->update([
             'estado' => Asiento::ESTADO_ANULADO,
             'updated_by' => $request->user()->email,
-        ]);
+        ]));
 
         return redirect()->route('admin.asientos.show', $asiento)
             ->with('status', "Asiento {$asiento->numero} anulado.");

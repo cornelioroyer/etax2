@@ -16,6 +16,7 @@ class BcoMovimiento extends Model
     public const TIPO_COBRO         = 'COBRO';
     public const TIPO_CARGO         = 'CARGO';
     public const TIPO_INTERES       = 'INTERES';
+    public const TIPO_ASIENTO       = 'ASIENTO';
     public const TIPO_OTRO          = 'OTRO';
 
     public const TIPOS = [
@@ -26,6 +27,7 @@ class BcoMovimiento extends Model
         'COBRO'         => 'Cobro de cliente',
         'CARGO'         => 'Cargo bancario',
         'INTERES'       => 'Interés',
+        'ASIENTO'       => 'Asiento contable',
         'OTRO'          => 'Otro',
     ];
 

@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Observers\AsientoObserver;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\DB;
 
+#[ObservedBy(AsientoObserver::class)]
 class Asiento extends Model
 {
     protected $table = 'cgl_asientos';
