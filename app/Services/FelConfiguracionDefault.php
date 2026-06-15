@@ -43,4 +43,14 @@ class FelConfiguracionDefault
             'created_by' => $usuario,
         ]);
     }
+
+    /**
+     * ¿Esta configuración usa las credenciales demo compartidas (cuenta PAC de
+     * WIN SOFT)? En ese caso varias compañías comparten el mismo emisor en HKA,
+     * por lo que el número fiscal debe ser único entre todas ellas.
+     */
+    public function esDemo(FelConfiguracion $config): bool
+    {
+        return $config->token_empresa === self::VALORES['token_empresa'];
+    }
 }

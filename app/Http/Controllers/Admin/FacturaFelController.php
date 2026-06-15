@@ -78,14 +78,9 @@ class FacturaFelController extends Controller
         $builder = new FelDocumentoBuilder();
         $usuario = $request->user()->email;
 
-        // correlativo con bloqueo para evitar números duplicados
-        $numeroFiscal = DB::transaction(function () use ($config) {
-            $cfg = FelConfiguracion::lockForUpdate()->find($config->id);
-            $cfg->correlativo += 1;
-            $cfg->save();
-
-            return $cfg->correlativo;
-        });
+        // correlativo con bloqueo para evitar números duplicados (consecutivo
+        // único compartido cuando se usan las credenciales demo de HKA).
+        $numeroFiscal = DB::transaction(fn () => $config->siguienteNumeroFiscal());
 
         $documento = $builder->facturaInterna($compania, $config, $cliente, $data, $numeroFiscal);
 
