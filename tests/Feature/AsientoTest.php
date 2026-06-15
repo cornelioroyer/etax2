@@ -318,45 +318,89 @@ class AsientoTest extends TestCase
         return $cxc;
     }
 
-    public function test_postear_contra_cuenta_de_control_requiere_confirmacion(): void
+    /** Crea una cuenta de inventario y un producto que la usa como control. */
+    private function cuentaControlInventario(): CuentaContable
+    {
+        $inv = CuentaContable::create([
+            'compania_id' => $this->compania->id,
+            'codigo' => '10401',
+            'nombre' => 'Inventario',
+            'nivel' => 3,
+            'naturaleza' => 'DEBITO',
+            'permite_movimiento' => true,
+            'conciliable' => false,
+            'activa' => true,
+        ]);
+
+        \Illuminate\Support\Facades\DB::table('item_productos_servicios')->insert([
+            'compania_id' => $this->compania->id,
+            'codigo' => 'IT-1',
+            'nombre' => 'Producto',
+            'tipo' => 'PRODUCTO',
+            'cuenta_inventario_id' => $inv->id,
+            'extra' => '{}',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return $inv;
+    }
+
+    public function test_postear_contra_cxc_se_bloquea_siempre(): void
     {
         $cxc = $this->cuentaControlCxc();
 
+        $payload = [
+            'fecha' => '2026-06-12',
+            'descripcion' => 'Ajuste manual a CxC',
+            'lineas' => [
+                ['cuenta_id' => $cxc->id, 'debito' => 100, 'credito' => 0],
+                ['cuenta_id' => $this->ventas->id, 'debito' => 0, 'credito' => 100],
+            ],
+            'accion' => 'postear',
+        ];
+
+        // Sin confirmación: bloqueado.
         $this->actingAs($this->admin)
             ->withSession(['compania_activa_id' => $this->compania->id])
-            ->post(route('admin.asientos.store'), [
-                'fecha' => '2026-06-12',
-                'descripcion' => 'Ajuste manual a CxC',
-                'lineas' => [
-                    ['cuenta_id' => $cxc->id, 'debito' => 100, 'credito' => 0],
-                    ['cuenta_id' => $this->ventas->id, 'debito' => 0, 'credito' => 100],
-                ],
-                'accion' => 'postear',
-            ])
-            ->assertSessionHasErrors('confirmar_control');
+            ->post(route('admin.asientos.store'), $payload)
+            ->assertSessionHasErrors('lineas');
 
-        // Se revierte: no queda ni el borrador.
+        // Incluso CON confirmación: el bloqueo de CxC/CxP es duro, no se permite.
+        $this->actingAs($this->admin)
+            ->withSession(['compania_activa_id' => $this->compania->id])
+            ->post(route('admin.asientos.store'), $payload + ['confirmar_control' => '1'])
+            ->assertSessionHasErrors('lineas');
+
         $this->assertSame(0, Asiento::count());
     }
 
-    public function test_postear_contra_cuenta_de_control_con_confirmacion(): void
+    public function test_postear_contra_inventario_requiere_confirmacion(): void
     {
-        $cxc = $this->cuentaControlCxc();
+        $inv = $this->cuentaControlInventario();
 
+        $payload = [
+            'fecha' => '2026-06-12',
+            'descripcion' => 'Ajuste manual de inventario',
+            'lineas' => [
+                ['cuenta_id' => $inv->id, 'debito' => 100, 'credito' => 0],
+                ['cuenta_id' => $this->ventas->id, 'debito' => 0, 'credito' => 100],
+            ],
+            'accion' => 'postear',
+        ];
+
+        // Sin confirmación: pide confirmar.
         $this->actingAs($this->admin)
             ->withSession(['compania_activa_id' => $this->compania->id])
-            ->post(route('admin.asientos.store'), [
-                'fecha' => '2026-06-12',
-                'descripcion' => 'Ajuste manual a CxC',
-                'lineas' => [
-                    ['cuenta_id' => $cxc->id, 'debito' => 100, 'credito' => 0],
-                    ['cuenta_id' => $this->ventas->id, 'debito' => 0, 'credito' => 100],
-                ],
-                'accion' => 'postear',
-                'confirmar_control' => '1',
-            ])
-            ->assertSessionHasNoErrors();
+            ->post(route('admin.asientos.store'), $payload)
+            ->assertSessionHasErrors('confirmar_control');
+        $this->assertSame(0, Asiento::count());
 
+        // Con confirmación: se postea.
+        $this->actingAs($this->admin)
+            ->withSession(['compania_activa_id' => $this->compania->id])
+            ->post(route('admin.asientos.store'), $payload + ['confirmar_control' => '1'])
+            ->assertSessionHasNoErrors();
         $this->assertSame('POSTEADO', Asiento::firstOrFail()->estado);
     }
 

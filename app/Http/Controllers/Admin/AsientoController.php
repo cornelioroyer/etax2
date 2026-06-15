@@ -220,25 +220,46 @@ class AsientoController extends Controller
             ]);
         }
 
-        // Blindaje: postear directo contra una cuenta controlada por auxiliar
-        // (CxC/CxP/Inventario) descuadra el auxiliar. Se bloquea salvo
-        // confirmación explícita; lo correcto es registrar el movimiento desde
-        // su módulo.
-        if (! $confirmado) {
-            $control = $this->cuentasControl($asiento->compania_id);
+        // Bloqueo DURO: las cuentas de control de CxC/CxP solo se afectan por
+        // sus módulos (que mantienen el libro auxiliar y postean vía
+        // AsientoAutomatico, fuera de este flujo). Un asiento manual contra
+        // ellas se rechaza siempre — no hay confirmación que lo permita.
+        $duras = $this->cuentasControlDuras($asiento->compania_id);
 
-            if ($control !== []) {
+        if ($duras !== []) {
+            $tocadas = $asiento->detalle()
+                ->whereIn('cuenta_id', array_keys($duras))
+                ->pluck('cuenta_id')
+                ->unique();
+
+            if ($tocadas->isNotEmpty()) {
+                $etiquetas = $tocadas->map(fn ($id) => $duras[$id])->unique()->implode(', ');
+
+                throw ValidationException::withMessages([
+                    'lineas' => "No se puede afectar {$etiquetas} con un asiento manual. "
+                        .'Estas cuentas se controlan por su libro auxiliar: registra el movimiento '
+                        .'desde el módulo correspondiente (Cuentas por Cobrar / Cuentas por Pagar).',
+                ]);
+            }
+        }
+
+        // Blindaje SUAVE: postear directo contra inventario descuadra el
+        // auxiliar de existencias; se permite solo con confirmación explícita.
+        if (! $confirmado) {
+            $confirmables = $this->cuentasControlConfirmables($asiento->compania_id);
+
+            if ($confirmables !== []) {
                 $tocadas = $asiento->detalle()
-                    ->whereIn('cuenta_id', array_keys($control))
+                    ->whereIn('cuenta_id', array_keys($confirmables))
                     ->pluck('cuenta_id')
                     ->unique();
 
                 if ($tocadas->isNotEmpty()) {
-                    $etiquetas = $tocadas->map(fn ($id) => $control[$id])->unique()->implode(', ');
+                    $etiquetas = $tocadas->map(fn ($id) => $confirmables[$id])->unique()->implode(', ');
 
                     throw ValidationException::withMessages([
                         'confirmar_control' => "Este asiento afecta cuentas controladas por auxiliar ({$etiquetas}). "
-                            ."Postearlo directo puede descuadrar el auxiliar; regístralo desde su módulo (CxC/CxP/Inventario), "
+                            ."Postearlo directo puede descuadrar el auxiliar; regístralo desde su módulo, "
                             .'o marca «Confirmo» para postear de todos modos.',
                     ]);
                 }
@@ -265,12 +286,12 @@ class AsientoController extends Controller
     }
 
     /**
-     * Cuentas de control de los auxiliares (CxC, CxP, inventario) de la
-     * compañía, mapeadas a su etiqueta para el mensaje de aviso.
+     * Cuentas de control con BLOQUEO DURO: CxC y CxP. Un asiento manual no
+     * puede afectarlas; deben moverse por sus módulos.
      *
      * @return array<int, string>  [cuenta_id => etiqueta]
      */
-    private function cuentasControl(int $companiaId): array
+    private function cuentasControlDuras(int $companiaId): array
     {
         $control = [];
 
@@ -279,6 +300,19 @@ class AsientoController extends Controller
                 $control[$id] = $etiqueta;
             }
         }
+
+        return $control;
+    }
+
+    /**
+     * Cuentas de control CONFIRMABLES: inventario. Postear contra ellas se
+     * permite solo con confirmación explícita.
+     *
+     * @return array<int, string>  [cuenta_id => etiqueta]
+     */
+    private function cuentasControlConfirmables(int $companiaId): array
+    {
+        $control = [];
 
         DB::table('item_productos_servicios')
             ->where('compania_id', $companiaId)
