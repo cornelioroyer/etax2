@@ -2,9 +2,16 @@
 
 namespace App\Providers;
 
+use App\Models\AuditActividad;
+use App\Observers\AuditObserver;
 use App\Support\Fechas;
+use Illuminate\Auth\Events\Failed;
+use Illuminate\Auth\Events\Login;
+use Illuminate\Auth\Events\Logout;
 use Illuminate\Contracts\Auth\Access\Authorizable;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
@@ -70,5 +77,41 @@ class AppServiceProvider extends ServiceProvider
         // Fechas en la interfaz: timestamps en GMT-5 (Panamá), fechas puras sin convertir.
         Blade::directive('fechaHora', fn ($expr) => "<?php echo \App\Support\Fechas::hora($expr); ?>");
         Blade::directive('fecha', fn ($expr) => "<?php echo \App\Support\Fechas::fecha($expr); ?>");
+
+        $this->registrarAuditoria();
+    }
+
+    /**
+     * Bitácora de actividad de usuarios: observa todos los modelos del dominio
+     * (crear/editar/eliminar) y escucha los eventos de autenticación. El modelo
+     * AuditActividad se excluye para no auditarse a sí mismo (recursión).
+     */
+    private function registrarAuditoria(): void
+    {
+        foreach (glob(app_path('Models').'/*.php') as $archivo) {
+            $clase = 'App\\Models\\'.basename($archivo, '.php');
+
+            if ($clase === AuditActividad::class) {
+                continue;
+            }
+
+            if (is_subclass_of($clase, Model::class)) {
+                $clase::observe(AuditObserver::class);
+            }
+        }
+
+        Event::listen(Login::class, fn (Login $e) => AuditActividad::registrar([
+            'evento' => 'login', 'usuario' => $e->user,
+        ]));
+
+        Event::listen(Logout::class, fn (Logout $e) => AuditActividad::registrar([
+            'evento' => 'logout', 'usuario' => $e->user,
+        ]));
+
+        Event::listen(Failed::class, fn (Failed $e) => AuditActividad::registrar([
+            'evento' => 'login_fallido',
+            'usuario_nombre' => $e->credentials['email'] ?? 'desconocido',
+            'descripcion' => 'Intento de acceso fallido',
+        ]));
     }
 }

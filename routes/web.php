@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AsientoController;
+use App\Http\Controllers\Admin\AuditoriaController;
 use App\Http\Controllers\Admin\BudgetEscenarioController;
 use App\Http\Controllers\Admin\BudgetPresupuestoController;
 use App\Http\Controllers\Admin\BudgetVersionController;
@@ -129,6 +130,10 @@ Route::middleware('auth')->group(function () {
 // Usuarios de plataforma (flag is_admin): solo super-admin.
 Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::resource('users', UserController::class)->except(['show']);
+
+    // Bitácora de actividad de usuarios (solo super_admin).
+    Route::get('auditoria', [AuditoriaController::class, 'index'])->name('auditoria.index');
+    Route::get('auditoria/{actividad}', [AuditoriaController::class, 'show'])->whereNumber('actividad')->name('auditoria.show');
 });
 
 // Usuarios por compañía: super-admin o admin de la compañía (permiso usuarios_compania.gestionar).
