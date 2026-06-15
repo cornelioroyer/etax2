@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Concerns\ConCompaniaActiva;
 use App\Http\Controllers\Concerns\ExportaReporte;
 use App\Http\Controllers\Controller;
 use App\Models\AuditActividad;
@@ -19,10 +20,13 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class AuditoriaController extends Controller
 {
+    use ConCompaniaActiva;
     use ExportaReporte;
 
     public function index(Request $request): View|Response
     {
+        $companiaId = $this->companiaActivaId($request);
+
         $filtros = $request->validate([
             'usuario_id' => ['nullable', 'integer'],
             'evento' => ['nullable', 'string', 'max:30'],
@@ -45,6 +49,9 @@ class AuditoriaController extends Controller
 
         $query = AuditActividad::query()
             ->with('usuario')
+            // Acotada a la compañía activa; los eventos sin compañía (login/
+            // logout/acceso fallido, que son de plataforma) se incluyen siempre.
+            ->where(fn ($q) => $q->where('compania_id', $companiaId)->orWhereNull('compania_id'))
             ->whereBetween('created_at', [$desde, $hasta])
             ->when($filtros['usuario_id'] ?? null, fn ($q, $v) => $q->where('usuario_id', $v))
             ->when($filtros['evento'] ?? null, fn ($q, $v) => $q->where('evento', $v))
@@ -59,11 +66,12 @@ class AuditoriaController extends Controller
         // Catálogos para los selectores y el export.
         $usuarios = User::orderBy('name')->get(['id', 'name', 'email']);
         $entidades = AuditActividad::query()
+            ->where('compania_id', $companiaId)
             ->whereNotNull('entidad')
             ->distinct()
             ->orderBy('entidad')
             ->pluck('entidad');
-        $companias = Compania::orderBy('nombre')->get(['id', 'nombre'])->keyBy('id');
+        $companiaActiva = Compania::find($companiaId);
 
         $datos = [
             'desde' => $desde,
@@ -71,7 +79,7 @@ class AuditoriaController extends Controller
             'filtros' => $filtros,
             'usuarios' => $usuarios,
             'entidades' => $entidades,
-            'companias' => $companias,
+            'companiaActiva' => $companiaActiva,
             'etiquetas' => AuditActividad::ETIQUETAS,
             'generado' => now(),
             'usuario' => $request->user()->name ?: $request->user()->email,

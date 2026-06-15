@@ -17,6 +17,7 @@
     <div class="meta">{{ $usuario ?? '' }}<br>{{ ($generado ?? now())->format('d/m/Y H:i') }}</div>
     <div class="cab">
         <h1>Auditoría de usuarios</h1>
+        <div class="sub">{{ $companiaActiva->nombre ?? '' }}</div>
         <div class="sub">Del {{ $desde->format('d/m/Y') }} al {{ $hasta->format('d/m/Y') }}</div>
     </div>
 
@@ -27,7 +28,6 @@
                 <th>Usuario</th>
                 <th>Acción</th>
                 <th>Detalle</th>
-                <th>Compañía</th>
                 <th>IP</th>
             </tr>
         </thead>
@@ -38,11 +38,10 @@
                     <td>{{ $r->usuario?->name ?: $r->usuario_nombre ?: '—' }}</td>
                     <td>{{ $etiquetas[$r->evento] ?? $r->evento }}</td>
                     <td>{{ $r->descripcion ?: $r->entidad }}</td>
-                    <td>{{ $companias[$r->compania_id]->nombre ?? '—' }}</td>
                     <td>{{ $r->ip ?: '—' }}</td>
                 </tr>
             @empty
-                <tr><td colspan="6" style="text-align:center">Sin actividad en el rango.</td></tr>
+                <tr><td colspan="5" style="text-align:center">Sin actividad en el rango.</td></tr>
             @endforelse
         </tbody>
     </table>

@@ -16,7 +16,10 @@
         <div class="mb-4 flex flex-wrap items-end justify-between gap-4">
             <div>
                 <h1 class="text-2xl font-bold text-slate-900">Auditoría de usuarios</h1>
-                <p class="text-sm text-slate-500">Qué hizo cada usuario: creaciones, ediciones, borrados y accesos.</p>
+                <p class="text-sm text-slate-500">
+                    Actividad de <span class="font-semibold" style="color:#005293">{{ $companiaActiva->nombre ?? 'la compañía activa' }}</span>:
+                    creaciones, ediciones, borrados y accesos.
+                </p>
             </div>
             <div class="flex items-end gap-2">
                 <a href="{{ request()->fullUrlWithQuery(['export' => 'pdf']) }}"
@@ -86,7 +89,6 @@
                         <th class="px-4 py-3">Usuario</th>
                         <th class="px-4 py-3">Acción</th>
                         <th class="px-4 py-3">Detalle</th>
-                        <th class="px-4 py-3">Compañía</th>
                         <th class="px-4 py-3">IP</th>
                         <th class="px-4 py-3"></th>
                     </tr>
@@ -102,7 +104,6 @@
                                 </span>
                             </td>
                             <td class="px-4 py-2 text-slate-700">{{ $r->descripcion ?: $r->entidad }}</td>
-                            <td class="px-4 py-2 text-slate-500">{{ $companias[$r->compania_id]->nombre ?? '—' }}</td>
                             <td class="whitespace-nowrap px-4 py-2 text-slate-400">{{ $r->ip ?: '—' }}</td>
                             <td class="px-4 py-2 text-right">
                                 @if (in_array($r->evento, ['created', 'updated', 'deleted']))
@@ -112,7 +113,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="px-4 py-10 text-center text-slate-400">Sin actividad en el rango seleccionado.</td>
+                            <td colspan="6" class="px-4 py-10 text-center text-slate-400">Sin actividad en el rango seleccionado.</td>
                         </tr>
                     @endforelse
                 </tbody>
