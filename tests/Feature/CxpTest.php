@@ -132,6 +132,56 @@ class CxpTest extends TestCase
         $this->assertSame('107.00', (string) $lineas[2]->credito);
     }
 
+    public function test_compra_al_contado_postea_directo_a_banco(): void
+    {
+        $this->actuar()->post(route('admin.cxp.facturas.store'), [
+            'proveedor_id' => $this->proveedor->id,
+            'numero' => 'C-2001',
+            'fecha' => '2026-06-12',
+            'forma_pago' => 'CONTADO',
+            'cuenta_pago_id' => $this->banco->id,
+            'lineas' => [
+                ['descripcion' => 'Compra contado', 'cantidad' => 1, 'precio_unitario' => 100, 'tasa_itbms' => 7, 'cuenta_id' => $this->gasto->id],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $factura = CxpDocumento::where('tipo_documento', 'FACTURA')->latest('id')->firstOrFail();
+
+        $this->assertSame('PAGADO', $factura->estado);
+        $this->assertSame('0.00', (string) $factura->saldo);
+        $this->assertSame('107.00', (string) $factura->total);
+
+        $asiento = $factura->asiento;
+        $this->assertNotNull($asiento);
+        $this->assertSame('POSTEADO', $asiento->estado);
+
+        // Gasto al débito, ITBMS crédito fiscal al débito, Banco al crédito (sin tocar CXP)
+        $lineas = $asiento->detalle;
+        $this->assertCount(3, $lineas);
+        $this->assertSame($this->gasto->id, $lineas[0]->cuenta_id);
+        $this->assertSame('100.00', (string) $lineas[0]->debito);
+        $this->assertSame($this->itbmsCredito->id, $lineas[1]->cuenta_id);
+        $this->assertSame('7.00', (string) $lineas[1]->debito);
+        $this->assertSame($this->banco->id, $lineas[2]->cuenta_id);
+        $this->assertSame('107.00', (string) $lineas[2]->credito);
+        $this->assertFalse($asiento->detalle->contains('cuenta_id', $this->cxp->id));
+    }
+
+    public function test_compra_al_contado_requiere_cuenta_de_pago(): void
+    {
+        $this->actuar()->post(route('admin.cxp.facturas.store'), [
+            'proveedor_id' => $this->proveedor->id,
+            'numero' => 'C-2002',
+            'fecha' => '2026-06-12',
+            'forma_pago' => 'CONTADO',
+            'lineas' => [
+                ['descripcion' => 'Compra contado', 'cantidad' => 1, 'precio_unitario' => 100, 'tasa_itbms' => 7, 'cuenta_id' => $this->gasto->id],
+            ],
+        ])->assertSessionHasErrors('cuenta_pago_id');
+
+        $this->assertSame(0, CxpDocumento::where('tipo_documento', 'FACTURA')->count());
+    }
+
     public function test_numero_duplicado_por_proveedor_es_rechazado(): void
     {
         $this->crearFactura(100, 7, 'A-1001');

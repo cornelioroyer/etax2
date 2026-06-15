@@ -109,6 +109,9 @@ class CxpFacturaController extends Controller
                 ->orderBy('codigo')
                 ->get(['id', 'codigo', 'nombre']),
             'cuentaGastoId' => CuentaDefault::idPara($companiaId, 'GASTO_DEFAULT'),
+            'cuentasPago' => $this->cuentasPago($companiaId),
+            'cuentaPagoId' => CuentaDefault::idPara($companiaId, 'BANCO_DEFAULT')
+                ?? CuentaDefault::idPara($companiaId, 'CAJA_DEFAULT'),
         ]);
     }
 
@@ -120,20 +123,23 @@ class CxpFacturaController extends Controller
         $data = $this->datosValidados($request, $companiaId);
         [$lineas, $subtotal, $impuesto, $total] = $this->calcularLineas($data['lineas']);
 
-        $factura = DB::transaction(function () use ($companiaId, $data, $lineas, $subtotal, $impuesto, $total, $usuario) {
+        $contado = ($data['forma_pago'] ?? 'CREDITO') === 'CONTADO';
+
+        $factura = DB::transaction(function () use ($companiaId, $data, $lineas, $subtotal, $impuesto, $total, $usuario, $contado) {
             $factura = CxpDocumento::create([
                 'compania_id' => $companiaId,
                 'proveedor_id' => $data['proveedor_id'],
                 'tipo_documento' => CxpDocumento::TIPO_FACTURA,
                 'numero' => $data['numero'],
                 'fecha' => $data['fecha'],
-                'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
+                // En contado no hay crédito pendiente: vence el mismo día.
+                'fecha_vencimiento' => $contado ? $data['fecha'] : ($data['fecha_vencimiento'] ?? null),
                 'subtotal' => $subtotal,
                 'descuento' => 0,
                 'impuesto' => $impuesto,
                 'total' => $total,
-                'saldo' => $total,
-                'estado' => CxpDocumento::ESTADO_BORRADOR,
+                'saldo' => $contado ? 0 : $total,
+                'estado' => $contado ? CxpDocumento::ESTADO_PAGADO : CxpDocumento::ESTADO_BORRADOR,
                 'created_by' => $usuario->email,
             ]);
 
@@ -141,11 +147,19 @@ class CxpFacturaController extends Controller
                 CxpDocumentoDetalle::create($linea + ['documento_id' => $factura->id, 'created_by' => $usuario->email]);
             }
 
+            if ($contado) {
+                $factura->load(['proveedor', 'detalle']);
+                $this->contabilizarContado($factura, (int) $data['cuenta_pago_id'], $usuario);
+            }
+
             return $factura;
         });
 
-        return redirect()->route('admin.cxp.facturas.show', $factura)
-            ->with('status', "Factura {$factura->numero} guardada como borrador. Revísala y contabilízala cuando esté lista.");
+        $mensaje = $contado
+            ? "Compra al contado {$factura->numero} registrada y contabilizada. Asiento {$factura->fresh()->asiento->numero}."
+            : "Factura {$factura->numero} guardada como borrador. Revísala y contabilízala cuando esté lista.";
+
+        return redirect()->route('admin.cxp.facturas.show', $factura)->with('status', $mensaje);
     }
 
     public function show(Request $request, CxpDocumento $documento): View
@@ -268,6 +282,12 @@ class CxpFacturaController extends Controller
             'numero' => ['required', 'string', 'max:50'],
             'fecha' => ['required', 'date'],
             'fecha_vencimiento' => ['nullable', 'date', 'after_or_equal:fecha'],
+            'forma_pago' => ['nullable', Rule::in(['CREDITO', 'CONTADO'])],
+            'cuenta_pago_id' => [
+                Rule::requiredIf(fn () => $request->input('forma_pago') === 'CONTADO'),
+                'nullable', 'integer',
+                Rule::exists('cgl_cuentas', 'id')->where('compania_id', $companiaId),
+            ],
             'lineas' => ['required', 'array', 'min:1'],
             'lineas.*.descripcion' => ['required', 'string', 'max:500'],
             'lineas.*.cantidad' => ['required', 'numeric', 'gt:0', 'max:999999999'],
@@ -410,6 +430,72 @@ class CxpFacturaController extends Controller
         ]);
     }
 
+    /**
+     * Postea el asiento de una compra al contado (pago directo desde banco/caja,
+     * sin pasar por CXP) y deja la factura PAGADA. Debe llamarse dentro de una
+     * transacción, con $factura->detalle y proveedor ya cargados.
+     */
+    private function contabilizarContado(CxpDocumento $factura, int $cuentaPagoId, $usuario): void
+    {
+        $companiaId = $factura->compania_id;
+        $impuesto = round((float) $factura->impuesto, 2);
+
+        $cuentaItbmsId = CuentaDefault::idPara($companiaId, 'ITBMS_CREDITO');
+
+        if ($impuesto > 0 && ! $cuentaItbmsId) {
+            throw ValidationException::withMessages([
+                'documento' => 'La compañía no tiene configurada la cuenta default ITBMS_CREDITO; no se puede contabilizar el ITBMS de compras.',
+            ]);
+        }
+
+        // Asiento: débito gasto/costo por línea, débito ITBMS crédito fiscal, crédito Banco/Caja
+        $lineasAsiento = [];
+
+        foreach ($factura->detalle as $linea) {
+            $base = round((float) $linea->total_linea - (float) $linea->impuesto_monto, 2);
+            $lineasAsiento[] = [
+                'cuenta_id' => $linea->cuenta_id,
+                'descripcion' => $linea->descripcion,
+                'debito' => $base,
+                'credito' => 0,
+            ];
+        }
+
+        if ($impuesto > 0) {
+            $lineasAsiento[] = [
+                'cuenta_id' => $cuentaItbmsId,
+                'descripcion' => "ITBMS factura {$factura->numero}",
+                'debito' => $impuesto,
+                'credito' => 0,
+            ];
+        }
+
+        $lineasAsiento[] = [
+            'cuenta_id' => $cuentaPagoId,
+            'descripcion' => "Compra al contado {$factura->numero}",
+            'debito' => 0,
+            'credito' => round((float) $factura->total, 2),
+        ];
+
+        $asiento = app(AsientoAutomatico::class)->postear(
+            $companiaId,
+            $factura->fecha->format('Y-m-d'),
+            "Compra al contado {$factura->numero} — ".$factura->proveedor->nombre,
+            $factura->numero,
+            $lineasAsiento,
+            'CXP',
+            'cxp_documentos',
+            $factura->id,
+            $usuario,
+        );
+
+        $factura->update([
+            'asiento_id' => $asiento->id,
+            'estado' => CxpDocumento::ESTADO_PAGADO,
+            'updated_by' => $usuario->email,
+        ]);
+    }
+
     private function autorizarFactura(Request $request, CxpDocumento $documento): void
     {
         abort_unless($documento->compania_id === $this->companiaActivaId($request), 404);
@@ -455,5 +541,15 @@ class CxpFacturaController extends Controller
             ->whereHas('tipos', fn ($q) => $q->where('codigo', 'PROVEEDOR'))
             ->orderBy('nombre')
             ->get(['id', 'codigo', 'nombre', 'cuenta_gasto_id']);
+    }
+
+    /** Cuentas de movimiento (banco/caja) para pago al contado, igual que el módulo de Pagos. */
+    private function cuentasPago(int $companiaId)
+    {
+        return CuentaContable::where('compania_id', $companiaId)
+            ->where('activa', true)
+            ->where('permite_movimiento', true)
+            ->orderBy('codigo')
+            ->get(['id', 'codigo', 'nombre']);
     }
 }

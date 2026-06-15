@@ -13,7 +13,7 @@
                 @endif
 
                 <form method="POST" action="{{ route('admin.cxp.facturas.store') }}"
-                      x-data="facturaCxp({{ old('lineas') ? collect(old('lineas'))->values()->toJson() : '[]' }}, {{ (int) ($cuentaGastoId ?? 0) }}, {{ $proveedores->pluck('cuenta_gasto_id', 'id')->toJson() }})"
+                      x-data="facturaCxp({{ old('lineas') ? collect(old('lineas'))->values()->toJson() : '[]' }}, {{ (int) ($cuentaGastoId ?? 0) }}, {{ $proveedores->pluck('cuenta_gasto_id', 'id')->toJson() }}, '{{ old('forma_pago', 'CREDITO') }}', '{{ old('cuenta_pago_id', $cuentaPagoId) }}')"
                       x-init="$nextTick(() => onProveedor(document.getElementById('proveedor_id').value))">
                     @csrf
 
@@ -42,11 +42,38 @@
                                           :value="old('fecha', now()->format('Y-m-d'))" />
                             <x-input-error :messages="$errors->get('fecha')" class="mt-1" />
                         </div>
-                        <div>
+                        <div x-show="formaPago !== 'CONTADO'">
                             <x-input-label for="fecha_vencimiento" value="Vence" />
                             <x-text-input id="fecha_vencimiento" name="fecha_vencimiento" type="text" class="js-date mt-1 block w-full"
                                           :value="old('fecha_vencimiento')" />
                             <x-input-error :messages="$errors->get('fecha_vencimiento')" class="mt-1" />
+                        </div>
+                    </div>
+
+                    {{-- Forma de pago --}}
+                    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-4">
+                        <div>
+                            <x-input-label for="forma_pago" value="Forma de pago *" />
+                            <select id="forma_pago" name="forma_pago" x-model="formaPago"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="CREDITO">Crédito (a pagar después)</option>
+                                <option value="CONTADO">Contado (pago directo)</option>
+                            </select>
+                            <x-input-error :messages="$errors->get('forma_pago')" class="mt-1" />
+                        </div>
+                        <div class="sm:col-span-2" x-show="formaPago === 'CONTADO'" x-cloak>
+                            <x-input-label for="cuenta_pago_id" value="Cuenta de pago (banco/caja) *" />
+                            <select id="cuenta_pago_id" name="cuenta_pago_id" x-model="cuentaPago"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">— Cuenta —</option>
+                                @foreach ($cuentasPago as $cuenta)
+                                    <option value="{{ $cuenta->id }}">{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
+                                @endforeach
+                            </select>
+                            <x-input-error :messages="$errors->get('cuenta_pago_id')" class="mt-1" />
+                        </div>
+                        <div class="flex items-end" x-show="formaPago === 'CONTADO'" x-cloak>
+                            <p class="text-xs text-gray-500">Se contabiliza al instante: gasto + ITBMS contra la cuenta de banco/caja, factura pagada. Alimenta el libro de compras.</p>
                         </div>
                     </div>
 
@@ -135,11 +162,13 @@
 
                     <div class="mt-6 flex flex-wrap items-center gap-3 border-t border-gray-100 pt-4">
                         <button type="submit"
-                                class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
+                                class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
+                                x-text="formaPago === 'CONTADO' ? 'Registrar compra al contado' : 'Guardar borrador'">
                             Guardar borrador
                         </button>
                         <a href="{{ route('admin.cxp.facturas.index') }}" class="text-sm text-gray-600 hover:text-gray-900">Cancelar</a>
-                        <p class="w-full text-xs text-gray-500 sm:w-auto sm:ml-auto">Se guarda como borrador editable; el asiento contable se genera al contabilizarla.</p>
+                        <p class="w-full text-xs text-gray-500 sm:w-auto sm:ml-auto"
+                           x-text="formaPago === 'CONTADO' ? 'La compra se contabiliza de inmediato y queda pagada.' : 'Se guarda como borrador editable; el asiento contable se genera al contabilizarla.'">Se guarda como borrador editable; el asiento contable se genera al contabilizarla.</p>
                     </div>
                 </form>
             </div>
@@ -147,11 +176,13 @@
     </div>
 
     <script>
-        function facturaCxp(lineasIniciales, cuentaGastoId, provCuentas) {
+        function facturaCxp(lineasIniciales, cuentaGastoId, provCuentas, formaPagoInicial, cuentaPagoInicial) {
             return {
                 cuentaGlobal: cuentaGastoId || '',
                 provCuentas: provCuentas || {},
                 cuentaActual: cuentaGastoId || '',
+                formaPago: formaPagoInicial || 'CREDITO',
+                cuentaPago: cuentaPagoInicial || '',
                 nueva() { return { descripcion: '', cantidad: 1, precio_unitario: 0, tasa_itbms: 7, cuenta_id: this.cuentaActual || '' }; },
                 lineas: lineasIniciales.length
                     ? lineasIniciales.map(l => ({
