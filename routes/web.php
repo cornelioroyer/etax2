@@ -166,6 +166,9 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::resource('cuentas', CuentaContableController::class)->except(['show'])->parameters(['cuentas' => 'cuenta']);
         Route::post('asientos/{asiento}/postear', [AsientoController::class, 'postear'])->name('asientos.postear');
         Route::post('asientos/{asiento}/anular', [AsientoController::class, 'anular'])->name('asientos.anular');
+        Route::get('asientos-importar', [AsientoController::class, 'importarForm'])->name('asientos.importar.form');
+        Route::get('asientos-importar/plantilla', [AsientoController::class, 'plantillaImport'])->name('asientos.importar.plantilla');
+        Route::post('asientos-importar', [AsientoController::class, 'importar'])->name('asientos.importar');
         Route::resource('asientos', AsientoController::class)->parameters(['asientos' => 'asiento']);
         Route::get('cuentas-default', [CuentaDefaultController::class, 'index'])->name('cuentas-default.index');
         Route::put('cuentas-default', [CuentaDefaultController::class, 'update'])->name('cuentas-default.update');

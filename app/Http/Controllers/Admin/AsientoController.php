@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Exports\AsientoPlantillaExport;
 use App\Http\Controllers\Controller;
+use App\Imports\AsientoSaldosImport;
 use App\Models\Asiento;
 use App\Models\AsientoDetalle;
 use App\Models\CuentaContable;
@@ -15,6 +17,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class AsientoController extends Controller
 {
@@ -103,6 +107,168 @@ class AsientoController extends Controller
 
         return redirect()->route('admin.asientos.show', $asiento)
             ->with('status', $postear ? "Asiento {$asiento->numero} posteado." : "Asiento {$asiento->numero} guardado como borrador.");
+    }
+
+    /**
+     * Formulario para importar un asiento (saldos iniciales) desde Excel.
+     */
+    public function importarForm(Request $request): View
+    {
+        abort_unless($request->user()->can('contabilidad.crear'), 403);
+
+        return view('admin.asientos.importar');
+    }
+
+    /**
+     * Descarga una plantilla .xlsx con las columnas y cuentas de ejemplo.
+     */
+    public function plantillaImport(Request $request): BinaryFileResponse
+    {
+        abort_unless($request->user()->can('contabilidad.crear'), 403);
+
+        $companiaId = $this->companiaActivaId($request);
+
+        // Usa hasta 5 cuentas reales de movimiento como ejemplo en la plantilla.
+        $ejemplos = CuentaContable::where('compania_id', $companiaId)
+            ->where('permite_movimiento', true)
+            ->where('activa', true)
+            ->orderBy('codigo')
+            ->limit(5)
+            ->get(['codigo', 'nombre'])
+            ->map(fn ($c) => [$c->codigo, $c->nombre])
+            ->all();
+
+        return Excel::download(new AsientoPlantillaExport($ejemplos), 'plantilla_saldos_iniciales.xlsx');
+    }
+
+    /**
+     * Procesa el Excel: resuelve cada código contra el catálogo, valida y
+     * crea el asiento como BORRADOR para revisarlo y postearlo después.
+     */
+    public function importar(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()->can('contabilidad.crear'), 403);
+
+        $companiaId = $this->companiaActivaId($request);
+
+        $data = $request->validate([
+            'fecha' => ['required', 'date'],
+            'descripcion' => ['nullable', 'string', 'max:500'],
+            'referencia' => ['nullable', 'string', 'max:100'],
+            'archivo' => ['required', 'file', 'mimes:xlsx,xls,csv,txt', 'max:5120'],
+        ]);
+
+        $import = new AsientoSaldosImport;
+        Excel::import($import, $request->file('archivo'));
+
+        if ($import->lineas === []) {
+            return back()->withErrors(['archivo' => 'El archivo no tiene filas con datos. Verifica que la primera fila sean los encabezados (codigo, descripcion, debito, credito).'])->withInput();
+        }
+
+        // Resuelve códigos contra el catálogo de la compañía.
+        $codigos = collect($import->lineas)->pluck('codigo')->filter()->unique();
+        $cuentas = CuentaContable::where('compania_id', $companiaId)
+            ->whereIn('codigo', $codigos)
+            ->get()
+            ->keyBy('codigo');
+
+        $control = $this->cuentasControl($companiaId);
+        $errores = [];
+        $lineas = [];
+        $totalDebito = 0.0;
+        $totalCredito = 0.0;
+
+        foreach ($import->lineas as $l) {
+            $fila = $l['fila'];
+
+            if ($l['codigo'] === '') {
+                $errores[] = "Fila {$fila}: falta el código de cuenta.";
+
+                continue;
+            }
+
+            $cuenta = $cuentas->get($l['codigo']);
+
+            if (! $cuenta) {
+                $errores[] = "Fila {$fila}: la cuenta {$l['codigo']} no existe en el catálogo.";
+
+                continue;
+            }
+
+            if (! $cuenta->permite_movimiento) {
+                $errores[] = "Fila {$fila}: la cuenta {$cuenta->codigo} es de título; no acepta movimientos.";
+
+                continue;
+            }
+
+            if (! $cuenta->activa) {
+                $errores[] = "Fila {$fila}: la cuenta {$cuenta->codigo} está inactiva.";
+
+                continue;
+            }
+
+            if (isset($control[$cuenta->id])) {
+                $errores[] = "Fila {$fila}: la cuenta {$cuenta->codigo} es de control ({$control[$cuenta->id]}); su saldo inicial se carga desde el módulo de {$control[$cuenta->id]}, no por asiento.";
+
+                continue;
+            }
+
+            if (($l['debito'] > 0) === ($l['credito'] > 0)) {
+                $errores[] = "Fila {$fila}: indica débito o crédito (uno solo, mayor que cero) para la cuenta {$cuenta->codigo}.";
+
+                continue;
+            }
+
+            $totalDebito += $l['debito'];
+            $totalCredito += $l['credito'];
+
+            $lineas[] = [
+                'cuenta_id' => $cuenta->id,
+                'descripcion' => $l['descripcion'],
+                'debito' => $l['debito'],
+                'credito' => $l['credito'],
+            ];
+        }
+
+        if ($errores !== []) {
+            return back()->withErrors(['archivo' => $errores])->withInput();
+        }
+
+        if (count($lineas) < 2) {
+            return back()->withErrors(['archivo' => 'El asiento necesita al menos 2 líneas válidas.'])->withInput();
+        }
+
+        if (abs($totalDebito - $totalCredito) > 0.004) {
+            return back()->withErrors([
+                'archivo' => sprintf('El archivo está descuadrado: débito B/. %.2f ≠ crédito B/. %.2f.', $totalDebito, $totalCredito),
+            ])->withInput();
+        }
+
+        $usuario = $request->user();
+
+        $asiento = DB::transaction(function () use ($companiaId, $data, $lineas, $totalDebito, $totalCredito, $usuario) {
+            $asiento = Asiento::create([
+                'compania_id' => $companiaId,
+                'diario_id' => Diario::general($companiaId, $usuario->email)->id,
+                'numero' => Asiento::siguienteNumero($companiaId),
+                'fecha' => $data['fecha'],
+                'descripcion' => $data['descripcion'] ?? 'Saldos iniciales (importado)',
+                'referencia' => $data['referencia'] ?? null,
+                'estado' => Asiento::ESTADO_BORRADOR,
+                'origen_modulo' => 'CGL',
+                'total_debito' => round($totalDebito, 2),
+                'total_credito' => round($totalCredito, 2),
+                'usuario_id' => $usuario->id,
+                'created_by' => $usuario->email,
+            ]);
+
+            $this->guardarLineas($asiento, $lineas, $usuario->email);
+
+            return $asiento;
+        });
+
+        return redirect()->route('admin.asientos.show', $asiento)
+            ->with('status', "Asiento {$asiento->numero} importado como borrador con ".count($lineas).' líneas. Revísalo y postéalo.');
     }
 
     public function show(Request $request, Asiento $asiento): View

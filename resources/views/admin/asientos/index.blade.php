@@ -3,10 +3,16 @@
         <div class="flex items-center justify-between">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Asientos de diario</h2>
             @can('contabilidad.crear')
-                <a href="{{ route('admin.asientos.create') }}"
-                   class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
-                    + Nuevo asiento
-                </a>
+                <div class="flex items-center gap-2">
+                    <a href="{{ route('admin.asientos.importar.form') }}"
+                       style="display:inline-flex;align-items:center;background:#fff;color:#374151;border:1px solid #d1d5db;padding:8px 16px;border-radius:6px;font-size:14px;font-weight:600;text-decoration:none;">
+                        Importar de Excel
+                    </a>
+                    <a href="{{ route('admin.asientos.create') }}"
+                       style="display:inline-flex;align-items:center;background:#2563eb;color:#fff;padding:8px 16px;border-radius:6px;font-size:14px;font-weight:600;text-decoration:none;">
+                        + Nuevo asiento
+                    </a>
+                </div>
             @endcan
         </div>
     </x-slot>
