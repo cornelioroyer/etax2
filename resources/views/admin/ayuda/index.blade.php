@@ -151,6 +151,15 @@
             { id: 37, cat: 'fel', title: '¿Cómo emitir una factura electrónica?',
               body: `<p>Ve a <em>Facturación FEL → Nueva factura</em>. El proceso es similar a una factura normal: selecciona el cliente, agrega los ítems y confirma.<br><br>
               Al confirmar, eTax2 envía la factura a HKA en XML, HKA la valida y la reporta a la DGI, y devuelve el CUFE y el código QR. Si la DGI rechaza la factura, el sistema muestra el código de error y la descripción para que puedas corregir y reintentar.</p>` },
+
+            // ── Estados de los documentos ─────────────────────────────────
+            { id: 38, cat: 'cxc', title: '¿Qué significan los estados de una factura (Pendiente, Parcial, Pagado, Anulado)?',
+              body: `<p>El <strong>estado</strong> de una factura indica en qué punto del cobro (o pago, en CxP) se encuentra. Lo calcula el sistema automáticamente según el saldo; tú no lo eliges al registrarla.</p>
+              <p>&bull; <strong>Pendiente:</strong> es el estado con el que <strong>nace toda factura al registrarla</strong>. Significa que aún no se ha cobrado nada: el saldo es igual al total.<br>
+              &bull; <strong>Parcial:</strong> se recibió un cobro (o se aplicó una nota de crédito) que abonó una parte, pero todavía queda saldo por cobrar.<br>
+              &bull; <strong>Pagado:</strong> el saldo llegó a cero; la factura quedó totalmente cobrada.<br>
+              &bull; <strong>Anulado:</strong> la factura se dejó sin efecto. Su asiento contable se reversa y deja de contar en los saldos y reportes.</p>
+              <p>Una factura va pasando sola de <em>Pendiente → Parcial → Pagado</em> a medida que registras cobros. <strong>Anulado</strong> es el único estado que se aplica manualmente, al anular el documento. Estos mismos estados aplican a las facturas de <em>Cuentas por Pagar</em>, solo que en función de los pagos a proveedores.</p>` },
         ],
         get filteredArticles() {
             const q = this.search.trim().toLowerCase();
