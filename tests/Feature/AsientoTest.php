@@ -294,4 +294,84 @@ class AsientoTest extends TestCase
 
         $this->assertSame('AS-000002', $segundo->numero);
     }
+
+    /** Crea la cuenta de control CXC y la registra como cuenta por defecto. */
+    private function cuentaControlCxc(): CuentaContable
+    {
+        $cxc = CuentaContable::create([
+            'compania_id' => $this->compania->id,
+            'codigo' => '10103',
+            'nombre' => 'Cuentas por Cobrar',
+            'nivel' => 3,
+            'naturaleza' => 'DEBITO',
+            'permite_movimiento' => true,
+            'conciliable' => false,
+            'activa' => true,
+        ]);
+
+        \App\Models\CuentaDefault::create([
+            'compania_id' => $this->compania->id,
+            'clave' => 'CXC',
+            'cuenta_id' => $cxc->id,
+        ]);
+
+        return $cxc;
+    }
+
+    public function test_postear_contra_cuenta_de_control_requiere_confirmacion(): void
+    {
+        $cxc = $this->cuentaControlCxc();
+
+        $this->actingAs($this->admin)
+            ->withSession(['compania_activa_id' => $this->compania->id])
+            ->post(route('admin.asientos.store'), [
+                'fecha' => '2026-06-12',
+                'descripcion' => 'Ajuste manual a CxC',
+                'lineas' => [
+                    ['cuenta_id' => $cxc->id, 'debito' => 100, 'credito' => 0],
+                    ['cuenta_id' => $this->ventas->id, 'debito' => 0, 'credito' => 100],
+                ],
+                'accion' => 'postear',
+            ])
+            ->assertSessionHasErrors('confirmar_control');
+
+        // Se revierte: no queda ni el borrador.
+        $this->assertSame(0, Asiento::count());
+    }
+
+    public function test_postear_contra_cuenta_de_control_con_confirmacion(): void
+    {
+        $cxc = $this->cuentaControlCxc();
+
+        $this->actingAs($this->admin)
+            ->withSession(['compania_activa_id' => $this->compania->id])
+            ->post(route('admin.asientos.store'), [
+                'fecha' => '2026-06-12',
+                'descripcion' => 'Ajuste manual a CxC',
+                'lineas' => [
+                    ['cuenta_id' => $cxc->id, 'debito' => 100, 'credito' => 0],
+                    ['cuenta_id' => $this->ventas->id, 'debito' => 0, 'credito' => 100],
+                ],
+                'accion' => 'postear',
+                'confirmar_control' => '1',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('POSTEADO', Asiento::firstOrFail()->estado);
+    }
+
+    public function test_postear_sin_cuentas_de_control_no_pide_confirmacion(): void
+    {
+        // Sin CuentaDefault CXC/CXP ni inventario, postear normal no se bloquea.
+        $this->actingAs($this->admin)
+            ->withSession(['compania_activa_id' => $this->compania->id])
+            ->post(route('admin.asientos.store'), [
+                'fecha' => '2026-06-12',
+                'lineas' => $this->lineasCuadradas(100),
+                'accion' => 'postear',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('POSTEADO', Asiento::firstOrFail()->estado);
+    }
 }

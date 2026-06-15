@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Asiento;
 use App\Models\AsientoDetalle;
 use App\Models\CuentaContable;
+use App\Models\CuentaDefault;
 use App\Models\Diario;
 use App\Models\PeriodoContable;
 use Illuminate\Http\RedirectResponse;
@@ -74,8 +75,9 @@ class AsientoController extends Controller
         [$data, $lineas] = $this->validated($request, $companiaId);
         $usuario = $request->user();
         $postear = $request->input('accion') === 'postear';
+        $confirmado = $request->boolean('confirmar_control');
 
-        $asiento = DB::transaction(function () use ($companiaId, $data, $lineas, $usuario, $postear) {
+        $asiento = DB::transaction(function () use ($companiaId, $data, $lineas, $usuario, $postear, $confirmado) {
             $asiento = Asiento::create([
                 'compania_id' => $companiaId,
                 'diario_id' => Diario::general($companiaId, $usuario->email)->id,
@@ -94,7 +96,7 @@ class AsientoController extends Controller
             $this->guardarLineas($asiento, $lineas, $usuario->email);
 
             if ($postear) {
-                $this->postearAsiento($asiento, $usuario);
+                $this->postearAsiento($asiento, $usuario, $confirmado);
             }
 
             return $asiento;
@@ -133,8 +135,9 @@ class AsientoController extends Controller
         [$data, $lineas] = $this->validated($request, $asiento->compania_id);
         $usuario = $request->user();
         $postear = $request->input('accion') === 'postear';
+        $confirmado = $request->boolean('confirmar_control');
 
-        DB::transaction(function () use ($asiento, $data, $lineas, $usuario, $postear) {
+        DB::transaction(function () use ($asiento, $data, $lineas, $usuario, $postear, $confirmado) {
             $asiento->update([
                 'fecha' => $data['fecha'],
                 'descripcion' => $data['descripcion'] ?? null,
@@ -148,7 +151,7 @@ class AsientoController extends Controller
             $this->guardarLineas($asiento, $lineas, $usuario->email);
 
             if ($postear) {
-                $this->postearAsiento($asiento, $usuario);
+                $this->postearAsiento($asiento, $usuario, $confirmado);
             }
         });
 
@@ -174,7 +177,7 @@ class AsientoController extends Controller
         $this->verificarCompania($request, $asiento);
         $this->soloBorrador($asiento, 'postear');
 
-        DB::transaction(fn () => $this->postearAsiento($asiento, $request->user()));
+        DB::transaction(fn () => $this->postearAsiento($asiento, $request->user(), $request->boolean('confirmar_control')));
 
         return redirect()->route('admin.asientos.show', $asiento)
             ->with('status', "Asiento {$asiento->numero} posteado.");
@@ -206,7 +209,7 @@ class AsientoController extends Controller
      * del mes se crea automáticamente si no existe). En PostgreSQL los
      * triggers de control contable re-validan todo al cambiar el estado.
      */
-    private function postearAsiento(Asiento $asiento, $usuario): void
+    private function postearAsiento(Asiento $asiento, $usuario, bool $confirmado = false): void
     {
         $debito = round((float) $asiento->detalle()->sum('debito'), 2);
         $credito = round((float) $asiento->detalle()->sum('credito'), 2);
@@ -215,6 +218,31 @@ class AsientoController extends Controller
             throw ValidationException::withMessages([
                 'lineas' => "Asiento descuadrado: débito B/. {$debito} ≠ crédito B/. {$credito}.",
             ]);
+        }
+
+        // Blindaje: postear directo contra una cuenta controlada por auxiliar
+        // (CxC/CxP/Inventario) descuadra el auxiliar. Se bloquea salvo
+        // confirmación explícita; lo correcto es registrar el movimiento desde
+        // su módulo.
+        if (! $confirmado) {
+            $control = $this->cuentasControl($asiento->compania_id);
+
+            if ($control !== []) {
+                $tocadas = $asiento->detalle()
+                    ->whereIn('cuenta_id', array_keys($control))
+                    ->pluck('cuenta_id')
+                    ->unique();
+
+                if ($tocadas->isNotEmpty()) {
+                    $etiquetas = $tocadas->map(fn ($id) => $control[$id])->unique()->implode(', ');
+
+                    throw ValidationException::withMessages([
+                        'confirmar_control' => "Este asiento afecta cuentas controladas por auxiliar ({$etiquetas}). "
+                            ."Postearlo directo puede descuadrar el auxiliar; regístralo desde su módulo (CxC/CxP/Inventario), "
+                            .'o marca «Confirmo» para postear de todos modos.',
+                    ]);
+                }
+            }
         }
 
         $periodo = PeriodoContable::paraFecha($asiento->compania_id, $asiento->fecha, $usuario->email);
@@ -234,6 +262,34 @@ class AsientoController extends Controller
             'fecha_posteo' => now(),
             'updated_by' => $usuario->email,
         ]);
+    }
+
+    /**
+     * Cuentas de control de los auxiliares (CxC, CxP, inventario) de la
+     * compañía, mapeadas a su etiqueta para el mensaje de aviso.
+     *
+     * @return array<int, string>  [cuenta_id => etiqueta]
+     */
+    private function cuentasControl(int $companiaId): array
+    {
+        $control = [];
+
+        foreach (['CXC' => 'Cuentas por Cobrar', 'CXP' => 'Cuentas por Pagar'] as $clave => $etiqueta) {
+            if ($id = CuentaDefault::idPara($companiaId, $clave)) {
+                $control[$id] = $etiqueta;
+            }
+        }
+
+        DB::table('item_productos_servicios')
+            ->where('compania_id', $companiaId)
+            ->whereNotNull('cuenta_inventario_id')
+            ->distinct()
+            ->pluck('cuenta_inventario_id')
+            ->each(function ($id) use (&$control) {
+                $control[(int) $id] = 'Inventario';
+            });
+
+        return $control;
     }
 
     private function guardarLineas(Asiento $asiento, array $lineas, string $usuario): void

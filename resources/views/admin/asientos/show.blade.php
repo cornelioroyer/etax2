@@ -14,10 +14,19 @@
             <div class="flex items-center gap-2">
                 @if ($asiento->esBorrador())
                     @can('contabilidad.editar')
-                        <form method="POST" action="{{ route('admin.asientos.postear', $asiento) }}">
-                            @csrf
-                            <button class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">Postear</button>
-                        </form>
+                        @if ($errors->has('confirmar_control'))
+                            <form method="POST" action="{{ route('admin.asientos.postear', $asiento) }}"
+                                  onsubmit="return confirm('Este asiento afecta una cuenta controlada por auxiliar (CxC/CxP/Inventario). ¿Postear de todos modos? Puede descuadrar el auxiliar.');">
+                                @csrf
+                                <input type="hidden" name="confirmar_control" value="1">
+                                <button class="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500">Postear de todos modos</button>
+                            </form>
+                        @else
+                            <form method="POST" action="{{ route('admin.asientos.postear', $asiento) }}">
+                                @csrf
+                                <button class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">Postear</button>
+                            </form>
+                        @endif
                         <a href="{{ route('admin.asientos.edit', $asiento) }}"
                            class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Editar</a>
                     @endcan

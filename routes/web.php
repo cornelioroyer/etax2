@@ -32,6 +32,7 @@ use App\Http\Controllers\Admin\GastoController;
 use App\Http\Controllers\Admin\PeriodoContableController;
 use App\Http\Controllers\Admin\ReporteFlujoCajaController;
 use App\Http\Controllers\Admin\ReporteLiquidacionItbmsController;
+use App\Http\Controllers\Admin\ReporteCuadreAuxiliaresController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\UsuarioCompaniaController;
 use App\Http\Controllers\Admin\VentaCotizacionController;
@@ -238,6 +239,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::get('reportes/comparativo-mensual', ReporteComparativoController::class)->name('reportes.comparativo');
         Route::get('reportes/flujo-caja', ReporteFlujoCajaController::class)->name('reportes.flujo-caja');
         Route::get('reportes/liquidacion-itbms', ReporteLiquidacionItbmsController::class)->name('reportes.liquidacion-itbms');
+        Route::get('reportes/cuadre-auxiliares', ReporteCuadreAuxiliaresController::class)->name('reportes.cuadre-auxiliares');
     });
 
     Route::middleware('permission:bancos.ver')->group(function () {

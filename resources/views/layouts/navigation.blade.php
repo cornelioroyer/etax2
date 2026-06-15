@@ -124,6 +124,7 @@
                 ['label' => 'Comparativo Mensual', 'href' => route('admin.reportes.comparativo'), 'active' => request()->routeIs('admin.reportes.comparativo'), 'show' => $can('reportes.ver')],
                 ['label' => 'Flujo de Efectivo', 'href' => route('admin.reportes.flujo-caja'), 'active' => request()->routeIs('admin.reportes.flujo-caja'), 'show' => $can('reportes.ver')],
                 ['label' => 'Liquidación ITBMS', 'href' => route('admin.reportes.liquidacion-itbms'), 'active' => request()->routeIs('admin.reportes.liquidacion-itbms'), 'show' => $can('reportes.ver')],
+                ['label' => 'Cuadre de Auxiliares', 'href' => route('admin.reportes.cuadre-auxiliares'), 'active' => request()->routeIs('admin.reportes.cuadre-auxiliares'), 'show' => $can('reportes.ver')],
             ],
         ],
         [
