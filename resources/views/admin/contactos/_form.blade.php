@@ -47,10 +47,11 @@
 
             <div class="md:col-span-2">
                 <label for="cuenta_gasto_id" class="block text-sm font-medium text-gray-700">Cuenta de gasto por defecto <span class="text-xs text-gray-400">(proveedor, opcional)</span></label>
+                @php($cuentaGastoSel = old('cuenta_gasto_id', $c->cuenta_gasto_id ?? ($cuentaGastoDefault ?? '')))
                 <select id="cuenta_gasto_id" name="cuenta_gasto_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     <option value="">— Usar gasto por defecto de la compañía —</option>
                     @foreach (($cuentas ?? []) as $cuenta)
-                        <option value="{{ $cuenta->id }}" @selected((string) old('cuenta_gasto_id', $c->cuenta_gasto_id ?? '') === (string) $cuenta->id)>{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
+                        <option value="{{ $cuenta->id }}" @selected((string) $cuentaGastoSel === (string) $cuenta->id)>{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
                     @endforeach
                 </select>
                 <p class="mt-1 text-xs text-gray-400">Se preselecciona en las líneas al registrar facturas por pagar de este proveedor.</p>

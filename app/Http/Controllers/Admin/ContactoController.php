@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Contacto;
 use App\Models\CuentaContable;
+use App\Models\CuentaDefault;
 use App\Models\TipoContacto;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -53,6 +54,7 @@ class ContactoController extends Controller
             'tipos' => TipoContacto::orderBy('id')->get(),
             'tipoPreseleccionado' => strtoupper(trim((string) $request->query('tipo', ''))),
             'cuentas' => $this->cuentasGasto($companiaId),
+            'cuentaGastoDefault' => CuentaDefault::idPara($companiaId, 'GASTO_DEFAULT'),
         ]);
     }
 
