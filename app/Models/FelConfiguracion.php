@@ -2,9 +2,9 @@
 
 namespace App\Models;
 
+use App\Providers\AppServiceProvider;
 use App\Services\FelConfiguracionDefault;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\DB;
 
 class FelConfiguracion extends Model
 {
@@ -36,32 +36,27 @@ class FelConfiguracion extends Model
     /**
      * Reserva y devuelve el siguiente número de documento fiscal.
      *
-     * Con las credenciales demo compartidas, todas las compañías emiten bajo
-     * la misma cuenta PAC de HKA, así que el consecutivo debe ser único entre
-     * TODAS ellas (mismo ambiente/sucursal/punto) o la DGI rechaza por
-     * "Documento duplicado". Con tokens propios cada compañía lleva su propio
-     * espacio de folios. PostgreSQL no permite FOR UPDATE con agregados, por lo
-     * que serializamos con un advisory lock de transacción.
+     * Con las credenciales demo compartidas, todas las compañías emiten bajo la
+     * MISMA cuenta PAC de HKA (incluso entre los entornos dev y prod, que usan
+     * los mismos tokens), así que el consecutivo debe ser único entre todas o la
+     * DGI rechaza con "Documento duplicado". Para que sea monotónico y a prueba
+     * de borrados (eliminar una compañía no debe regresar el contador), el
+     * consecutivo demo lo lleva una sola fila ancla: la config de la compañía
+     * del sistema. Con tokens propios, cada compañía mantiene su propio espacio
+     * de folios. El bloqueo de fila (FOR UPDATE) serializa la numeración.
      *
      * Llamar dentro de una transacción.
      */
     public function siguienteNumeroFiscal(): int
     {
-        $cfg = self::lockForUpdate()->find($this->id);
-
-        if (app(FelConfiguracionDefault::class)->esDemo($cfg)) {
-            if (DB::connection()->getDriverName() === 'pgsql') {
-                DB::statement('SELECT pg_advisory_xact_lock(hashtext(?))', ['fel-demo-'.$cfg->codigo_sucursal.'-'.$cfg->punto_facturacion]);
-            }
-
-            $cfg->correlativo = (int) self::where('ambiente', $cfg->ambiente)
-                ->where('codigo_sucursal', $cfg->codigo_sucursal)
-                ->where('punto_facturacion', $cfg->punto_facturacion)
-                ->max('correlativo') + 1;
+        if (app(FelConfiguracionDefault::class)->esDemo($this)) {
+            $cfg = self::lockForUpdate()->firstWhere('compania_id', AppServiceProvider::COMPANIA_SISTEMA)
+                ?? self::lockForUpdate()->find($this->id);
         } else {
-            $cfg->correlativo += 1;
+            $cfg = self::lockForUpdate()->find($this->id);
         }
 
+        $cfg->correlativo += 1;
         $cfg->save();
 
         return $cfg->correlativo;
