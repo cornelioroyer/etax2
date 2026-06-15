@@ -139,15 +139,6 @@
             ],
         ],
         [
-            'key' => 'caja',
-            'label' => 'Caja menuda',
-            'icon' => 'M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z',
-            'active' => request()->routeIs('admin.caja.*'),
-            'show' => $can('caja.ver'),
-            'href' => route('admin.caja.index'),
-            'children' => [],
-        ],
-        [
             'key' => 'bancos',
             'label' => 'Bancos',
             'icon' => 'M3 10.5h18M4.5 10.5V18M8.25 10.5V18M12 10.5V18m3.75-7.5V18M19.5 10.5V18M3.75 21h16.5M12 3l8.25 4.5H3.75L12 3Z',
@@ -160,7 +151,7 @@
                 ['label' => 'Conciliaciones', 'href' => route('admin.bco.conciliaciones.index'), 'active' => request()->routeIs('admin.bco.conciliaciones.*'), 'show' => $can('bancos.ver')],
                 ['label' => 'Cheques', 'href' => route('admin.bco.cheques.index'), 'active' => request()->routeIs('admin.bco.cheques.*'), 'show' => $can('bancos.ver')],
                 ['label' => 'Depósitos', 'href' => route('admin.bco.depositos.index'), 'active' => request()->routeIs('admin.bco.depositos.*'), 'show' => $can('bancos.ver')],
-                ['label' => 'Caja chica', 'href' => route('admin.caja.index'), 'active' => request()->routeIs('admin.caja.*'), 'show' => $can('caja.ver')],
+                ['label' => 'Caja Menuda', 'href' => route('admin.caja.index'), 'active' => request()->routeIs('admin.caja.*'), 'show' => $can('caja.ver')],
             ],
         ],
         [
