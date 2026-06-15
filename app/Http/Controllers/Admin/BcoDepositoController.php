@@ -57,15 +57,16 @@ class BcoDepositoController extends Controller
         ]);
 
         $cuenta = BcoCuenta::where('compania_id', $companiaId)->findOrFail($data['cuenta_bancaria_id']);
+        $usuario = $request->user();
 
-        \DB::transaction(function () use ($data, $companiaId, $cuenta, $request) {
+        \DB::transaction(function () use ($data, $companiaId, $cuenta, $usuario) {
             $deposito = BcoDeposito::create([
                 'compania_id'        => $companiaId,
                 'cuenta_bancaria_id' => $cuenta->id,
                 'fecha'              => $data['fecha'],
                 'referencia'         => $data['referencia'] ?? null,
                 'monto'              => $data['monto'],
-                'created_by'         => $request->user()->email,
+                'created_by'         => $usuario->email,
             ]);
 
             // Crear movimiento bancario (crédito = ingreso a la cuenta)
@@ -74,25 +75,33 @@ class BcoDepositoController extends Controller
                 'cuenta_bancaria_id' => $cuenta->id,
                 'fecha'              => $data['fecha'],
                 'tipo_movimiento'    => BcoMovimiento::TIPO_DEPOSITO,
-                'descripcion'        => 'Depósito' . ($data['referencia'] ? ' – ' . $data['referencia'] : ''),
+                'descripcion'        => 'Depósito' . (! empty($data['referencia']) ? ' – ' . $data['referencia'] : ''),
                 'referencia'         => $data['referencia'] ?? null,
                 'debito'             => 0,
                 'credito'            => $data['monto'],
                 'conciliado'         => false,
-                'created_by'         => $request->user()->email,
+                'created_by'         => $usuario->email,
             ]);
 
             // Asiento contable: DR banco / CR cuenta origen (ej. Caja, Efectivo en tránsito)
             if ($cuenta->cuenta_contable_id && ! empty($data['cuenta_origen_id'])) {
-                $descripcion = "Depósito {$cuenta->nombre}" . ($data['referencia'] ? " Ref:{$data['referencia']}" : '');
-                $asiento = AsientoAutomatico::postear($companiaId, $data['fecha'], $descripcion, [
-                    ['cuenta_id' => $cuenta->cuenta_contable_id, 'debe' => $data['monto'],  'haber' => 0],
-                    ['cuenta_id' => $data['cuenta_origen_id'],   'debe' => 0, 'haber' => $data['monto']],
-                ], $request->user()->email);
+                $descripcion = "Depósito {$cuenta->nombre}" . (! empty($data['referencia']) ? " Ref:{$data['referencia']}" : '');
+                $asiento = app(AsientoAutomatico::class)->postear(
+                    $companiaId,
+                    $data['fecha'],
+                    $descripcion,
+                    $data['referencia'] ?? "DEP-{$deposito->id}",
+                    [
+                        ['cuenta_id' => $cuenta->cuenta_contable_id, 'descripcion' => $descripcion, 'debito' => $data['monto'], 'credito' => 0],
+                        ['cuenta_id' => (int) $data['cuenta_origen_id'], 'descripcion' => $descripcion, 'debito' => 0, 'credito' => $data['monto']],
+                    ],
+                    'BANCOS',
+                    'bco_depositos',
+                    $deposito->id,
+                    $usuario,
+                );
 
-                if ($asiento) {
-                    $deposito->update(['asiento_id' => $asiento->id]);
-                }
+                $deposito->update(['asiento_id' => $asiento->id]);
             }
         });
 
