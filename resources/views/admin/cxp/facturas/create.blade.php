@@ -13,13 +13,15 @@
                 @endif
 
                 <form method="POST" action="{{ route('admin.cxp.facturas.store') }}"
-                      x-data="facturaCxp({{ old('lineas') ? collect(old('lineas'))->values()->toJson() : '[]' }}, {{ (int) ($cuentaGastoId ?? 0) }})">
+                      x-data="facturaCxp({{ old('lineas') ? collect(old('lineas'))->values()->toJson() : '[]' }}, {{ (int) ($cuentaGastoId ?? 0) }}, {{ $proveedores->pluck('cuenta_gasto_id', 'id')->toJson() }})"
+                      x-init="$nextTick(() => onProveedor(document.getElementById('proveedor_id').value))">
                     @csrf
 
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
                         <div class="sm:col-span-2">
                             <x-input-label for="proveedor_id" value="Proveedor *" />
                             <select id="proveedor_id" name="proveedor_id" required
+                                    @change="onProveedor($event.target.value)"
                                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                 <option value="">— Proveedor —</option>
                                 @foreach ($proveedores as $proveedor)
@@ -145,9 +147,12 @@
     </div>
 
     <script>
-        function facturaCxp(lineasIniciales, cuentaGastoId) {
-            const nueva = () => ({ descripcion: '', cantidad: 1, precio_unitario: 0, tasa_itbms: 7, cuenta_id: cuentaGastoId || '' });
+        function facturaCxp(lineasIniciales, cuentaGastoId, provCuentas) {
             return {
+                cuentaGlobal: cuentaGastoId || '',
+                provCuentas: provCuentas || {},
+                cuentaActual: cuentaGastoId || '',
+                nueva() { return { descripcion: '', cantidad: 1, precio_unitario: 0, tasa_itbms: 7, cuenta_id: this.cuentaActual || '' }; },
                 lineas: lineasIniciales.length
                     ? lineasIniciales.map(l => ({
                         descripcion: l.descripcion ?? '',
@@ -156,8 +161,18 @@
                         tasa_itbms: parseInt(l.tasa_itbms) || 0,
                         cuenta_id: l.cuenta_id ?? '',
                     }))
-                    : [nueva()],
-                agregar() { this.lineas.push(nueva()); },
+                    : [],
+                onProveedor(provId) {
+                    const nuevaCuenta = String((this.provCuentas[provId] ?? '') || this.cuentaGlobal || '');
+                    const anterior = String(this.cuentaActual || '');
+                    // Actualiza solo líneas vacías o que aún tenían la cuenta por defecto anterior (no las editadas a mano)
+                    this.lineas.forEach(l => {
+                        if (l.cuenta_id === '' || String(l.cuenta_id) === anterior) l.cuenta_id = nuevaCuenta;
+                    });
+                    this.cuentaActual = nuevaCuenta;
+                    if (this.lineas.length === 0) this.lineas.push(this.nueva());
+                },
+                agregar() { this.lineas.push(this.nueva()); },
                 base(l) { return Math.round((parseFloat(l.cantidad) || 0) * (parseFloat(l.precio_unitario) || 0) * 100) / 100; },
                 itbmsLinea(l) { return Math.round(this.base(l) * (parseInt(l.tasa_itbms) || 0)) / 100; },
                 totalLinea(l) { return this.base(l) + this.itbmsLinea(l); },

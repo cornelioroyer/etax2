@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Contacto;
+use App\Models\CuentaContable;
 use App\Models\TipoContacto;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -46,9 +47,12 @@ class ContactoController extends Controller
     {
         abort_unless($request->user()->can('contactos.crear'), 403);
 
+        $companiaId = $this->companiaActivaId($request);
+
         return view('admin.contactos.create', [
             'tipos' => TipoContacto::orderBy('id')->get(),
             'tipoPreseleccionado' => strtoupper(trim((string) $request->query('tipo', ''))),
+            'cuentas' => $this->cuentasGasto($companiaId),
         ]);
     }
 
@@ -79,6 +83,7 @@ class ContactoController extends Controller
             'contacto' => $contacto->load('tipos'),
             'tipos' => TipoContacto::orderBy('id')->get(),
             'tipoPreseleccionado' => '',
+            'cuentas' => $this->cuentasGasto($contacto->compania_id),
         ]);
     }
 
@@ -131,6 +136,10 @@ class ContactoController extends Controller
             'direccion' => ['nullable', 'string'],
             'provincia' => ['nullable', 'string', 'max:100'],
             'distrito' => ['nullable', 'string', 'max:100'],
+            'cuenta_gasto_id' => [
+                'nullable', 'integer',
+                Rule::exists('cgl_cuentas', 'id')->where('compania_id', $companiaId),
+            ],
             'activo' => ['required', 'boolean'],
             'tipos' => ['required', 'array', 'min:1'],
             'tipos.*' => ['integer', 'exists:contact_tipos,id'],
@@ -168,5 +177,15 @@ class ContactoController extends Controller
     private function verificarCompania(Request $request, Contacto $contacto): void
     {
         abort_unless($contacto->compania_id === $this->companiaActivaId($request), 404);
+    }
+
+    /** Cuentas de movimiento para el selector de cuenta de gasto por defecto del proveedor. */
+    private function cuentasGasto(int $companiaId)
+    {
+        return CuentaContable::where('compania_id', $companiaId)
+            ->where('permite_movimiento', true)
+            ->where('activa', true)
+            ->orderBy('codigo')
+            ->get(['id', 'codigo', 'nombre']);
     }
 }

@@ -312,6 +312,6 @@ class CxpFacturaController extends Controller
             ->where('activo', true)
             ->whereHas('tipos', fn ($q) => $q->where('codigo', 'PROVEEDOR'))
             ->orderBy('nombre')
-            ->get(['id', 'codigo', 'nombre']);
+            ->get(['id', 'codigo', 'nombre', 'cuenta_gasto_id']);
     }
 }

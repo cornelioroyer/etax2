@@ -23,6 +23,7 @@ class Contacto extends Model
         'pais',
         'provincia',
         'distrito',
+        'cuenta_gasto_id',
         'activo',
         'created_by',
         'updated_by',
@@ -38,6 +39,11 @@ class Contacto extends Model
     public function tipos(): BelongsToMany
     {
         return $this->belongsToMany(TipoContacto::class, 'contact_contactos_tipos', 'contacto_id', 'tipo_id');
+    }
+
+    public function cuentaGasto()
+    {
+        return $this->belongsTo(CuentaContable::class, 'cuenta_gasto_id');
     }
 
     public function esTipo(string $codigo): bool
