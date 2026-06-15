@@ -76,7 +76,7 @@
                 <input id="distrito" name="distrito" value="{{ old('distrito', $c->distrito ?? '') }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
             </div>
 
-            <div class="md:col-span-2">
+            <div class="md:col-span-2 cuenta-gasto-wrap">
                 <label for="cuenta_gasto_id" class="block text-sm font-medium text-gray-700">Cuenta de gasto por defecto <span class="text-xs text-gray-400">(proveedor, opcional)</span></label>
                 @php($cuentaGastoSel = old('cuenta_gasto_id', $c->cuenta_gasto_id ?? ($cuentaGastoDefault ?? '')))
                 <select id="cuenta_gasto_id" name="cuenta_gasto_id" class="cuenta-gasto-select mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -107,6 +107,20 @@
 
 {{-- Selector de cuenta de gasto con búsqueda (TomSelect) --}}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2/dist/css/tom-select.bootstrap5.min.css">
+<style>
+    .cuenta-gasto-wrap .ts-wrapper { width: 100%; }
+    .cuenta-gasto-wrap .ts-control {
+        min-height: 42px; border-radius: 0.375rem; border-color: #d1d5db;
+        box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); padding: 0.375rem 0.75rem;
+    }
+    .cuenta-gasto-wrap .ts-dropdown {
+        background-color: #fff; border: 1px solid #d1d5db; border-radius: 0.375rem;
+        box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1);
+        z-index: 60; margin-top: 2px;
+    }
+    .cuenta-gasto-wrap .ts-dropdown .option { padding: 0.5rem 0.75rem; }
+    .cuenta-gasto-wrap .ts-dropdown .option.active { background-color: #005293; color: #fff; }
+</style>
 <script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
 <script>
     document.querySelectorAll('.cuenta-gasto-select').forEach(function (el) {
