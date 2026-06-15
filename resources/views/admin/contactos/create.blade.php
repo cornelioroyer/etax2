@@ -2,7 +2,7 @@
     @php($ayudaModulo = $tipoPreseleccionado === 'PROVEEDOR' ? 'cxp' : ($tipoPreseleccionado === 'CLIENTE' ? 'cxc' : ''))
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">Nuevo contacto</h2>
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight">Nuevo</h2>
             <button type="button"
                 onclick="window.dispatchEvent(new CustomEvent('open-help', { detail: { module: {{ $ayudaModulo ? "'".$ayudaModulo."'" : 'null' }} } }))"
                 class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
