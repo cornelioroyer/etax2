@@ -111,13 +111,6 @@
         <x-input-error :messages="$errors->get('lineas')" class="mt-1" />
     </div>
 
-    @if ($errors->has('confirmar_control'))
-        <label class="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-            <input type="checkbox" name="confirmar_control" value="1" class="mt-0.5 rounded border-amber-300 text-amber-600 focus:ring-amber-500">
-            <span>Confirmo afectar cuentas controladas por auxiliar (CxC / CxP / Inventario). Entiendo que postear directo puede descuadrar el auxiliar; lo correcto suele ser registrarlo desde su módulo.</span>
-        </label>
-    @endif
-
     <div class="flex flex-wrap items-center gap-3 border-t border-gray-100 pt-4">
         <button type="submit" name="accion" value="postear"
                 class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"

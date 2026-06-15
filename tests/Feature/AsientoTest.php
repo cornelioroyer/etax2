@@ -375,7 +375,7 @@ class AsientoTest extends TestCase
         $this->assertSame(0, Asiento::count());
     }
 
-    public function test_postear_contra_inventario_requiere_confirmacion(): void
+    public function test_postear_contra_inventario_se_bloquea_siempre(): void
     {
         $inv = $this->cuentaControlInventario();
 
@@ -389,19 +389,18 @@ class AsientoTest extends TestCase
             'accion' => 'postear',
         ];
 
-        // Sin confirmación: pide confirmar.
+        // El bloqueo de inventario también es duro: se rechaza siempre.
         $this->actingAs($this->admin)
             ->withSession(['compania_activa_id' => $this->compania->id])
             ->post(route('admin.asientos.store'), $payload)
-            ->assertSessionHasErrors('confirmar_control');
-        $this->assertSame(0, Asiento::count());
+            ->assertSessionHasErrors('lineas');
 
-        // Con confirmación: se postea.
         $this->actingAs($this->admin)
             ->withSession(['compania_activa_id' => $this->compania->id])
             ->post(route('admin.asientos.store'), $payload + ['confirmar_control' => '1'])
-            ->assertSessionHasNoErrors();
-        $this->assertSame('POSTEADO', Asiento::firstOrFail()->estado);
+            ->assertSessionHasErrors('lineas');
+
+        $this->assertSame(0, Asiento::count());
     }
 
     public function test_postear_sin_cuentas_de_control_no_pide_confirmacion(): void

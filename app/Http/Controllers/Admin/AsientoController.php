@@ -75,9 +75,8 @@ class AsientoController extends Controller
         [$data, $lineas] = $this->validated($request, $companiaId);
         $usuario = $request->user();
         $postear = $request->input('accion') === 'postear';
-        $confirmado = $request->boolean('confirmar_control');
 
-        $asiento = DB::transaction(function () use ($companiaId, $data, $lineas, $usuario, $postear, $confirmado) {
+        $asiento = DB::transaction(function () use ($companiaId, $data, $lineas, $usuario, $postear) {
             $asiento = Asiento::create([
                 'compania_id' => $companiaId,
                 'diario_id' => Diario::general($companiaId, $usuario->email)->id,
@@ -96,7 +95,7 @@ class AsientoController extends Controller
             $this->guardarLineas($asiento, $lineas, $usuario->email);
 
             if ($postear) {
-                $this->postearAsiento($asiento, $usuario, $confirmado);
+                $this->postearAsiento($asiento, $usuario);
             }
 
             return $asiento;
@@ -135,9 +134,8 @@ class AsientoController extends Controller
         [$data, $lineas] = $this->validated($request, $asiento->compania_id);
         $usuario = $request->user();
         $postear = $request->input('accion') === 'postear';
-        $confirmado = $request->boolean('confirmar_control');
 
-        DB::transaction(function () use ($asiento, $data, $lineas, $usuario, $postear, $confirmado) {
+        DB::transaction(function () use ($asiento, $data, $lineas, $usuario, $postear) {
             $asiento->update([
                 'fecha' => $data['fecha'],
                 'descripcion' => $data['descripcion'] ?? null,
@@ -151,7 +149,7 @@ class AsientoController extends Controller
             $this->guardarLineas($asiento, $lineas, $usuario->email);
 
             if ($postear) {
-                $this->postearAsiento($asiento, $usuario, $confirmado);
+                $this->postearAsiento($asiento, $usuario);
             }
         });
 
@@ -177,7 +175,7 @@ class AsientoController extends Controller
         $this->verificarCompania($request, $asiento);
         $this->soloBorrador($asiento, 'postear');
 
-        DB::transaction(fn () => $this->postearAsiento($asiento, $request->user(), $request->boolean('confirmar_control')));
+        DB::transaction(fn () => $this->postearAsiento($asiento, $request->user()));
 
         return redirect()->route('admin.asientos.show', $asiento)
             ->with('status', "Asiento {$asiento->numero} posteado.");
@@ -209,7 +207,7 @@ class AsientoController extends Controller
      * del mes se crea automáticamente si no existe). En PostgreSQL los
      * triggers de control contable re-validan todo al cambiar el estado.
      */
-    private function postearAsiento(Asiento $asiento, $usuario, bool $confirmado = false): void
+    private function postearAsiento(Asiento $asiento, $usuario): void
     {
         $debito = round((float) $asiento->detalle()->sum('debito'), 2);
         $credito = round((float) $asiento->detalle()->sum('credito'), 2);
@@ -220,49 +218,26 @@ class AsientoController extends Controller
             ]);
         }
 
-        // Bloqueo DURO: las cuentas de control de CxC/CxP solo se afectan por
-        // sus módulos (que mantienen el libro auxiliar y postean vía
-        // AsientoAutomatico, fuera de este flujo). Un asiento manual contra
-        // ellas se rechaza siempre — no hay confirmación que lo permita.
-        $duras = $this->cuentasControlDuras($asiento->compania_id);
+        // Bloqueo DURO: las cuentas de control de los auxiliares (CxC, CxP e
+        // Inventario) solo se afectan por sus módulos, que mantienen el libro
+        // auxiliar y postean vía AsientoAutomatico (fuera de este flujo). Un
+        // asiento manual contra ellas se rechaza siempre.
+        $control = $this->cuentasControl($asiento->compania_id);
 
-        if ($duras !== []) {
+        if ($control !== []) {
             $tocadas = $asiento->detalle()
-                ->whereIn('cuenta_id', array_keys($duras))
+                ->whereIn('cuenta_id', array_keys($control))
                 ->pluck('cuenta_id')
                 ->unique();
 
             if ($tocadas->isNotEmpty()) {
-                $etiquetas = $tocadas->map(fn ($id) => $duras[$id])->unique()->implode(', ');
+                $etiquetas = $tocadas->map(fn ($id) => $control[$id])->unique()->implode(', ');
 
                 throw ValidationException::withMessages([
                     'lineas' => "No se puede afectar {$etiquetas} con un asiento manual. "
                         .'Estas cuentas se controlan por su libro auxiliar: registra el movimiento '
-                        .'desde el módulo correspondiente (Cuentas por Cobrar / Cuentas por Pagar).',
+                        .'desde el módulo correspondiente (Cuentas por Cobrar / Cuentas por Pagar / Inventario).',
                 ]);
-            }
-        }
-
-        // Blindaje SUAVE: postear directo contra inventario descuadra el
-        // auxiliar de existencias; se permite solo con confirmación explícita.
-        if (! $confirmado) {
-            $confirmables = $this->cuentasControlConfirmables($asiento->compania_id);
-
-            if ($confirmables !== []) {
-                $tocadas = $asiento->detalle()
-                    ->whereIn('cuenta_id', array_keys($confirmables))
-                    ->pluck('cuenta_id')
-                    ->unique();
-
-                if ($tocadas->isNotEmpty()) {
-                    $etiquetas = $tocadas->map(fn ($id) => $confirmables[$id])->unique()->implode(', ');
-
-                    throw ValidationException::withMessages([
-                        'confirmar_control' => "Este asiento afecta cuentas controladas por auxiliar ({$etiquetas}). "
-                            ."Postearlo directo puede descuadrar el auxiliar; regístralo desde su módulo, "
-                            .'o marca «Confirmo» para postear de todos modos.',
-                    ]);
-                }
             }
         }
 
@@ -286,12 +261,12 @@ class AsientoController extends Controller
     }
 
     /**
-     * Cuentas de control con BLOQUEO DURO: CxC y CxP. Un asiento manual no
-     * puede afectarlas; deben moverse por sus módulos.
+     * Cuentas de control de los auxiliares (CxC, CxP, Inventario). Un asiento
+     * manual no puede afectarlas: se mueven solo por sus módulos.
      *
      * @return array<int, string>  [cuenta_id => etiqueta]
      */
-    private function cuentasControlDuras(int $companiaId): array
+    private function cuentasControl(int $companiaId): array
     {
         $control = [];
 
@@ -300,19 +275,6 @@ class AsientoController extends Controller
                 $control[$id] = $etiqueta;
             }
         }
-
-        return $control;
-    }
-
-    /**
-     * Cuentas de control CONFIRMABLES: inventario. Postear contra ellas se
-     * permite solo con confirmación explícita.
-     *
-     * @return array<int, string>  [cuenta_id => etiqueta]
-     */
-    private function cuentasControlConfirmables(int $companiaId): array
-    {
-        $control = [];
 
         DB::table('item_productos_servicios')
             ->where('compania_id', $companiaId)
