@@ -23,6 +23,19 @@
             ],
         ],
         [
+            'key' => 'compras',
+            'label' => 'Compras',
+            'icon' => 'M3.75 6.75h16.5l-1.5 12h-13.5l-1.5-12ZM8.25 6.75a3.75 3.75 0 0 1 7.5 0',
+            'active' => request()->routeIs('admin.compras.*') || request()->routeIs('admin.cxp.*') || (request()->routeIs('admin.contactos.*') && request('tipo') === 'PROVEEDOR'),
+            'show' => $can('compras.ver'),
+            'children' => [
+                ['label' => 'Proveedores', 'href' => route('admin.contactos.index', ['tipo' => 'PROVEEDOR']), 'active' => request()->routeIs('admin.contactos.*') && request('tipo') === 'PROVEEDOR', 'show' => $can('contactos.ver')],
+                ['label' => 'Órdenes de compra', 'href' => route('admin.compras.ordenes.index'), 'active' => request()->routeIs('admin.compras.ordenes.*'), 'show' => $can('compras.ver')],
+                ['label' => 'Facturas de compra', 'href' => route('admin.cxp.facturas.index'), 'active' => request()->routeIs('admin.cxp.facturas.*'), 'show' => $can('cxp.ver')],
+                ['label' => 'Gastos directos', 'href' => route('admin.compras.gastos.index'), 'active' => request()->routeIs('admin.compras.gastos.*'), 'show' => $can('compras.ver')],
+            ],
+        ],
+        [
             'key' => 'cxp',
             'label' => 'Cuentas por Pagar',
             'icon' => 'M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z',
@@ -35,18 +48,6 @@
                 ['label' => 'Notas crédito/débito', 'href' => route('admin.cxp.notas.index'), 'active' => request()->routeIs('admin.cxp.notas.*'), 'show' => $can('cxp.ver')],
                 ['label' => 'Antigüedad de saldos', 'href' => route('admin.cxp.antiguedad'), 'active' => request()->routeIs('admin.cxp.antiguedad'), 'show' => $can('cxp.ver')],
                 ['label' => 'Estado de cuenta', 'href' => route('admin.cxp.estado-cuenta'), 'active' => request()->routeIs('admin.cxp.estado-cuenta'), 'show' => $can('cxp.ver')],
-            ],
-        ],
-        [
-            'key' => 'compras',
-            'label' => 'Compras',
-            'icon' => 'M3.75 6.75h16.5l-1.5 12h-13.5l-1.5-12ZM8.25 6.75a3.75 3.75 0 0 1 7.5 0',
-            'active' => request()->routeIs('admin.compras.*') || request()->routeIs('admin.cxp.*'),
-            'show' => $can('compras.ver'),
-            'children' => [
-                ['label' => 'Órdenes de compra', 'href' => route('admin.compras.ordenes.index'), 'active' => request()->routeIs('admin.compras.ordenes.*'), 'show' => $can('compras.ver')],
-                ['label' => 'Facturas de compra', 'href' => route('admin.cxp.facturas.index'), 'active' => request()->routeIs('admin.cxp.facturas.*'), 'show' => $can('cxp.ver')],
-                ['label' => 'Gastos directos', 'href' => route('admin.compras.gastos.index'), 'active' => request()->routeIs('admin.compras.gastos.*'), 'show' => $can('compras.ver')],
             ],
         ],
         [
