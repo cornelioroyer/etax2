@@ -88,6 +88,10 @@ class VentaFacturaController extends Controller
         $total    = round($subtotal + $itbms, 2);
 
         if ($accion === 'borrador') {
+            if (VentaFactura::where('compania_id', $companiaId)->where('estado', VentaFactura::ESTADO_BORRADOR)->exists()) {
+                return back()->withInput()->withErrors(['factura' => 'Ya existe un borrador para esta compañía. Edítalo o emítelo antes de crear otro.']);
+            }
+
             $factura = DB::transaction(function () use ($companiaId, $data, $usuario, $lineasCalc, $subtotal, $itbms, $total, $numeracion, $numeroManual) {
                 $factura = VentaFactura::create([
                     'compania_id'       => $companiaId,
