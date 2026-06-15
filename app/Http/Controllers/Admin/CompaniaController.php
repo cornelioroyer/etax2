@@ -92,6 +92,12 @@ class CompaniaController extends Controller
             $request->user()->email
         );
 
+        // Configuración FEL por defecto (tokens demo HKA) editable por compañía.
+        app(\App\Services\FelConfiguracionDefault::class)->aplicar(
+            $compania->id,
+            $request->user()->email
+        );
+
         return redirect()->route('admin.companias.index')->with('status', 'Compañía creada con catálogo contable DGI.');
     }
 
