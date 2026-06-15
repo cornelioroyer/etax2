@@ -62,6 +62,30 @@ class PeriodoContableController extends Controller
     }
 
     /**
+     * Crea los 12 períodos del año indicado (los que no existan aún).
+     */
+    public function crearAnio(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()->can('contabilidad.editar'), 403);
+
+        $companiaId = $this->companiaActivaId($request);
+
+        $data = $request->validate([
+            'anio' => ['required', 'integer', 'min:2000', 'max:2100'],
+        ]);
+
+        $anio = (int) $data['anio'];
+        $usuario = $request->user()->email;
+
+        for ($mes = 1; $mes <= 12; $mes++) {
+            PeriodoContable::paraFecha($companiaId, Carbon::create($anio, $mes, 1), $usuario);
+        }
+
+        return redirect()->route('admin.periodos.index', ['anio' => $anio])
+            ->with('status', "Períodos de {$anio} creados.");
+    }
+
+    /**
      * Cierra el período del mes indicado (lo crea primero si nunca se ha usado).
      */
     public function cerrar(Request $request): RedirectResponse

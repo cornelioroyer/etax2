@@ -174,6 +174,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::put('diarios/{diario}', [DiarioController::class, 'update'])->name('diarios.update');
         Route::post('diarios/{diario}/toggle', [DiarioController::class, 'toggleActivo'])->name('diarios.toggle');
         Route::get('periodos', [PeriodoContableController::class, 'index'])->name('periodos.index');
+        Route::post('periodos/crear-anio', [PeriodoContableController::class, 'crearAnio'])->name('periodos.crear-anio');
         Route::post('periodos/cerrar', [PeriodoContableController::class, 'cerrar'])->name('periodos.cerrar');
         Route::post('periodos/{periodo}/reabrir', [PeriodoContableController::class, 'reabrir'])->name('periodos.reabrir');
         Route::get('cierre-anual', [CierreAnualController::class, 'index'])->name('cierre-anual.index');

@@ -21,15 +21,35 @@
                 <div class="rounded-md bg-red-50 p-4 text-sm text-red-700">{{ $errors->first() }}</div>
             @endif
 
-            <form method="GET" class="flex items-center gap-3 rounded-lg bg-white p-4 shadow-sm">
-                <label for="anio" class="text-sm font-medium text-gray-700">Año</label>
-                <select id="anio" name="anio" onchange="this.form.submit()" class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                    @foreach ($anios as $a)
-                        <option value="{{ $a }}" @selected($a === $anio)>{{ $a }}</option>
-                    @endforeach
-                </select>
-                <p class="text-sm text-gray-500">Los asientos solo se pueden postear en períodos abiertos. Un período que nunca se ha usado se crea abierto automáticamente.</p>
-            </form>
+            <div class="flex items-center gap-3 rounded-lg bg-white p-4 shadow-sm">
+                <label class="text-sm font-medium text-gray-700">Año</label>
+                <a href="{{ route('admin.periodos.index', ['anio' => $anio - 1]) }}"
+                   class="rounded border border-gray-300 px-2 py-1 text-sm text-gray-600 hover:bg-gray-50" title="Año anterior">&lsaquo;</a>
+                <form method="GET" class="flex items-center gap-2">
+                    <select id="anio" name="anio" onchange="this.form.submit()" class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        @foreach ($anios as $a)
+                            <option value="{{ $a }}" @selected($a === $anio)>{{ $a }}</option>
+                        @endforeach
+                    </select>
+                </form>
+                <a href="{{ route('admin.periodos.index', ['anio' => $anio + 1]) }}"
+                   class="rounded border border-gray-300 px-2 py-1 text-sm text-gray-600 hover:bg-gray-50" title="Año siguiente">&rsaquo;</a>
+                @php
+                    $mesesExistentes = $periodos->keys()->map(fn($k) => (int)$k)->toArray();
+                    $mesesFaltantes = count(array_diff(range(1, 12), $mesesExistentes));
+                @endphp
+                @if ($puedeEditar && $mesesFaltantes > 0)
+                    <form method="POST" action="{{ route('admin.periodos.crear-anio') }}">
+                        @csrf
+                        <input type="hidden" name="anio" value="{{ $anio }}">
+                        <button type="submit"
+                                style="background:#4f46e5;color:#fff;padding:6px 14px;border-radius:6px;font-size:14px;border:none;cursor:pointer;">
+                            Crear {{ $mesesFaltantes }} período{{ $mesesFaltantes > 1 ? 's' : '' }} de {{ $anio }}
+                        </button>
+                    </form>
+                @endif
+                <p class="text-sm text-gray-500">Los asientos solo se pueden postear en períodos abiertos.</p>
+            </div>
 
             <div class="overflow-x-auto bg-white shadow-sm sm:rounded-lg">
                 <table class="min-w-full divide-y divide-gray-200">
