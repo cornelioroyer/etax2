@@ -67,11 +67,13 @@ class GastoController extends Controller
             ->orderBy('codigo')
             ->get(['id', 'codigo', 'nombre']);
 
+        // Cuentas de movimiento (banco/caja) para pago al contado, igual que
+        // los módulos de Pagos y Facturas de compra. No se filtra por prefijo
+        // de código: planes como PA_ISR usan 10101/10102 (empiezan en "10"),
+        // por lo que un LEFT(codigo,2)='11' dejaba el selector vacío.
         $cuentasPago = CuentaContable::where('compania_id', $companiaId)
             ->where('activa', true)
             ->where('permite_movimiento', true)
-            ->whereHas('tipoCuenta', fn ($q) => $q->where('codigo', 'ACTIVO'))
-            ->whereRaw("LEFT(codigo,2) = '11'") // Cuentas de efectivo/banco
             ->orderBy('codigo')
             ->get(['id', 'codigo', 'nombre']);
 
