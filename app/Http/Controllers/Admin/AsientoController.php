@@ -11,6 +11,7 @@ use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
 use App\Models\Diario;
 use App\Models\PeriodoContable;
+use App\Models\TipoCuenta;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -172,9 +173,18 @@ class AsientoController extends Controller
             ->get()
             ->keyBy('codigo');
 
+        // Catálogo completo (id/codigo/nivel) para inferir el padre por prefijo
+        // al crear automáticamente las cuentas que no existan, y mapa de tipos.
+        $catalogo = CuentaContable::where('compania_id', $companiaId)
+            ->get(['id', 'codigo', 'nivel'])
+            ->map(fn ($c) => ['id' => $c->id, 'codigo' => $c->codigo, 'nivel' => $c->nivel])
+            ->all();
+        $tiposPorCodigo = TipoCuenta::pluck('id', 'codigo')->all();
+
         $control = $this->cuentasControl($companiaId);
         $errores = [];
         $lineas = [];
+        $porCrear = [];   // codigo => datos de la cuenta a crear (deduplicado por código)
         $totalDebito = 0.0;
         $totalCredito = 0.0;
 
@@ -187,10 +197,42 @@ class AsientoController extends Controller
                 continue;
             }
 
+            if (($l['debito'] > 0) === ($l['credito'] > 0)) {
+                $errores[] = "Fila {$fila}: indica débito o crédito (uno solo, mayor que cero) para la cuenta {$l['codigo']}.";
+
+                continue;
+            }
+
             $cuenta = $cuentas->get($l['codigo']);
 
             if (! $cuenta) {
-                $errores[] = "Fila {$fila}: la cuenta {$l['codigo']} no existe en el catálogo.";
+                // La cuenta no existe: se crea automáticamente. El tipo se infiere
+                // por el primer dígito y la naturaleza por la columna del asiento.
+                $tipoId = $this->tipoCuentaPorCodigo($l['codigo'], $tiposPorCodigo);
+
+                if (! $tipoId) {
+                    $errores[] = "Fila {$fila}: no se pudo crear la cuenta {$l['codigo']}: el código debe empezar en 1-6 (1=Activo, 2=Pasivo, 3=Patrimonio, 4=Ingreso, 5=Costo, 6=Gasto).";
+
+                    continue;
+                }
+
+                $porCrear[$l['codigo']] = [
+                    'codigo' => $l['codigo'],
+                    'nombre' => $l['descripcion'] !== '' ? $l['descripcion'] : "Cuenta {$l['codigo']}",
+                    'tipo_cuenta_id' => $tipoId,
+                    'naturaleza' => $l['debito'] > 0 ? 'DEBITO' : 'CREDITO',
+                ];
+
+                $totalDebito += $l['debito'];
+                $totalCredito += $l['credito'];
+
+                $lineas[] = [
+                    'codigo' => $l['codigo'],
+                    'cuenta_id' => null,
+                    'descripcion' => $l['descripcion'],
+                    'debito' => $l['debito'],
+                    'credito' => $l['credito'],
+                ];
 
                 continue;
             }
@@ -213,16 +255,11 @@ class AsientoController extends Controller
                 continue;
             }
 
-            if (($l['debito'] > 0) === ($l['credito'] > 0)) {
-                $errores[] = "Fila {$fila}: indica débito o crédito (uno solo, mayor que cero) para la cuenta {$cuenta->codigo}.";
-
-                continue;
-            }
-
             $totalDebito += $l['debito'];
             $totalCredito += $l['credito'];
 
             $lineas[] = [
+                'codigo' => $cuenta->codigo,
                 'cuenta_id' => $cuenta->id,
                 'descripcion' => $l['descripcion'],
                 'debito' => $l['debito'],
@@ -246,7 +283,42 @@ class AsientoController extends Controller
 
         $usuario = $request->user();
 
-        $asiento = DB::transaction(function () use ($companiaId, $data, $lineas, $totalDebito, $totalCredito, $usuario) {
+        $asiento = DB::transaction(function () use ($companiaId, $data, $lineas, $porCrear, $catalogo, $totalDebito, $totalCredito, $usuario) {
+            // Crea las cuentas faltantes de menor a mayor longitud de código (para
+            // que un padre incluido en el mismo archivo exista antes que su hijo) y
+            // enlaza al padre por el prefijo más largo del catálogo (nivel 1 si no hay).
+            $nuevasPorCodigo = [];
+            uasort($porCrear, fn ($a, $b) => strlen($a['codigo']) <=> strlen($b['codigo']));
+
+            foreach ($porCrear as $nueva) {
+                $padre = $this->padrePorPrefijo($nueva['codigo'], $catalogo);
+
+                $cuenta = CuentaContable::create([
+                    'compania_id' => $companiaId,
+                    'codigo' => $nueva['codigo'],
+                    'nombre' => $nueva['nombre'],
+                    'cuenta_padre_id' => $padre['id'] ?? null,
+                    'nivel' => isset($padre['nivel']) ? $padre['nivel'] + 1 : 1,
+                    'tipo_cuenta_id' => $nueva['tipo_cuenta_id'],
+                    'naturaleza' => $nueva['naturaleza'],
+                    'permite_movimiento' => true,
+                    'activa' => true,
+                    'created_by' => $usuario->email,
+                ]);
+
+                $nuevasPorCodigo[$nueva['codigo']] = $cuenta->id;
+                // La cuenta recién creada puede ser padre de otra del mismo archivo.
+                $catalogo[] = ['id' => $cuenta->id, 'codigo' => $cuenta->codigo, 'nivel' => $cuenta->nivel];
+            }
+
+            // Resuelve el cuenta_id de las líneas que apuntaban a cuentas nuevas.
+            foreach ($lineas as &$linea) {
+                if ($linea['cuenta_id'] === null) {
+                    $linea['cuenta_id'] = $nuevasPorCodigo[$linea['codigo']];
+                }
+            }
+            unset($linea);
+
             $asiento = Asiento::create([
                 'compania_id' => $companiaId,
                 'diario_id' => Diario::general($companiaId, $usuario->email)->id,
@@ -267,8 +339,54 @@ class AsientoController extends Controller
             return $asiento;
         });
 
-        return redirect()->route('admin.asientos.show', $asiento)
-            ->with('status', "Asiento {$asiento->numero} importado como borrador con ".count($lineas).' líneas. Revísalo y postéalo.');
+        $msg = "Asiento {$asiento->numero} importado como borrador con ".count($lineas).' líneas. Revísalo y postéalo.';
+        if ($porCrear !== []) {
+            $msg .= ' Se crearon '.count($porCrear).' cuenta(s) nueva(s) en el plan: '.implode(', ', array_keys($porCrear)).'. Revisa su tipo y nombre en Plan de cuentas.';
+        }
+
+        return redirect()->route('admin.asientos.show', $asiento)->with('status', $msg);
+    }
+
+    /**
+     * Infiere el tipo de cuenta por el primer dígito del código
+     * (1=Activo, 2=Pasivo, 3=Patrimonio, 4=Ingreso, 5=Costo, 6=Gasto).
+     */
+    private function tipoCuentaPorCodigo(string $codigo, array $tiposPorCodigo): ?int
+    {
+        $mapa = [
+            '1' => 'ACTIVO', '2' => 'PASIVO', '3' => 'PATRIMONIO',
+            '4' => 'INGRESO', '5' => 'COSTO', '6' => 'GASTO',
+        ];
+        $primer = substr($codigo, 0, 1);
+
+        if (! isset($mapa[$primer])) {
+            return null;
+        }
+
+        return $tiposPorCodigo[$mapa[$primer]] ?? null;
+    }
+
+    /**
+     * Devuelve la cuenta del catálogo cuyo código es el prefijo propio más largo
+     * del código dado (su cuenta padre por jerarquía), o null si no hay ninguna.
+     *
+     * @param  array<int, array{id:int, codigo:string, nivel:int}>  $catalogo
+     * @return array{id:int, codigo:string, nivel:int}|null
+     */
+    private function padrePorPrefijo(string $codigo, array $catalogo): ?array
+    {
+        $mejor = null;
+
+        foreach ($catalogo as $c) {
+            if ($c['codigo'] !== $codigo
+                && strlen($c['codigo']) < strlen($codigo)
+                && str_starts_with($codigo, $c['codigo'])
+                && ($mejor === null || strlen($c['codigo']) > strlen($mejor['codigo']))) {
+                $mejor = $c;
+            }
+        }
+
+        return $mejor;
     }
 
     public function show(Request $request, Asiento $asiento): View
