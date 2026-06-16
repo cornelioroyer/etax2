@@ -1,0 +1,7 @@
+﻿codigo,descripcion,debito,credito
+10101,Saldo inicial Caja,1500.00,
+10201,Saldo inicial Banco - cta corriente,25000.00,
+15101,Saldo inicial Mobiliario y equipo,8000.00,
+15102,Saldo inicial Equipo de computo,4500.00,
+21101,Saldo inicial Prestamo bancario por pagar,,12000.00
+30101,Saldo inicial Capital social,,27000.00
