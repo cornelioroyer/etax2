@@ -23,6 +23,17 @@ class FelDocumentoBuilder
         '03' => 0.15,   // 15% (tabaco)
     ];
 
+    /**
+     * Tipos de documento soportados (catálogo DGI / campo tipoDocumento).
+     * Las notas genéricas (06/07) NO requieren referenciar el CUFE de un
+     * documento original, a diferencia de las notas 04/05.
+     */
+    public const TIPOS_DOCUMENTO = [
+        '01' => 'Factura de operación interna',
+        '06' => 'Nota de crédito genérica',
+        '07' => 'Nota de débito genérica',
+    ];
+
     /** Formas de pago según catálogo DGI/HKA */
     public const FORMAS_PAGO = [
         '01' => 'Crédito',
@@ -48,6 +59,11 @@ class FelDocumentoBuilder
         [$items, $totalNeto, $totalItbms] = $this->items($datos['items']);
         $totalFactura = round($totalNeto + $totalItbms, 2);
 
+        $tipoDocumento = $datos['tipo_documento'] ?? '01';
+        if (! isset(self::TIPOS_DOCUMENTO[$tipoDocumento])) {
+            $tipoDocumento = '01';
+        }
+
         // codigoSucursalEmisor y tipoSucursal van en la raíz del DocumentoElectronico,
         // y cliente dentro de datosTransaccion (estructura del WSDL obj v1.0).
         $documento = [
@@ -55,7 +71,7 @@ class FelDocumentoBuilder
             'tipoSucursal' => '1',
             'datosTransaccion' => array_filter([
                 'tipoEmision' => '01',
-                'tipoDocumento' => '01', // factura de operación interna
+                'tipoDocumento' => $tipoDocumento, // 01 factura, 06 NC genérica, 07 ND genérica
                 'numeroDocumentoFiscal' => (string) $numeroFiscal,
                 'puntoFacturacionFiscal' => $config->punto_facturacion ?: '001',
                 'fechaEmision' => now('America/Panama')->format('Y-m-d\TH:i:sP'),
@@ -93,14 +109,14 @@ class FelDocumentoBuilder
     }
 
     /** Datos para consultar/anular/descargar un documento ya emitido. */
-    public function datosDocumento(FelConfiguracion $config, string $numeroFiscal): array
+    public function datosDocumento(FelConfiguracion $config, string $numeroFiscal, string $tipoDocumento = '01'): array
     {
         return [
             'datosDocumento' => [
                 'codigoSucursalEmisor' => $config->codigo_sucursal ?: '0000',
                 'numeroDocumentoFiscal' => $numeroFiscal,
                 'puntoFacturacionFiscal' => $config->punto_facturacion ?: '001',
-                'tipoDocumento' => '01',
+                'tipoDocumento' => isset(self::TIPOS_DOCUMENTO[$tipoDocumento]) ? $tipoDocumento : '01',
                 'tipoEmision' => '01',
             ],
         ];

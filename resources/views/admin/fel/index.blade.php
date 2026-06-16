@@ -34,6 +34,7 @@
                     <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                         <tr>
                             <th class="px-4 py-3">Número</th>
+                            <th class="px-4 py-3">Tipo</th>
                             <th class="px-4 py-3">Fecha</th>
                             <th class="px-4 py-3">Cliente</th>
                             <th class="px-4 py-3 text-right">Subtotal</th>
@@ -47,6 +48,10 @@
                         @forelse ($documentos as $doc)
                             <tr class="hover:bg-gray-50">
                                 <td class="px-4 py-3 font-medium text-gray-900">{{ $doc->numero }}</td>
+                                <td class="px-4 py-3">
+                                    @php $tipoNombre = \App\Services\FelDocumentoBuilder::TIPOS_DOCUMENTO[$doc->tipo_documento] ?? $doc->tipo_documento; @endphp
+                                    <span class="inline-flex rounded px-2 py-0.5 text-xs font-medium {{ $doc->tipo_documento === '01' ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700' }}" title="{{ $tipoNombre }}">{{ $doc->tipo_documento }}</span>
+                                </td>
                                 <td class="px-4 py-3">{{ $doc->fecha->format('d/m/Y') }}</td>
                                 <td class="px-4 py-3">{{ $doc->cliente->nombre ?? 'Consumidor final' }}</td>
                                 <td class="px-4 py-3 text-right">{{ number_format($doc->subtotal, 2) }}</td>
@@ -85,7 +90,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr><td colspan="8" class="px-4 py-10 text-center text-gray-500">Aún no se han emitido documentos electrónicos.</td></tr>
+                            <tr><td colspan="9" class="px-4 py-10 text-center text-gray-500">Aún no se han emitido documentos electrónicos.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

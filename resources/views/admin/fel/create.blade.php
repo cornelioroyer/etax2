@@ -24,6 +24,16 @@
                   x-data="facturaFel()">
                 @csrf
 
+                <div>
+                    <x-input-label for="tipo_documento" value="Tipo de documento" />
+                    <select id="tipo_documento" name="tipo_documento" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:w-1/2">
+                        @foreach ($tiposDocumento as $codigo => $nombre)
+                            <option value="{{ $codigo }}" @selected(old('tipo_documento', '01') === $codigo)>{{ $codigo }} — {{ $nombre }}</option>
+                        @endforeach
+                    </select>
+                    <p class="mt-1 text-xs text-gray-500">Las notas genéricas (06/07) no referencian un documento original.</p>
+                </div>
+
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
                     <div class="sm:col-span-2">
                         <x-input-label for="cliente_id" value="Cliente" />

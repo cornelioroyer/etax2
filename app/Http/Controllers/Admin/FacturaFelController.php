@@ -49,6 +49,7 @@ class FacturaFelController extends Controller
             'clientes' => $clientes,
             'tasas' => ['00' => 'Exento (0%)', '01' => 'ITBMS 7%', '02' => 'ITBMS 10%', '03' => 'ITBMS 15%'],
             'formasPago' => FelDocumentoBuilder::FORMAS_PAGO,
+            'tiposDocumento' => FelDocumentoBuilder::TIPOS_DOCUMENTO,
         ]);
     }
 
@@ -64,6 +65,7 @@ class FacturaFelController extends Controller
         }
 
         $data = $request->validate([
+            'tipo_documento' => ['required', Rule::in(array_keys(FelDocumentoBuilder::TIPOS_DOCUMENTO))],
             'cliente_id' => ['nullable', 'integer', Rule::exists('contact_contactos', 'id')->where('compania_id', $compania->id)],
             'forma_pago' => ['required', Rule::in(array_keys(FelDocumentoBuilder::FORMAS_PAGO))],
             'informacion_interes' => ['nullable', 'string', 'max:500'],
@@ -87,7 +89,7 @@ class FacturaFelController extends Controller
         $totales = $documento['totalesSubTotales'];
         $fel = FelDocumento::create([
             'compania_id' => $compania->id,
-            'tipo_documento' => '01',
+            'tipo_documento' => $data['tipo_documento'],
             'documento_origen' => 'fel_manual',
             'documento_id' => 0,
             'numero' => (string) $numeroFiscal,
@@ -154,7 +156,7 @@ class FacturaFelController extends Controller
 
         $config = FelConfiguracion::firstWhere('compania_id', $compania->id);
         $builder = new FelDocumentoBuilder();
-        $resp = (new FelService($config))->descargaPDF($builder->datosDocumento($config, $documento->numero));
+        $resp = (new FelService($config))->descargaPDF($builder->datosDocumento($config, $documento->numero, $documento->tipo_documento));
 
         $resultado = $resp['DescargaPDFResult'] ?? $resp;
         $base64 = $resultado['documento'] ?? $resultado['pdf'] ?? null;
@@ -183,7 +185,7 @@ class FacturaFelController extends Controller
         $config = FelConfiguracion::firstWhere('compania_id', $compania->id);
         $builder = new FelDocumentoBuilder();
         $motivo = (string) $request->input('motivo', 'Anulación solicitada por el emisor');
-        $resp = (new FelService($config))->anulacionDocumento($builder->datosDocumento($config, $documento->numero), $motivo);
+        $resp = (new FelService($config))->anulacionDocumento($builder->datosDocumento($config, $documento->numero, $documento->tipo_documento), $motivo);
         $this->registrarEvento($documento, 'ANULACION', $resp, $request->user()->email);
 
         $resultado = $resp['AnulacionDocumentoResult'] ?? $resp;
