@@ -7,6 +7,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Contacto extends Model
 {
+    public const FORMA_PAGO_CONTADO = 'CONTADO';
+    public const FORMA_PAGO_CREDITO = 'CREDITO';
+
     protected $table = 'contact_contactos';
 
     protected $fillable = [
@@ -17,6 +20,7 @@ class Contacto extends Model
         'tipo_persona',
         'identificacion',
         'dv',
+        'forma_pago',
         'email',
         'telefono',
         'direccion',

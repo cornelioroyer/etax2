@@ -14,6 +14,23 @@
                     Ayuda
                 </button>
                 @can('contactos.crear')
+                    @if($tipo === 'PROVEEDOR')
+                        <button type="button" onclick="document.getElementById('modal-importar-proveedores').classList.remove('hidden')"
+                                class="inline-flex items-center gap-1.5 rounded-md border border-sky-300 bg-white px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50">
+                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+                            </svg>
+                            Importar proveedores
+                        </button>
+                    @else
+                        <button type="button" onclick="document.getElementById('modal-importar-contactos').classList.remove('hidden')"
+                                class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+                            </svg>
+                            Importar
+                        </button>
+                    @endif
                     <a href="{{ route('admin.contactos.create', $tipo ? ['tipo' => $tipo] : []) }}" class="rounded-md bg-[#0d2d5e] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-900">Nuevo contacto</a>
                 @endcan
             </div>
@@ -146,4 +163,170 @@
             @endif
         </div>
     </div>
+@can('contactos.crear')
+<div id="modal-importar-contactos" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-gray-900">Importar contactos</h3>
+            <button type="button" onclick="document.getElementById('modal-importar-contactos').classList.add('hidden')"
+                    class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+        </div>
+
+        <div class="mb-4 rounded-md bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
+            <p class="font-semibold text-slate-700">Formato del archivo (Excel o CSV):</p>
+            <p>Fila 1 = encabezados (se omite). Columnas en orden:</p>
+            <ol class="list-decimal list-inside space-y-0.5">
+                <li><strong>nombre</strong> — requerido</li>
+                <li>razon_social</li>
+                <li>tipo_persona — NATURAL / JURIDICA / EXTRANJERO (default: NATURAL)</li>
+                <li>identificacion — RUC o cédula</li>
+                <li>dv — dígito verificador</li>
+                <li>email</li>
+                <li>telefono</li>
+                <li>direccion</li>
+                <li><strong>tipos</strong> — CLIENTE / PROVEEDOR / EMPLEADO (separados por coma; default: CLIENTE)</li>
+                <li>saldo — saldo inicial en CxC (opcional; ej: 500.00)</li>
+                <li>fecha_saldo — fecha del saldo (DD/MM/YYYY o YYYY-MM-DD; default: hoy)</li>
+            </ol>
+            <p class="mt-1">Si hay saldo, se crea una factura PENDIENTE en Cuentas por Cobrar con el asiento correspondiente.</p>
+            <p class="mt-0.5">Si ya existe un contacto con la misma identificación, la fila se omite.</p>
+        </div>
+
+        <div class="mb-4">
+            <a href="{{ route('admin.contactos.plantilla') }}"
+               class="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
+                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+                Descargar plantilla CSV
+            </a>
+        </div>
+
+        <form method="POST" action="{{ route('admin.contactos.importar') }}" enctype="multipart/form-data">
+            @csrf
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Archivo (.xlsx, .xls, .csv)</label>
+                <input type="file" name="archivo" accept=".xlsx,.xls,.csv" required
+                       class="block w-full text-sm text-gray-700 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            </div>
+            <div class="flex justify-end gap-3">
+                <button type="button" onclick="document.getElementById('modal-importar-contactos').classList.add('hidden')"
+                        class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                    Cancelar
+                </button>
+                <button type="submit"
+                        class="rounded-md bg-[#0d2d5e] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-900">
+                    Importar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+@endcan
+
+@can('contactos.crear')
+<div id="modal-importar-proveedores" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-gray-900">Importar catálogo de proveedores</h3>
+            <button type="button" onclick="document.getElementById('modal-importar-proveedores').classList.add('hidden')"
+                    class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+        </div>
+
+        <div class="mb-4 space-y-2">
+            <p class="text-xs font-semibold text-slate-700">Formato del archivo (Excel o CSV) — fila 1 = encabezados, fila 2 en adelante = datos:</p>
+
+            {{-- Tabla ejemplo --}}
+            <div class="overflow-x-auto rounded-md border border-sky-200">
+                <table class="min-w-max text-[10px]">
+                    <thead class="bg-sky-600 text-white">
+                        <tr>
+                            <th class="px-2 py-1 font-semibold whitespace-nowrap">nombre *</th>
+                            <th class="px-2 py-1 font-semibold whitespace-nowrap">razon_social</th>
+                            <th class="px-2 py-1 font-semibold whitespace-nowrap">tipo_persona</th>
+                            <th class="px-2 py-1 font-semibold whitespace-nowrap">identificacion</th>
+                            <th class="px-2 py-1 font-semibold whitespace-nowrap">dv</th>
+                            <th class="px-2 py-1 font-semibold whitespace-nowrap">email</th>
+                            <th class="px-2 py-1 font-semibold whitespace-nowrap">telefono</th>
+                            <th class="px-2 py-1 font-semibold whitespace-nowrap">direccion</th>
+                            <th class="px-2 py-1 font-semibold whitespace-nowrap">saldo</th>
+                            <th class="px-2 py-1 font-semibold whitespace-nowrap">fecha_saldo</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-slate-100">
+                        <tr class="text-slate-600">
+                            <td class="px-2 py-1 whitespace-nowrap">Ferretería ABC S.A.</td>
+                            <td class="px-2 py-1 whitespace-nowrap">Ferretería ABC S.A.</td>
+                            <td class="px-2 py-1 whitespace-nowrap">JURIDICA</td>
+                            <td class="px-2 py-1 whitespace-nowrap">888-888-111111</td>
+                            <td class="px-2 py-1 whitespace-nowrap">99</td>
+                            <td class="px-2 py-1 whitespace-nowrap">compras@abc.com</td>
+                            <td class="px-2 py-1 whitespace-nowrap">6000-0000</td>
+                            <td class="px-2 py-1 whitespace-nowrap">Ciudad de Panamá</td>
+                            <td class="px-2 py-1 whitespace-nowrap">1500.00</td>
+                            <td class="px-2 py-1 whitespace-nowrap">31/12/2025</td>
+                        </tr>
+                        <tr class="bg-slate-50 text-slate-600">
+                            <td class="px-2 py-1 whitespace-nowrap">Juan Pérez</td>
+                            <td class="px-2 py-1 whitespace-nowrap"></td>
+                            <td class="px-2 py-1 whitespace-nowrap">NATURAL</td>
+                            <td class="px-2 py-1 whitespace-nowrap">8-123-456</td>
+                            <td class="px-2 py-1 whitespace-nowrap">5</td>
+                            <td class="px-2 py-1 whitespace-nowrap">juan@email.com</td>
+                            <td class="px-2 py-1 whitespace-nowrap">6111-2222</td>
+                            <td class="px-2 py-1 whitespace-nowrap">Chorrera</td>
+                            <td class="px-2 py-1 whitespace-nowrap"></td>
+                            <td class="px-2 py-1 whitespace-nowrap"></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="rounded-md bg-sky-50 p-2.5 text-[11px] text-sky-800 space-y-0.5">
+                <p>• <strong>tipo_persona:</strong> NATURAL / JURIDICA / EXTRANJERO (default: NATURAL)</p>
+                <p>• <strong>saldo:</strong> si viene, se crea factura PENDIENTE en CxP con asiento contable</p>
+                <p>• <strong>fecha_saldo:</strong> DD/MM/YYYY o YYYY-MM-DD (omitir = fecha de hoy)</p>
+                <p>• Si el proveedor <strong>ya existe</strong> (misma identificación), sus datos se <strong>actualizan</strong></p>
+            </div>
+        </div>
+
+        <div class="mb-4 flex items-center gap-4">
+            <a href="{{ route('admin.contactos.plantilla-proveedores-xlsx') }}"
+               class="inline-flex items-center gap-1.5 rounded-md border border-green-300 bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700 hover:bg-green-100">
+                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+                Plantilla Excel (.xlsx)
+            </a>
+            <a href="{{ route('admin.contactos.plantilla-proveedores') }}"
+               class="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 hover:underline">
+                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+                Plantilla CSV
+            </a>
+        </div>
+
+        <form method="POST" action="{{ route('admin.contactos.importar-proveedores') }}" enctype="multipart/form-data">
+            @csrf
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Archivo (.xlsx, .xls, .csv)</label>
+                <input type="file" name="archivo" accept=".xlsx,.xls,.csv" required
+                       class="block w-full text-sm text-gray-700 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-sky-500">
+            </div>
+            <div class="flex justify-end gap-3">
+                <button type="button" onclick="document.getElementById('modal-importar-proveedores').classList.add('hidden')"
+                        class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                    Cancelar
+                </button>
+                <button type="submit"
+                        class="rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800">
+                    Importar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+@endcan
+
 </x-app-layout>

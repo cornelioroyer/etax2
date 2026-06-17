@@ -7,14 +7,19 @@ use App\Http\Controllers\Concerns\ExportaReporte;
 use App\Http\Controllers\Controller;
 use App\Models\Compania;
 use App\Models\Contacto;
+use App\Models\TipoContacto;
+use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
+use App\Models\ItemProducto;
 use App\Models\CxcDocumento;
 use App\Models\CxcDocumentoDetalle;
 use App\Models\TaxImpuesto;
 use App\Models\VentaCotizacion;
 use App\Models\VentaFactura;
 use App\Models\VentaFacturaDetalle;
+use App\Models\VentaNotaCredito;
 use App\Services\AsientoAutomatico;
+use App\Services\RucDigitoVerificador;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -32,9 +37,12 @@ class VentaFacturaController extends Controller
         $companiaId = $this->companiaActivaId($request);
 
         return view('admin.ventas.facturas.create', [
-            'clientes'      => $this->clientes($companiaId),
-            'impuestos'     => TaxImpuesto::itbmsGlobales(),
-            'numeroPreview' => VentaFactura::siguienteNumero($companiaId),
+            'clientes'       => $this->clientes($companiaId),
+            'impuestos'      => TaxImpuesto::itbmsGlobales(),
+            'numeroPreview'  => VentaFactura::siguienteNumero($companiaId),
+            'cuentasIngreso' => $this->cuentasIngreso($companiaId),
+            'cuentaVentasId' => CuentaDefault::idPara($companiaId, 'VENTAS'),
+            'items'          => $this->itemsVenta($companiaId),
         ]);
     }
 
@@ -43,15 +51,17 @@ class VentaFacturaController extends Controller
         $companiaId = $this->companiaActivaId($request);
 
         $data = $request->validate([
-            'cliente_id'        => ['required', 'integer', 'exists:contact_contactos,id'],
-            'fecha'             => ['required', 'date'],
-            'fecha_vencimiento' => ['nullable', 'date', 'after_or_equal:fecha'],
-            'notas'             => ['nullable', 'string', 'max:1000'],
-            'lineas'            => ['required', 'array', 'min:1'],
-            'lineas.*.descripcion'    => ['required', 'string', 'max:500'],
-            'lineas.*.cantidad'       => ['required', 'numeric', 'min:0.0001'],
-            'lineas.*.precio_unitario'=> ['required', 'numeric', 'min:0'],
-            'lineas.*.impuesto_id'    => ['required', 'integer', Rule::in(TaxImpuesto::itbmsGlobales()->pluck('id')->all())],
+            'cliente_id'              => ['required', 'integer', 'exists:contact_contactos,id'],
+            'fecha'                   => ['required', 'date'],
+            'fecha_vencimiento'       => ['nullable', 'date', 'after_or_equal:fecha'],
+            'notas'                   => ['nullable', 'string', 'max:1000'],
+            'lineas'                  => ['required', 'array', 'min:1'],
+            'lineas.*.item_id'           => ['nullable', 'integer', 'exists:item_productos_servicios,id'],
+            'lineas.*.descripcion'       => ['required', 'string', 'max:500'],
+            'lineas.*.cantidad'          => ['required', 'numeric', 'min:0.0001'],
+            'lineas.*.precio_unitario'   => ['required', 'numeric', 'min:0'],
+            'lineas.*.impuesto_id'       => ['required', 'integer', Rule::in(TaxImpuesto::itbmsGlobales()->pluck('id')->all())],
+            'lineas.*.cuenta_ingreso_id' => ['nullable', 'integer', 'exists:cgl_cuentas,id'],
         ]);
 
         $usuario = $request->user();
@@ -111,16 +121,18 @@ class VentaFacturaController extends Controller
                 ]);
                 foreach ($lineasCalc as $linea) {
                     VentaFacturaDetalle::create([
-                        'factura_id'      => $factura->id,
-                        'linea'           => $linea['linea'],
-                        'descripcion'     => $linea['descripcion'],
-                        'cantidad'        => $linea['cantidad'],
-                        'precio_unitario' => $linea['precio_unitario'],
-                        'descuento'       => 0,
-                        'impuesto_id'     => $linea['impuesto_id'],
-                        'impuesto_monto'  => $linea['impuesto_monto'],
-                        'total_linea'     => $linea['total_linea'],
-                        'created_by'      => $usuario->email,
+                        'factura_id'        => $factura->id,
+                        'linea'             => $linea['linea'],
+                        'item_id'           => $linea['item_id'] ?? null,
+                        'descripcion'       => $linea['descripcion'],
+                        'cantidad'          => $linea['cantidad'],
+                        'precio_unitario'   => $linea['precio_unitario'],
+                        'descuento'         => 0,
+                        'impuesto_id'       => $linea['impuesto_id'],
+                        'impuesto_monto'    => $linea['impuesto_monto'],
+                        'total_linea'       => $linea['total_linea'],
+                        'cuenta_ingreso_id' => $linea['cuenta_ingreso_id'] ?? null,
+                        'created_by'        => $usuario->email,
                     ]);
                 }
                 return $factura;
@@ -161,6 +173,7 @@ class VentaFacturaController extends Controller
                 VentaFacturaDetalle::create([
                     'factura_id'        => $factura->id,
                     'linea'             => $linea['linea'],
+                    'item_id'           => $linea['item_id'] ?? null,
                     'descripcion'       => $linea['descripcion'],
                     'cantidad'          => $linea['cantidad'],
                     'precio_unitario'   => $linea['precio_unitario'],
@@ -168,7 +181,7 @@ class VentaFacturaController extends Controller
                     'impuesto_id'       => $linea['impuesto_id'],
                     'impuesto_monto'    => $linea['impuesto_monto'],
                     'total_linea'       => $linea['total_linea'],
-                    'cuenta_ingreso_id' => $cuentaVentasId,
+                    'cuenta_ingreso_id' => $linea['cuenta_ingreso_id'] ?? $cuentaVentasId,
                     'created_by'        => $usuario->email,
                 ]);
             }
@@ -199,7 +212,7 @@ class VentaFacturaController extends Controller
                     'descuento'       => 0,
                     'impuesto_monto'  => $linea['impuesto_monto'],
                     'total_linea'     => $linea['total_linea'],
-                    'cuenta_id'       => $cuentaVentasId,
+                    'cuenta_id'       => $linea['cuenta_ingreso_id'] ?? $cuentaVentasId,
                     'created_by'      => $usuario->email,
                 ]);
             }
@@ -214,7 +227,7 @@ class VentaFacturaController extends Controller
 
             foreach ($lineasCalc as $linea) {
                 $lineasAsiento[] = [
-                    'cuenta_id'   => $cuentaVentasId,
+                    'cuenta_id'   => $linea['cuenta_ingreso_id'] ?? $cuentaVentasId,
                     'descripcion' => $linea['descripcion'],
                     'debito'      => 0,
                     'credito'     => $linea['base'],
@@ -370,10 +383,13 @@ class VentaFacturaController extends Controller
         $factura->load('detalle');
 
         return view('admin.ventas.facturas.create', [
-            'clientes'      => $this->clientes($companiaId),
-            'impuestos'     => TaxImpuesto::itbmsGlobales(),
-            'factura'       => $factura,
-            'numeroPreview' => VentaFactura::siguienteNumero($companiaId),
+            'clientes'       => $this->clientes($companiaId),
+            'impuestos'      => TaxImpuesto::itbmsGlobales(),
+            'factura'        => $factura,
+            'numeroPreview'  => VentaFactura::siguienteNumero($companiaId),
+            'cuentasIngreso' => $this->cuentasIngreso($companiaId),
+            'cuentaVentasId' => CuentaDefault::idPara($companiaId, 'VENTAS'),
+            'items'          => $this->itemsVenta($companiaId),
         ]);
     }
 
@@ -385,15 +401,17 @@ class VentaFacturaController extends Controller
         $companiaId = $this->companiaActivaId($request);
 
         $data = $request->validate([
-            'cliente_id'              => ['required', 'integer', 'exists:contact_contactos,id'],
-            'fecha'                   => ['required', 'date'],
-            'fecha_vencimiento'       => ['nullable', 'date', 'after_or_equal:fecha'],
-            'notas'                   => ['nullable', 'string', 'max:1000'],
-            'lineas'                  => ['required', 'array', 'min:1'],
-            'lineas.*.descripcion'    => ['required', 'string', 'max:500'],
-            'lineas.*.cantidad'       => ['required', 'numeric', 'min:0.0001'],
-            'lineas.*.precio_unitario'=> ['required', 'numeric', 'min:0'],
-            'lineas.*.impuesto_id'    => ['required', 'integer', Rule::in(TaxImpuesto::itbmsGlobales()->pluck('id')->all())],
+            'cliente_id'                 => ['required', 'integer', 'exists:contact_contactos,id'],
+            'fecha'                      => ['required', 'date'],
+            'fecha_vencimiento'          => ['nullable', 'date', 'after_or_equal:fecha'],
+            'notas'                      => ['nullable', 'string', 'max:1000'],
+            'lineas'                     => ['required', 'array', 'min:1'],
+            'lineas.*.item_id'           => ['nullable', 'integer', 'exists:item_productos_servicios,id'],
+            'lineas.*.descripcion'       => ['required', 'string', 'max:500'],
+            'lineas.*.cantidad'          => ['required', 'numeric', 'min:0.0001'],
+            'lineas.*.precio_unitario'   => ['required', 'numeric', 'min:0'],
+            'lineas.*.impuesto_id'       => ['required', 'integer', Rule::in(TaxImpuesto::itbmsGlobales()->pluck('id')->all())],
+            'lineas.*.cuenta_ingreso_id' => ['nullable', 'integer', 'exists:cgl_cuentas,id'],
         ]);
 
         $usuario   = $request->user();
@@ -441,16 +459,18 @@ class VentaFacturaController extends Controller
 
             foreach ($lineasCalc as $linea) {
                 VentaFacturaDetalle::create([
-                    'factura_id'      => $factura->id,
-                    'linea'           => $linea['linea'],
-                    'descripcion'     => $linea['descripcion'],
-                    'cantidad'        => $linea['cantidad'],
-                    'precio_unitario' => $linea['precio_unitario'],
-                    'descuento'       => 0,
-                    'impuesto_id'     => $linea['impuesto_id'],
-                    'impuesto_monto'  => $linea['impuesto_monto'],
-                    'total_linea'     => $linea['total_linea'],
-                    'created_by'      => $usuario->email,
+                    'factura_id'        => $factura->id,
+                    'linea'             => $linea['linea'],
+                    'item_id'           => $linea['item_id'] ?? null,
+                    'descripcion'       => $linea['descripcion'],
+                    'cantidad'          => $linea['cantidad'],
+                    'precio_unitario'   => $linea['precio_unitario'],
+                    'descuento'         => 0,
+                    'impuesto_id'       => $linea['impuesto_id'],
+                    'impuesto_monto'    => $linea['impuesto_monto'],
+                    'total_linea'       => $linea['total_linea'],
+                    'cuenta_ingreso_id' => $linea['cuenta_ingreso_id'] ?? null,
+                    'created_by'        => $usuario->email,
                 ]);
             }
         });
@@ -508,14 +528,15 @@ class VentaFacturaController extends Controller
         $total    = (float) $factura->total;
 
         $lineasCalc = $factura->detalle->map(fn ($d) => [
-            'linea'          => $d->linea,
-            'descripcion'    => $d->descripcion,
-            'cantidad'       => $d->cantidad,
-            'precio_unitario'=> $d->precio_unitario,
-            'base'           => round((float) $d->total_linea - (float) $d->impuesto_monto, 2),
-            'impuesto_id'    => $d->impuesto_id,
-            'impuesto_monto' => (float) $d->impuesto_monto,
-            'total_linea'    => (float) $d->total_linea,
+            'linea'             => $d->linea,
+            'descripcion'       => $d->descripcion,
+            'cantidad'          => $d->cantidad,
+            'precio_unitario'   => $d->precio_unitario,
+            'base'              => round((float) $d->total_linea - (float) $d->impuesto_monto, 2),
+            'impuesto_id'       => $d->impuesto_id,
+            'impuesto_monto'    => (float) $d->impuesto_monto,
+            'total_linea'       => (float) $d->total_linea,
+            'cuenta_ingreso_id' => $d->cuenta_ingreso_id,
         ])->all();
 
         DB::transaction(function () use ($factura, $companiaId, $usuario, $lineasCalc, $subtotal, $itbms, $total, $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId, $numeracion, $numeroManual) {
@@ -554,7 +575,7 @@ class VentaFacturaController extends Controller
                     'descuento'       => 0,
                     'impuesto_monto'  => $linea['impuesto_monto'],
                     'total_linea'     => $linea['total_linea'],
-                    'cuenta_id'       => $cuentaVentasId,
+                    'cuenta_id'       => $linea['cuenta_ingreso_id'] ?? $cuentaVentasId,
                     'created_by'      => $usuario->email,
                 ]);
             }
@@ -568,7 +589,7 @@ class VentaFacturaController extends Controller
             ]];
 
             foreach ($lineasCalc as $linea) {
-                $lineasAsiento[] = ['cuenta_id' => $cuentaVentasId, 'descripcion' => $linea['descripcion'], 'debito' => 0, 'credito' => $linea['base']];
+                $lineasAsiento[] = ['cuenta_id' => $linea['cuenta_ingreso_id'] ?? $cuentaVentasId, 'descripcion' => $linea['descripcion'], 'debito' => 0, 'credito' => $linea['base']];
             }
 
             if ($itbms > 0 && $cuentaItbmsId) {
@@ -587,6 +608,269 @@ class VentaFacturaController extends Controller
 
         return redirect()->route('admin.ventas.facturas.show', $factura)
             ->with('status', "Factura {$factura->numero} emitida.");
+    }
+
+    /** Convierte una celda de monto (número o texto con separador de miles) a float. */
+    private function montoImport(mixed $valor): float
+    {
+        if (is_numeric($valor)) {
+            return round((float) $valor, 2);
+        }
+
+        $limpio = str_replace([',', ' ', 'B/.', 'B/'], '', trim((string) $valor));
+
+        return round((float) $limpio, 2);
+    }
+
+    public function importar(Request $request): RedirectResponse
+    {
+        $request->validate(['archivo' => ['required', 'file', 'mimes:xlsx,xls']]);
+
+        $companiaId     = $this->companiaActivaId($request);
+        $usuario        = $request->user();
+        $cuentaCxcId    = CuentaDefault::idPara($companiaId, 'CXC');
+        $cuentaItbmsId  = CuentaDefault::idPara($companiaId, 'ITBMS_POR_PAGAR');
+        $cuentaVentasId = CuentaDefault::idPara($companiaId, 'VENTAS');
+
+        if (! $cuentaCxcId) {
+            return back()->withErrors(['archivo' => 'La compañía no tiene configurada la cuenta default CXC.']);
+        }
+
+        $impuestosGlobales = TaxImpuesto::itbmsGlobales();
+        $tipoCliente       = TipoContacto::where('codigo', 'CLIENTE')->first();
+
+        // formatData = false: leer valores crudos. El reporte DGI guarda el "Monto" como
+        // texto con formato #,##0.00; con formatData=true PhpSpreadsheet devolvería
+        // "1,048.60" y (float) lo cortaría en 1.0 (la coma), descuadrando el asiento.
+        $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($request->file('archivo')->getRealPath());
+        $rows        = $spreadsheet->getActiveSheet()->toArray(null, true, false);
+
+        // Fila 0: título, Fila 1: encabezados, Filas 2+: datos
+        // Columnas: 0=CUFE, 1=Tipo Documento, 3=Fecha Emisión, 5=RUC, 6=Nombre, 7=Subtotal, 8=ITBMS, 9=Monto
+        $creadas  = 0;
+        $omitidas = 0;
+        $errores  = [];
+
+        foreach (array_slice($rows, 2) as $idx => $row) {
+            $fila     = $idx + 3;
+            $tipo     = trim((string) ($row[1] ?? ''));
+            $cufe     = trim((string) ($row[0] ?? ''));
+            $ruc      = trim((string) ($row[5] ?? ''));
+            $nombre   = trim((string) ($row[6] ?? ''));
+            $fechaRaw = $row[3] ?? '';
+            // Col O "Tiempo de Pago": "Inmediato" = contado; cualquier otro plazo = crédito.
+            $tiempoPago = trim((string) ($row[14] ?? ''));
+            $formaPago  = strcasecmp($tiempoPago, 'Inmediato') === 0
+                ? Contacto::FORMA_PAGO_CONTADO
+                : Contacto::FORMA_PAGO_CREDITO;
+            $subtotal = $this->montoImport($row[7] ?? 0);
+            $itbmsVal = $this->montoImport($row[8] ?? 0);
+            // El total se deriva de subtotal+ITBMS para garantizar que el asiento cuadre;
+            // la columna "Monto" del reporte es texto y puede traer separador de miles.
+            $total    = round($subtotal + $itbmsVal, 2);
+
+            $esFactura = $tipo === 'Factura de Operación Interna';
+            $esNota    = $tipo === 'Nota de Crédito Genérica';
+
+            if (! $esFactura && ! $esNota) {
+                $omitidas++;
+                continue;
+            }
+
+            if (! $cufe || ! $ruc || ! $fechaRaw) {
+                $errores[] = "Fila {$fila}: datos incompletos.";
+                continue;
+            }
+
+            // Deduplicación por CUFE
+            $yaExiste = $esFactura
+                ? VentaFactura::where('compania_id', $companiaId)->where('extra->cufe', $cufe)->exists()
+                : VentaNotaCredito::where('compania_id', $companiaId)->where('motivo', 'like', "%{$cufe}%")->exists();
+
+            if ($yaExiste) {
+                $omitidas++;
+                continue;
+            }
+
+            try {
+                if (is_numeric($fechaRaw)) {
+                    $fecha = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float) $fechaRaw)->format('Y-m-d');
+                } else {
+                    $fecha = \Carbon\Carbon::createFromFormat('d/m/Y H:i:s', trim((string) $fechaRaw))->toDateString();
+                }
+            } catch (\Throwable) {
+                $errores[] = "Fila {$fila}: fecha inválida ({$fechaRaw}).";
+                continue;
+            }
+
+            $impuesto = null;
+            if ($esFactura) {
+                $tasa     = $subtotal > 0 ? (int) round($itbmsVal / $subtotal * 100) : 0;
+                $impuesto = $impuestosGlobales->first(fn ($t) => (int) round((float) $t->porcentaje) === $tasa)
+                         ?? $impuestosGlobales->firstWhere('porcentaje', 7);
+                if (! $impuesto) {
+                    $errores[] = "Fila {$fila}: no se encontró impuesto ITBMS.";
+                    continue;
+                }
+            }
+
+            try {
+                DB::transaction(function () use (
+                    $companiaId, $ruc, $nombre, $fecha, $subtotal, $itbmsVal, $total,
+                    $cufe, $impuesto, $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId,
+                    $usuario, $tipoCliente, $esFactura, $formaPago
+                ) {
+                    $cliente = Contacto::where('compania_id', $companiaId)->where('codigo', $ruc)->first();
+                    if (! $cliente) {
+                        $cliente = Contacto::create([
+                            'compania_id'    => $companiaId,
+                            'codigo'         => $ruc,
+                            'nombre'         => $nombre,
+                            'identificacion' => $ruc,
+                            'dv'             => RucDigitoVerificador::calcular($ruc),
+                            'forma_pago'     => $formaPago,
+                            'activo'         => true,
+                            'created_by'     => $usuario->email,
+                        ]);
+                        if ($tipoCliente) {
+                            $cliente->tipos()->sync([$tipoCliente->id]);
+                        }
+                    }
+
+                    if ($esFactura) {
+                        $numero  = VentaFactura::siguienteNumero($companiaId);
+
+                        $factura = VentaFactura::create([
+                            'compania_id' => $companiaId,
+                            'cliente_id'  => $cliente->id,
+                            'numero'      => $numero,
+                            'fecha'       => $fecha,
+                            'subtotal'    => $subtotal,
+                            'descuento'   => 0,
+                            'itbms'       => $itbmsVal,
+                            'total'       => $total,
+                            'saldo'       => $total,
+                            'estado'      => VentaFactura::ESTADO_EMITIDA,
+                            'extra'       => ['cufe' => $cufe],
+                            'created_by'  => $usuario->email,
+                        ]);
+
+                        VentaFacturaDetalle::create([
+                            'factura_id'        => $factura->id,
+                            'linea'             => 1,
+                            'descripcion'       => 'Servicios',
+                            'cantidad'          => 1,
+                            'precio_unitario'   => $subtotal,
+                            'descuento'         => 0,
+                            'impuesto_id'       => $impuesto->id,
+                            'impuesto_monto'    => $itbmsVal,
+                            'total_linea'       => $total,
+                            'cuenta_ingreso_id' => $cuentaVentasId,
+                            'created_by'        => $usuario->email,
+                        ]);
+
+                        $cxc = CxcDocumento::create([
+                            'compania_id'    => $companiaId,
+                            'cliente_id'     => $cliente->id,
+                            'tipo_documento' => CxcDocumento::TIPO_FACTURA,
+                            'numero'         => $numero,
+                            'fecha'          => $fecha,
+                            'subtotal'       => $subtotal,
+                            'descuento'      => 0,
+                            'impuesto'       => $itbmsVal,
+                            'total'          => $total,
+                            'saldo'          => $total,
+                            'estado'         => CxcDocumento::ESTADO_PENDIENTE,
+                            'created_by'     => $usuario->email,
+                        ]);
+
+                        CxcDocumentoDetalle::create([
+                            'documento_id'    => $cxc->id,
+                            'linea'           => 1,
+                            'descripcion'     => 'Servicios',
+                            'cantidad'        => 1,
+                            'precio_unitario' => $subtotal,
+                            'descuento'       => 0,
+                            'impuesto_monto'  => $itbmsVal,
+                            'total_linea'     => $total,
+                            'cuenta_id'       => $cuentaVentasId,
+                            'created_by'      => $usuario->email,
+                        ]);
+
+                        $lineasAsiento = [
+                            ['cuenta_id' => $cuentaCxcId, 'contacto_id' => $cliente->id, 'descripcion' => "Factura {$numero}", 'debito' => $total, 'credito' => 0],
+                            ['cuenta_id' => $cuentaVentasId, 'descripcion' => 'Servicios', 'debito' => 0, 'credito' => $subtotal],
+                        ];
+                        if ($itbmsVal > 0 && $cuentaItbmsId) {
+                            $lineasAsiento[] = ['cuenta_id' => $cuentaItbmsId, 'descripcion' => "ITBMS factura {$numero}", 'debito' => 0, 'credito' => $itbmsVal];
+                        }
+
+                        $asiento = app(AsientoAutomatico::class)->postear(
+                            $companiaId, $fecha,
+                            "Factura de venta {$numero} — {$nombre}",
+                            $numero, $lineasAsiento, 'CXC', 'ventas_facturas', $factura->id, $usuario,
+                        );
+
+                        $factura->update(['cxc_documento_id' => $cxc->id, 'asiento_id' => $asiento->id]);
+                        $cxc->update(['asiento_id' => $asiento->id]);
+                    } else {
+                        // Nota de crédito independiente (sin vincular a factura)
+                        $numero = VentaNotaCredito::siguienteNumero($companiaId);
+
+                        $cxcNota = CxcDocumento::create([
+                            'compania_id'    => $companiaId,
+                            'cliente_id'     => $cliente->id,
+                            'tipo_documento' => CxcDocumento::TIPO_NOTA_CREDITO,
+                            'numero'         => $numero,
+                            'fecha'          => $fecha,
+                            'subtotal'       => $total,
+                            'impuesto'       => 0,
+                            'total'          => $total,
+                            'saldo'          => $total,
+                            'estado'         => CxcDocumento::ESTADO_PENDIENTE,
+                            'created_by'     => $usuario->email,
+                        ]);
+
+                        $nota = VentaNotaCredito::create([
+                            'compania_id'      => $companiaId,
+                            'cliente_id'       => $cliente->id,
+                            'numero'           => $numero,
+                            'fecha'            => $fecha,
+                            'motivo'           => "FEL: {$cufe}",
+                            'total'            => $total,
+                            'cxc_documento_id' => $cxcNota->id,
+                            'estado'           => VentaNotaCredito::ESTADO_EMITIDA,
+                            'created_by'       => $usuario->email,
+                            'updated_by'       => $usuario->email,
+                        ]);
+
+                        $asiento = app(AsientoAutomatico::class)->postear(
+                            $companiaId, $fecha,
+                            "NC Ventas {$numero} — {$nombre}",
+                            $numero,
+                            [
+                                ['cuenta_id' => $cuentaVentasId, 'descripcion' => "Nota crédito {$numero}", 'debito' => $total, 'credito' => 0],
+                                ['cuenta_id' => $cuentaCxcId, 'contacto_id' => $cliente->id, 'descripcion' => "Nota crédito {$numero}", 'debito' => 0, 'credito' => $total],
+                            ],
+                            'VENTAS', 'ventas_notas_credito', $nota->id, $usuario,
+                        );
+
+                        $nota->update(['asiento_id' => $asiento->id]);
+                    }
+                });
+                $creadas++;
+            } catch (\Throwable $e) {
+                $errores[] = "Fila {$fila}: ".$e->getMessage();
+            }
+        }
+
+        $msg = "Importación completada: {$creadas} documentos creados, {$omitidas} omitidos.";
+        if ($errores) {
+            return back()->with('status', $msg)
+                ->withErrors(['importar' => implode(' | ', array_slice($errores, 0, 5))]);
+        }
+
+        return redirect()->route('admin.ventas.facturas.index')->with('status', $msg);
     }
 
     public function anular(Request $request, VentaFactura $factura): RedirectResponse
@@ -653,5 +937,23 @@ class VentaFacturaController extends Controller
             ->whereHas('tipos', fn ($q) => $q->where('codigo', 'CLIENTE'))
             ->orderBy('nombre')
             ->get(['id', 'codigo', 'nombre']);
+    }
+
+    private function cuentasIngreso(int $companiaId)
+    {
+        return CuentaContable::where('compania_id', $companiaId)
+            ->where('permite_movimiento', true)
+            ->where('activa', true)
+            ->where('naturaleza', 'ACREEDORA')
+            ->orderBy('codigo')
+            ->get(['id', 'codigo', 'nombre']);
+    }
+
+    private function itemsVenta(int $companiaId)
+    {
+        return ItemProducto::where('compania_id', $companiaId)
+            ->where('activo', true)
+            ->orderBy('nombre')
+            ->get(['id', 'codigo', 'nombre', 'precio_venta', 'impuesto_id', 'cuenta_ingreso_id']);
     }
 }

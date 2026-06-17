@@ -164,6 +164,11 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     });
 
     Route::middleware('permission:contactos.ver')->group(function () {
+        Route::get('contactos/plantilla', [ContactoController::class, 'plantillaImport'])->name('contactos.plantilla');
+        Route::post('contactos/importar', [ContactoController::class, 'importar'])->name('contactos.importar');
+        Route::get('contactos/plantilla-proveedores', [ContactoController::class, 'plantillaProveedores'])->name('contactos.plantilla-proveedores');
+        Route::get('contactos/plantilla-proveedores-xlsx', [ContactoController::class, 'plantillaProveedoresXlsx'])->name('contactos.plantilla-proveedores-xlsx');
+        Route::post('contactos/importar-proveedores', [ContactoController::class, 'importarProveedores'])->name('contactos.importar-proveedores');
         Route::resource('contactos', ContactoController::class)->except(['show'])->parameters(['contactos' => 'contacto']);
     });
 

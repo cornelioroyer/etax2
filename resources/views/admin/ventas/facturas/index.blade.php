@@ -6,6 +6,7 @@
                 <a href="{{ route('admin.ventas.facturas.index', array_merge(request()->query(), ['export' => 'xlsx'])) }}" class="rounded-md border border-green-300 bg-white px-3 py-2 text-sm text-green-700 hover:bg-green-50">Excel</a>
                 <a href="{{ route('admin.ventas.facturas.index', array_merge(request()->query(), ['export' => 'pdf'])) }}" class="rounded-md border border-red-300 bg-white px-3 py-2 text-sm text-red-700 hover:bg-red-50">PDF</a>
                 @can('ventas.gestionar')
+                <button type="button" onclick="document.getElementById('modal-importar').classList.remove('hidden')" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">Importar Excel</button>
                 <a href="{{ route('admin.ventas.facturas.create') }}" class="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500">+ Nueva factura</a>
                 @endcan
             </div>
@@ -130,3 +131,39 @@
         </div>
     </div>
 </x-app-layout>
+
+@if($errors->has('archivo') || $errors->has('importar'))
+<script>document.addEventListener('DOMContentLoaded',()=>document.getElementById('modal-importar').classList.remove('hidden'));</script>
+@endif
+
+{{-- Modal importar Excel --}}
+<div id="modal-importar" class="fixed inset-0 z-50 hidden" style="background:rgba(0,0,0,0.5)">
+    <div class="flex min-h-screen items-center justify-center p-4">
+        <div class="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <h3 class="mb-4 text-lg font-semibold text-gray-900">Importar facturas de venta</h3>
+
+            @error('importar')
+                <div class="mb-3 rounded-md bg-red-50 p-3 text-sm text-red-700">{{ $message }}</div>
+            @enderror
+
+            <form method="POST" action="{{ route('admin.ventas.facturas.importar') }}" enctype="multipart/form-data">
+                @csrf
+                <div class="mb-4">
+                    <label class="mb-1 block text-sm font-medium text-gray-700">Archivo Excel</label>
+                    <input type="file" name="archivo" accept=".xlsx,.xls" required
+                        class="block w-full text-sm text-gray-500 file:mr-4 file:rounded file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-blue-700 hover:file:bg-blue-100">
+                    @error('archivo')
+                        <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                    @enderror
+                    <p class="mt-1 text-xs text-gray-500">Reporte DGI "Documentos Electrónicos Emitidos" (.xlsx). Se importan Facturas de Operación Interna y Notas de Crédito Genéricas. Si el cliente no existe se crea usando su RUC como código. Los duplicados se detectan por CUFE y se omiten.</p>
+                </div>
+                <div class="flex justify-end gap-3">
+                    <button type="button" onclick="document.getElementById('modal-importar').classList.add('hidden')"
+                        class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Cancelar</button>
+                    <button type="submit"
+                        class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">Importar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

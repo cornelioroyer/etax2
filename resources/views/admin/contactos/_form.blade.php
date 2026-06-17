@@ -33,6 +33,16 @@
             </div>
 
             <div>
+                <label for="forma_pago" class="block text-sm font-medium text-gray-700">Forma de pago</label>
+                @php($formaPagoSel = old('forma_pago', $c->forma_pago ?? 'CONTADO'))
+                <select id="forma_pago" name="forma_pago" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    <option value="CONTADO" @selected($formaPagoSel === 'CONTADO')>Contado</option>
+                    <option value="CREDITO" @selected($formaPagoSel === 'CREDITO')>Crédito</option>
+                </select>
+                @error('forma_pago') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+            </div>
+
+            <div>
                 <label class="block text-sm font-medium text-gray-700">Tipos <span class="text-xs text-gray-400">(uno o más)</span></label>
                 <div class="mt-2 flex flex-wrap gap-3">
                     @foreach ($tipos as $t)

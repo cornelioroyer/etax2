@@ -32,6 +32,8 @@
                     <div><span class="text-gray-500">Tipos</span><p>{{ $contacto->tipos->pluck('nombre')->join(', ') }}</p></div>
                     <div><span class="text-gray-500">Email</span><p>{{ $contacto->email ?? '—' }}</p></div>
                     <div><span class="text-gray-500">Teléfono</span><p>{{ $contacto->telefono ?? '—' }}</p></div>
+                    <div><span class="text-gray-500">RUC / Cédula</span><p>{{ $contacto->identificacion ?? '—' }}{{ $contacto->dv ? ' DV '.$contacto->dv : '' }}</p></div>
+                    <div><span class="text-gray-500">Forma de pago</span><p>{{ $contacto->forma_pago ? ucfirst(strtolower($contacto->forma_pago)) : '—' }}</p></div>
                 </div>
             </div>
 

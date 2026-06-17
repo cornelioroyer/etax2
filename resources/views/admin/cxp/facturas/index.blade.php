@@ -8,7 +8,7 @@
                 @can('cxp.gestionar')
                     <button type="button" onclick="document.getElementById('modal-importar').classList.remove('hidden')"
                             class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        Importar FEL
+                        Importar Compras
                     </button>
                     <a href="{{ route('admin.cxp.facturas.create') }}"
                        class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
@@ -128,7 +128,7 @@
 <div id="modal-importar" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 p-6">
         <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold text-gray-900">Importar documentos FEL</h3>
+            <h3 class="text-lg font-semibold text-gray-900">Importar Compras</h3>
             <button type="button" onclick="document.getElementById('modal-importar').classList.add('hidden')"
                     class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
         </div>
