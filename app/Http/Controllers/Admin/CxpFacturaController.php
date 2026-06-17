@@ -5,12 +5,14 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Concerns\ConCompaniaActiva;
 use App\Http\Controllers\Concerns\ExportaReporte;
 use App\Http\Controllers\Controller;
+use App\Imports\CxpFacturasImport;
 use App\Models\Compania;
 use App\Models\Contacto;
 use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
 use App\Models\CxpDocumento;
 use App\Models\CxpDocumentoDetalle;
+use App\Models\TipoContacto;
 use App\Services\AsientoAutomatico;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,6 +20,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\Response;
 
 class CxpFacturaController extends Controller
@@ -500,6 +503,130 @@ class CxpFacturaController extends Controller
     {
         abort_unless($documento->compania_id === $this->companiaActivaId($request), 404);
         abort_unless($documento->tipo_documento === CxpDocumento::TIPO_FACTURA, 404);
+    }
+
+    public function importar(Request $request): RedirectResponse
+    {
+        $companiaId = $this->companiaActivaId($request);
+        $usuario = $request->user();
+
+        $request->validate(['archivo' => ['required', 'file', 'mimes:xlsx,xls', 'max:10240']]);
+
+        $import = new CxpFacturasImport;
+        Excel::import($import, $request->file('archivo'));
+
+        if (empty($import->filas)) {
+            return back()->withErrors(['archivo' => 'El archivo no contiene filas válidas o no tiene el formato esperado.']);
+        }
+
+        $cuentaGastoDefault = CuentaDefault::idPara($companiaId, 'GASTO_DEFAULT');
+        $tipoProveedor = TipoContacto::where('codigo', 'PROVEEDOR')->first();
+
+        $creados = 0;
+        $omitidos = 0;
+        $errores = [];
+
+        foreach ($import->filas as $i => $fila) {
+            $fila_num = $i + 3;
+
+            if (! $fila['fecha']) {
+                $errores[] = "Fila {$fila_num}: fecha inválida.";
+                continue;
+            }
+            if ($fila['ruc'] === '') {
+                $errores[] = "Fila {$fila_num}: RUC vacío.";
+                continue;
+            }
+            if ($fila['total'] <= 0) {
+                $errores[] = "Fila {$fila_num}: monto inválido ({$fila['total']}).";
+                continue;
+            }
+
+            $proveedor = Contacto::where('compania_id', $companiaId)
+                ->where('identificacion', $fila['ruc'])
+                ->first();
+
+            if (! $proveedor) {
+                $codigo = substr($fila['ruc'], 0, 50);
+                if (Contacto::where('compania_id', $companiaId)->where('codigo', $codigo)->exists()) {
+                    $codigo = null;
+                }
+
+                $proveedor = Contacto::create([
+                    'compania_id'    => $companiaId,
+                    'codigo'         => $codigo,
+                    'nombre'         => substr($fila['nombre'] ?: $fila['ruc'], 0, 200),
+                    'tipo_persona'   => 'JURIDICA',
+                    'identificacion' => $fila['ruc'],
+                    'activo'         => true,
+                    'cuenta_gasto_id' => $cuentaGastoDefault,
+                    'created_by'     => $usuario->email,
+                ]);
+
+                if ($tipoProveedor) {
+                    $proveedor->tipos()->attach($tipoProveedor->id);
+                }
+            }
+
+            $numero = substr($fila['cufe'], 0, 50);
+
+            $duplicada = CxpDocumento::where('compania_id', $companiaId)
+                ->where('proveedor_id', $proveedor->id)
+                ->where('tipo_documento', CxpDocumento::TIPO_FACTURA)
+                ->where('numero', $numero)
+                ->exists();
+
+            if ($duplicada) {
+                $omitidos++;
+                continue;
+            }
+
+            $cuentaId = $proveedor->cuenta_gasto_id ?? $cuentaGastoDefault;
+
+            $factura = CxpDocumento::create([
+                'compania_id'    => $companiaId,
+                'proveedor_id'   => $proveedor->id,
+                'tipo_documento' => CxpDocumento::TIPO_FACTURA,
+                'numero'         => $numero,
+                'fecha'          => $fila['fecha'],
+                'subtotal'       => $fila['subtotal'],
+                'descuento'      => 0,
+                'impuesto'       => $fila['itbms'],
+                'total'          => $fila['total'],
+                'saldo'          => $fila['total'],
+                'estado'         => CxpDocumento::ESTADO_BORRADOR,
+                'created_by'     => $usuario->email,
+            ]);
+
+            CxpDocumentoDetalle::create([
+                'documento_id'    => $factura->id,
+                'linea'           => 1,
+                'descripcion'     => substr($fila['nombre'] ?: $fila['tipo'], 0, 500),
+                'cantidad'        => 1,
+                'precio_unitario' => $fila['subtotal'],
+                'impuesto_monto'  => $fila['itbms'],
+                'total_linea'     => $fila['total'],
+                'cuenta_id'       => $cuentaId,
+                'created_by'      => $usuario->email,
+            ]);
+
+            $creados++;
+        }
+
+        $mensaje = "Importación completada: {$creados} factura(s) creadas como borrador.";
+        if ($omitidos > 0) {
+            $mensaje .= " {$omitidos} omitida(s) por duplicado.";
+        }
+
+        $redirect = redirect()->route('admin.cxp.facturas.index')->with('status', $mensaje);
+
+        if (! empty($errores)) {
+            $redirect = redirect()->route('admin.cxp.facturas.index')
+                ->with('status', $mensaje)
+                ->withErrors(['importar' => implode(' | ', array_slice($errores, 0, 5))]);
+        }
+
+        return $redirect;
     }
 
     public function anular(Request $request, CxpDocumento $documento): RedirectResponse

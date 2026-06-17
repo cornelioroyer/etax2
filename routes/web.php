@@ -230,6 +230,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('cxp/notas', [CxpNotaController::class, 'store'])->name('cxp.notas.store');
         Route::post('cxp/notas/{documento}/anular', [CxpNotaController::class, 'anular'])->whereNumber('documento')->name('cxp.notas.anular');
         Route::get('cxp/facturas/nueva', [CxpFacturaController::class, 'create'])->name('cxp.facturas.create');
+        Route::post('cxp/facturas/importar', [CxpFacturaController::class, 'importar'])->name('cxp.facturas.importar');
         Route::post('cxp/facturas', [CxpFacturaController::class, 'store'])->name('cxp.facturas.store');
         Route::get('cxp/facturas/{documento}/editar', [CxpFacturaController::class, 'edit'])->whereNumber('documento')->name('cxp.facturas.edit');
         Route::put('cxp/facturas/{documento}', [CxpFacturaController::class, 'update'])->whereNumber('documento')->name('cxp.facturas.update');
@@ -351,6 +352,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('ventas/cotizaciones/{cotizacion}/email', [VentaCotizacionController::class, 'enviarEmail'])->whereNumber('cotizacion')->name('ventas.cotizaciones.email');
         Route::get('ventas/facturas/nueva', [VentaFacturaController::class, 'create'])->name('ventas.facturas.create');
         Route::post('ventas/facturas', [VentaFacturaController::class, 'store'])->name('ventas.facturas.store');
+        Route::post('ventas/facturas/importar', [VentaFacturaController::class, 'importar'])->name('ventas.facturas.importar');
         Route::get('ventas/facturas/{factura}/editar', [VentaFacturaController::class, 'edit'])->whereNumber('factura')->name('ventas.facturas.edit');
         Route::put('ventas/facturas/{factura}', [VentaFacturaController::class, 'update'])->whereNumber('factura')->name('ventas.facturas.update');
         Route::post('ventas/facturas/{factura}/emitir', [VentaFacturaController::class, 'emitir'])->whereNumber('factura')->name('ventas.facturas.emitir');
