@@ -145,7 +145,7 @@
                     <div class="mt-4">
                         <x-input-label for="notas" value="Notas" />
                         <textarea id="notas" name="notas" rows="3"
-                                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">{{ old('notas') }}</textarea>
+                                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">{{ old('notas', $factura->notas ?? '') }}</textarea>
                     </div>
 
                     <div class="mt-6 flex flex-wrap items-center gap-3 border-t border-gray-100 pt-4">

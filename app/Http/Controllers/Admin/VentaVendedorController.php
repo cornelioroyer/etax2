@@ -62,12 +62,17 @@ class VentaVendedorController extends Controller
     {
         abort_unless($vendedor->compania_id === $this->companiaActivaId($request), 404);
 
+        $contactos = Contacto::where('compania_id', $vendedor->compania_id)
+            ->where('activo', true)
+            ->orderBy('nombre')
+            ->get();
+
         $comisiones = VentaComision::with('factura')
             ->where('vendedor_id', $vendedor->id)
             ->orderByDesc('created_at')
             ->paginate(20);
 
-        return view('admin.ventas.vendedores.show', compact('vendedor', 'comisiones'));
+        return view('admin.ventas.vendedores.show', compact('vendedor', 'contactos', 'comisiones'));
     }
 
     public function update(Request $request, VentaVendedor $vendedor): RedirectResponse
@@ -76,6 +81,7 @@ class VentaVendedorController extends Controller
         abort_unless($vendedor->compania_id === $this->companiaActivaId($request), 404);
 
         $data = $request->validate([
+            'nombre'      => ['nullable', 'string', 'max:200'],
             'contacto_id' => ['nullable', 'integer', 'exists:contact_contactos,id'],
         ]);
 

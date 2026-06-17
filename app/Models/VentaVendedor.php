@@ -11,7 +11,7 @@ class VentaVendedor extends Model
     protected $table = 'ventas_vendedores';
 
     protected $fillable = [
-        'compania_id', 'contacto_id', 'usuario_id', 'codigo', 'activo',
+        'compania_id', 'contacto_id', 'usuario_id', 'codigo', 'nombre', 'activo',
         'created_by', 'updated_by',
     ];
 
@@ -27,8 +27,8 @@ class VentaVendedor extends Model
         return $this->hasMany(VentaComision::class, 'vendedor_id');
     }
 
-    public function getNombreAttribute(): string
+    public function getNombreDisplayAttribute(): string
     {
-        return $this->contacto?->nombre ?? $this->codigo ?? "Vendedor #{$this->id}";
+        return $this->nombre ?? $this->contacto?->nombre ?? $this->codigo ?? "Vendedor #{$this->id}";
     }
 }

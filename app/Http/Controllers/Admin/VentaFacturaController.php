@@ -153,6 +153,7 @@ class VentaFacturaController extends Controller
                 'total'             => $total,
                 'saldo'             => $total,
                 'estado'            => VentaFactura::ESTADO_EMITIDA,
+                'notas'             => $data['notas'] ?? null,
                 'created_by'        => $usuario->email,
             ]);
 
@@ -328,6 +329,36 @@ class VentaFacturaController extends Controller
         $factura->load(['cliente', 'detalle.impuesto', 'detalle.cuentaIngreso', 'asiento.detalle.cuenta', 'cotizacion', 'cxcDocumento']);
 
         return view('admin.ventas.facturas.show', ['factura' => $factura]);
+    }
+
+    public function imprimir(Request $request, VentaFactura $factura): View
+    {
+        abort_unless($factura->compania_id === $this->companiaActivaId($request), 404);
+
+        $factura->load(['cliente', 'detalle.impuesto']);
+        $compania = Compania::find($factura->compania_id);
+
+        return view('admin.ventas.facturas.print', compact('factura', 'compania'));
+    }
+
+    public function actualizarNotas(Request $request, VentaFactura $factura): RedirectResponse
+    {
+        abort_unless($factura->compania_id === $this->companiaActivaId($request), 404);
+
+        if ($factura->esAnulada()) {
+            return back()->withErrors(['notas' => 'No se pueden editar las notas de una factura anulada.']);
+        }
+
+        $data = $request->validate([
+            'notas' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $factura->update([
+            'notas'      => $data['notas'] ?? null,
+            'updated_by' => $request->user()->email,
+        ]);
+
+        return back()->with('status', 'Notas actualizadas.');
     }
 
     public function edit(Request $request, VentaFactura $factura): View

@@ -19,7 +19,7 @@ class VentaFactura extends Model
     protected $fillable = [
         'compania_id', 'cliente_id', 'numero', 'fecha', 'fecha_vencimiento',
         'moneda_id', 'subtotal', 'descuento', 'itbms', 'total', 'saldo',
-        'estado', 'cotizacion_id', 'cxc_documento_id', 'asiento_id',
+        'estado', 'notas', 'cotizacion_id', 'cxc_documento_id', 'asiento_id',
         'fel_documento_id', 'extra', 'created_by', 'updated_by',
     ];
 

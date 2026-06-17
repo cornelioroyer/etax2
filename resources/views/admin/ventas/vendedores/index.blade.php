@@ -31,14 +31,14 @@
                         @forelse ($vendedores as $v)
                             <tr class="hover:bg-gray-50">
                                 <td class="px-4 py-3 font-mono font-medium">{{ $v->codigo }}</td>
-                                <td class="px-4 py-3">{{ $v->contacto?->nombre ?? '—' }}</td>
+                                <td class="px-4 py-3">{{ $v->nombre ?? $v->contacto?->nombre ?? '—' }}</td>
                                 <td class="px-4 py-3">
                                     <span class="text-xs font-medium {{ $v->activo ? 'text-green-700' : 'text-gray-400' }}">
                                         {{ $v->activo ? 'Activo' : 'Inactivo' }}
                                     </span>
                                 </td>
                                 <td class="px-4 py-3 flex gap-2">
-                                    <a href="{{ route('admin.ventas.vendedores.show', $v) }}" class="text-xs text-blue-600 hover:underline">Ver</a>
+                                    <a href="{{ route('admin.ventas.vendedores.show', $v) }}" class="text-xs text-blue-600 hover:underline">Editar</a>
                                     @can('ventas.gestionar')
                                         <form method="POST" action="{{ route('admin.ventas.vendedores.toggle', $v) }}">
                                             @csrf

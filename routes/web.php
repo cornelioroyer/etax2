@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\BudgetVersionController;
 use App\Http\Controllers\Admin\CompaniaController;
 use App\Http\Controllers\Admin\ContactoController;
 use App\Http\Controllers\Admin\CuentaContableController;
+use App\Http\Controllers\Admin\ChatController;
 use App\Http\Controllers\Admin\CxcAntiguedadController;
 use App\Http\Controllers\Admin\CxcCobroController;
 use App\Http\Controllers\Admin\CxcEstadoCuentaController;
@@ -135,6 +136,11 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     // Bitácora de actividad de usuarios (solo super_admin).
     Route::get('auditoria', [AuditoriaController::class, 'index'])->name('auditoria.index');
     Route::get('auditoria/{actividad}', [AuditoriaController::class, 'show'])->whereNumber('actividad')->name('auditoria.show');
+
+    // Asistente IA: chat en lenguaje natural. Solo super_admin. Las
+    // herramientas internas se auto-restringen por permiso y compañía activa.
+    Route::get('asistente', [ChatController::class, 'index'])->name('asistente');
+    Route::post('asistente/mensaje', [ChatController::class, 'enviar'])->name('asistente.enviar');
 });
 
 // Usuarios por compañía: super-admin o admin de la compañía (permiso usuarios_compania.gestionar).
@@ -349,11 +355,13 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::put('ventas/facturas/{factura}', [VentaFacturaController::class, 'update'])->whereNumber('factura')->name('ventas.facturas.update');
         Route::post('ventas/facturas/{factura}/emitir', [VentaFacturaController::class, 'emitir'])->whereNumber('factura')->name('ventas.facturas.emitir');
         Route::post('ventas/facturas/{factura}/anular', [VentaFacturaController::class, 'anular'])->whereNumber('factura')->name('ventas.facturas.anular');
+        Route::post('ventas/facturas/{factura}/notas', [VentaFacturaController::class, 'actualizarNotas'])->whereNumber('factura')->name('ventas.facturas.notas');
     });
 
     Route::middleware('permission:ventas.ver')->group(function () {
         Route::get('ventas/facturas', [VentaFacturaController::class, 'index'])->name('ventas.facturas.index');
         Route::get('ventas/facturas/{factura}', [VentaFacturaController::class, 'show'])->whereNumber('factura')->name('ventas.facturas.show');
+        Route::get('ventas/facturas/{factura}/imprimir', [VentaFacturaController::class, 'imprimir'])->whereNumber('factura')->name('ventas.facturas.imprimir');
         Route::get('ventas/recibos', [VentaReciboController::class, 'index'])->name('ventas.recibos.index');
         Route::get('ventas/recibos/{recibo}', [VentaReciboController::class, 'show'])->whereNumber('recibo')->name('ventas.recibos.show');
         Route::get('ventas/notas-credito', [VentaNotaCreditoController::class, 'index'])->name('ventas.notas-credito.index');

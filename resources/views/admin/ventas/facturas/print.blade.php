@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ $cotizacion->numero }}</title>
+<title>Factura {{ $factura->numero }}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -80,6 +80,7 @@
   .totales td { padding: 6px 4px; border: none; }
   .totales .t-label { color: var(--muted); }
   .totales .t-total td { border-top: 2px solid var(--navy); padding-top: 10px; font-size: 16px; font-weight: 800; color: var(--navy); }
+  .totales .t-saldo td { color: #b91c1c; font-weight: 700; padding-top: 8px; }
 
   .notas { border-left: 4px solid var(--accent); background: var(--bg-soft); border-radius: 0 8px 8px 0; padding: 12px 16px; margin-top: 28px; font-size: 12px; color: #374151; }
   .notas strong { display: block; margin-bottom: 4px; color: var(--navy); text-transform: uppercase; font-size: 10.5px; letter-spacing: .8px; }
@@ -122,9 +123,9 @@
       </div>
     </div>
     <div class="doc">
-      <div class="tipo">Cotización</div>
-      <div class="numero">{{ $cotizacion->numero }}</div>
-      <div class="estado">{{ ucfirst(strtolower($cotizacion->estado)) }}</div>
+      <div class="tipo">Factura</div>
+      <div class="numero">{{ $factura->numero }}</div>
+      <div class="estado">{{ ucfirst(strtolower($factura->estado)) }}</div>
     </div>
   </div>
 
@@ -133,19 +134,19 @@
     <div class="info">
       <div>
         <div class="label">Cliente</div>
-        <div class="cliente-nombre">{{ $cotizacion->cliente->nombre ?? '—' }}</div>
-        @if ($cotizacion->cliente?->identificacion)<div class="cliente-sub">RUC: {{ $cotizacion->cliente->identificacion }}@if($cotizacion->cliente?->dv) DV {{ $cotizacion->cliente->dv }}@endif</div>@endif
-        @if ($cotizacion->cliente?->direccion)<div class="cliente-sub">{{ $cotizacion->cliente->direccion }}</div>@endif
-        @if ($cotizacion->cliente?->email)<div class="cliente-sub">{{ $cotizacion->cliente->email }}</div>@endif
+        <div class="cliente-nombre">{{ $factura->cliente->nombre ?? '—' }}</div>
+        @if ($factura->cliente?->identificacion)<div class="cliente-sub">RUC: {{ $factura->cliente->identificacion }}@if($factura->cliente?->dv) DV {{ $factura->cliente->dv }}@endif</div>@endif
+        @if ($factura->cliente?->direccion)<div class="cliente-sub">{{ $factura->cliente->direccion }}</div>@endif
+        @if ($factura->cliente?->email)<div class="cliente-sub">{{ $factura->cliente->email }}</div>@endif
       </div>
       <dl class="fechas">
         <div class="box">
           <dt>Fecha</dt>
-          <dd>{{ $cotizacion->fecha->format('d/m/Y') }}</dd>
+          <dd>{{ $factura->fecha->format('d/m/Y') }}</dd>
         </div>
         <div class="box">
-          <dt>Válida hasta</dt>
-          <dd>{{ $cotizacion->fecha_validez?->format('d/m/Y') ?? '—' }}</dd>
+          <dt>Vencimiento</dt>
+          <dd>{{ $factura->fecha_vencimiento?->format('d/m/Y') ?? '—' }}</dd>
         </div>
       </dl>
     </div>
@@ -162,7 +163,7 @@
         </tr>
       </thead>
       <tbody>
-        @foreach ($cotizacion->detalle as $linea)
+        @foreach ($factura->detalle as $linea)
         <tr>
           <td>{{ $linea->linea }}</td>
           <td>{{ $linea->descripcion }}</td>
@@ -179,25 +180,31 @@
       <table>
         <tr>
           <td class="t-label">Subtotal</td>
-          <td class="num">B/. {{ number_format((float) $cotizacion->subtotal, 2) }}</td>
+          <td class="num">B/. {{ number_format((float) $factura->subtotal, 2) }}</td>
         </tr>
-        @if ((float) $cotizacion->itbms > 0)
+        @if ((float) $factura->itbms > 0)
         <tr>
           <td class="t-label">ITBMS</td>
-          <td class="num">B/. {{ number_format((float) $cotizacion->itbms, 2) }}</td>
+          <td class="num">B/. {{ number_format((float) $factura->itbms, 2) }}</td>
         </tr>
         @endif
         <tr class="t-total">
           <td>Total</td>
-          <td class="num">B/. {{ number_format((float) $cotizacion->total, 2) }}</td>
+          <td class="num">B/. {{ number_format((float) $factura->total, 2) }}</td>
         </tr>
+        @if ($factura->estado !== 'ANULADA' && (float) $factura->saldo > 0 && (float) $factura->saldo < (float) $factura->total)
+        <tr class="t-saldo">
+          <td>Saldo pendiente</td>
+          <td class="num">B/. {{ number_format((float) $factura->saldo, 2) }}</td>
+        </tr>
+        @endif
       </table>
     </div>
 
-    @if ($cotizacion->notas)
+    @if (!empty($factura->notas))
     <div class="notas">
       <strong>Notas / términos</strong>
-      {{ $cotizacion->notas }}
+      {{ $factura->notas }}
     </div>
     @endif
 
@@ -211,7 +218,7 @@
     </div>
 
     <div class="pie">
-      Esta cotización no constituye una factura fiscal. Precios expresados en Balboas (B/.).
+      Documento generado por eTax2. Montos expresados en Balboas (B/.).
     </div>
 
   </div>
