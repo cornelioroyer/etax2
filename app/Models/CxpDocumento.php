@@ -34,6 +34,7 @@ class CxpDocumento extends Model
         'proveedor_id',
         'tipo_documento',
         'numero',
+        'cufe',
         'fecha',
         'fecha_vencimiento',
         'moneda_id',

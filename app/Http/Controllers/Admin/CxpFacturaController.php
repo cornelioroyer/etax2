@@ -14,6 +14,7 @@ use App\Models\CxpDocumento;
 use App\Models\CxpDocumentoDetalle;
 use App\Models\TipoContacto;
 use App\Services\AsientoAutomatico;
+use App\Services\DgiFepConsulta;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -521,9 +522,11 @@ class CxpFacturaController extends Controller
 
         $cuentaGastoDefault = CuentaDefault::idPara($companiaId, 'GASTO_DEFAULT');
         $tipoProveedor = TipoContacto::where('codigo', 'PROVEEDOR')->first();
+        $consultaDgi = new DgiFepConsulta;
 
         $creados = 0;
         $omitidos = 0;
+        $conDetalle = 0;
         $errores = [];
 
         foreach ($import->filas as $i => $fila) {
@@ -541,6 +544,9 @@ class CxpFacturaController extends Controller
                 $errores[] = "Fila {$fila_num}: monto inválido ({$fila['total']}).";
                 continue;
             }
+
+            // Trae la factura real de la DGI por su CUFE (emisor, número y líneas).
+            $dgi = $consultaDgi->porCufe($fila['cufe']);
 
             $proveedor = Contacto::where('compania_id', $companiaId)
                 ->where('identificacion', $fila['ruc'])
@@ -568,12 +574,9 @@ class CxpFacturaController extends Controller
                 }
             }
 
-            $numero = substr($fila['cufe'], 0, 50);
-
+            // El CUFE es único global → mejor clave de deduplicación.
             $duplicada = CxpDocumento::where('compania_id', $companiaId)
-                ->where('proveedor_id', $proveedor->id)
-                ->where('tipo_documento', CxpDocumento::TIPO_FACTURA)
-                ->where('numero', $numero)
+                ->where('cufe', $fila['cufe'])
                 ->exists();
 
             if ($duplicada) {
@@ -583,37 +586,67 @@ class CxpFacturaController extends Controller
 
             $cuentaId = $proveedor->cuenta_gasto_id ?? $cuentaGastoDefault;
 
+            // Número de documento real del emisor si la DGI lo devolvió; si no, CUFE truncado.
+            $numero = $dgi['numero'] ?? substr($fila['cufe'], 0, 50);
+            $subtotal = $dgi['subtotal'] ?? $fila['subtotal'];
+            $itbms = $dgi['itbms'] ?? $fila['itbms'];
+            $total = $dgi['total'] ?? $fila['total'];
+
             $factura = CxpDocumento::create([
                 'compania_id'    => $companiaId,
                 'proveedor_id'   => $proveedor->id,
                 'tipo_documento' => CxpDocumento::TIPO_FACTURA,
                 'numero'         => $numero,
+                'cufe'           => $fila['cufe'],
                 'fecha'          => $fila['fecha'],
-                'subtotal'       => $fila['subtotal'],
+                'subtotal'       => $subtotal,
                 'descuento'      => 0,
-                'impuesto'       => $fila['itbms'],
-                'total'          => $fila['total'],
-                'saldo'          => $fila['total'],
+                'impuesto'       => $itbms,
+                'total'          => $total,
+                'saldo'          => $total,
                 'estado'         => CxpDocumento::ESTADO_BORRADOR,
                 'created_by'     => $usuario->email,
             ]);
 
-            CxpDocumentoDetalle::create([
-                'documento_id'    => $factura->id,
-                'linea'           => 1,
-                'descripcion'     => substr($fila['nombre'] ?: $fila['tipo'], 0, 500),
-                'cantidad'        => 1,
-                'precio_unitario' => $fila['subtotal'],
-                'impuesto_monto'  => $fila['itbms'],
-                'total_linea'     => $fila['total'],
-                'cuenta_id'       => $cuentaId,
-                'created_by'      => $usuario->email,
-            ]);
+            if ($dgi && ! empty($dgi['lineas'])) {
+                // Líneas reales de la factura electrónica.
+                foreach ($dgi['lineas'] as $n => $linea) {
+                    CxpDocumentoDetalle::create([
+                        'documento_id'    => $factura->id,
+                        'linea'           => $n + 1,
+                        'descripcion'     => substr($linea['descripcion'], 0, 500),
+                        'cantidad'        => $linea['cantidad'],
+                        'precio_unitario' => $linea['precio_unitario'],
+                        'descuento'       => $linea['descuento'],
+                        'impuesto_monto'  => $linea['itbms'],
+                        'total_linea'     => $linea['total'],
+                        'cuenta_id'       => $cuentaId,
+                        'created_by'      => $usuario->email,
+                    ]);
+                }
+                $conDetalle++;
+            } else {
+                // Sin respuesta de la DGI: una sola línea con los totales del Excel.
+                CxpDocumentoDetalle::create([
+                    'documento_id'    => $factura->id,
+                    'linea'           => 1,
+                    'descripcion'     => substr($fila['nombre'] ?: $fila['tipo'], 0, 500),
+                    'cantidad'        => 1,
+                    'precio_unitario' => $subtotal,
+                    'impuesto_monto'  => $itbms,
+                    'total_linea'     => $total,
+                    'cuenta_id'       => $cuentaId,
+                    'created_by'      => $usuario->email,
+                ]);
+            }
 
             $creados++;
         }
 
         $mensaje = "Importación completada: {$creados} factura(s) creadas como borrador.";
+        if ($conDetalle > 0) {
+            $mensaje .= " {$conDetalle} con detalle de la DGI.";
+        }
         if ($omitidos > 0) {
             $mensaje .= " {$omitidos} omitida(s) por duplicado.";
         }
