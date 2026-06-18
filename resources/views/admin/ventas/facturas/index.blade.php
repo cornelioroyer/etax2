@@ -155,7 +155,7 @@
                     @error('archivo')
                         <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
                     @enderror
-                    <p class="mt-1 text-xs text-gray-500">Reporte DGI "Documentos Electrónicos Emitidos" (.xlsx). Se importan Facturas de Operación Interna y Notas de Crédito Genéricas. Si el cliente no existe se crea usando su RUC como código. Los duplicados se detectan por CUFE y se omiten.</p>
+                    <p class="mt-1 text-xs text-gray-500">Reporte DGI "Documentos Electrónicos Emitidos" (.xlsx). Se importan Facturas de Operación Interna y Notas de Crédito Genéricas. Por cada factura se consulta la DGI por su CUFE para traer el número real y el detalle de líneas tal como aparece allí; el código de artículo de cada línea se empareja con el catálogo (y se crea el artículo si no existe). Si el cliente no existe se crea usando su RUC como código. Los duplicados se detectan por CUFE y se omiten.</p>
                 </div>
                 <div class="flex justify-end gap-3">
                     <button type="button" onclick="document.getElementById('modal-importar').classList.add('hidden')"

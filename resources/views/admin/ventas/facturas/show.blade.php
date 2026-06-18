@@ -79,6 +79,14 @@
                                 @endif
                             </dd>
                         </div>
+                        @if ($factura->cufe)
+                            <div class="col-span-2 sm:col-span-3">
+                                <dt class="text-gray-500">CUFE</dt>
+                                <dd class="font-mono text-xs text-gray-700 break-all">
+                                    <a href="https://dgi-fep.mef.gob.pa/Consultas/FacturasPorCUFE/{{ $factura->cufe }}" target="_blank" rel="noopener" class="text-blue-700 hover:underline" title="Consultar en la DGI">{{ $factura->cufe }}</a>
+                                </dd>
+                            </div>
+                        @endif
                     </dl>
 
                     <div class="flex flex-wrap gap-2">
