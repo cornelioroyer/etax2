@@ -236,6 +236,8 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('cxp/notas/{documento}/anular', [CxpNotaController::class, 'anular'])->whereNumber('documento')->name('cxp.notas.anular');
         Route::get('cxp/facturas/nueva', [CxpFacturaController::class, 'create'])->name('cxp.facturas.create');
         Route::post('cxp/facturas/importar', [CxpFacturaController::class, 'importar'])->name('cxp.facturas.importar');
+        Route::get('cxp/facturas/importar/{importacion}/progreso', [CxpFacturaController::class, 'importarProgreso'])->whereNumber('importacion')->name('cxp.facturas.importar.progreso');
+        Route::get('cxp/facturas/importar/{importacion}/estado', [CxpFacturaController::class, 'importarEstado'])->whereNumber('importacion')->name('cxp.facturas.importar.estado');
         Route::post('cxp/facturas', [CxpFacturaController::class, 'store'])->name('cxp.facturas.store');
         Route::get('cxp/facturas/{documento}/editar', [CxpFacturaController::class, 'edit'])->whereNumber('documento')->name('cxp.facturas.edit');
         Route::put('cxp/facturas/{documento}', [CxpFacturaController::class, 'update'])->whereNumber('documento')->name('cxp.facturas.update');

@@ -6,15 +6,17 @@ use App\Http\Controllers\Concerns\ConCompaniaActiva;
 use App\Http\Controllers\Concerns\ExportaReporte;
 use App\Http\Controllers\Controller;
 use App\Imports\CxpFacturasImport;
+use App\Jobs\ProcesarImportacionCxpFel;
 use App\Models\Compania;
 use App\Models\Contacto;
 use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
 use App\Models\CxpDocumento;
 use App\Models\CxpDocumentoDetalle;
+use App\Models\CxpImportacion;
 use App\Models\TipoContacto;
 use App\Services\AsientoAutomatico;
-use App\Services\DgiFepConsulta;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -513,6 +515,7 @@ class CxpFacturaController extends Controller
 
         $request->validate(['archivo' => ['required', 'file', 'mimes:xlsx,xls', 'max:10240']]);
 
+        // Validación rápida del formato antes de encolar (evita jobs basura).
         $import = new CxpFacturasImport;
         Excel::import($import, $request->file('archivo'));
 
@@ -520,146 +523,47 @@ class CxpFacturaController extends Controller
             return back()->withErrors(['archivo' => 'El archivo no contiene filas válidas o no tiene el formato esperado.']);
         }
 
-        $cuentaGastoDefault = CuentaDefault::idPara($companiaId, 'GASTO_DEFAULT');
-        $tipoProveedor = TipoContacto::where('codigo', 'PROVEEDOR')->first();
-        $consultaDgi = new DgiFepConsulta;
+        // Guarda el archivo y encola el procesamiento (consulta la DGI por CUFE,
+        // que es lento) para mostrar barra de progreso sin bloquear la petición.
+        $ruta = $request->file('archivo')->store('imports/cxp');
 
-        $creados = 0;
-        $omitidos = 0;
-        $conDetalle = 0;
-        $errores = [];
+        $importacion = CxpImportacion::create([
+            'compania_id' => $companiaId,
+            'usuario' => $usuario->email,
+            'archivo' => $request->file('archivo')->getClientOriginalName(),
+            'ruta' => $ruta,
+            'estado' => CxpImportacion::ESTADO_PENDIENTE,
+            'total' => count($import->filas),
+        ]);
 
-        foreach ($import->filas as $i => $fila) {
-            $fila_num = $i + 3;
+        ProcesarImportacionCxpFel::dispatch($importacion->id);
 
-            if (! $fila['fecha']) {
-                $errores[] = "Fila {$fila_num}: fecha inválida.";
-                continue;
-            }
-            if ($fila['ruc'] === '') {
-                $errores[] = "Fila {$fila_num}: RUC vacío.";
-                continue;
-            }
-            if ($fila['total'] <= 0) {
-                $errores[] = "Fila {$fila_num}: monto inválido ({$fila['total']}).";
-                continue;
-            }
+        return redirect()->route('admin.cxp.facturas.importar.progreso', $importacion);
+    }
 
-            // Trae la factura real de la DGI por su CUFE (emisor, número y líneas).
-            $dgi = $consultaDgi->porCufe($fila['cufe']);
+    public function importarProgreso(Request $request, CxpImportacion $importacion): View
+    {
+        abort_unless($importacion->compania_id === $this->companiaActivaId($request), 404);
 
-            $proveedor = Contacto::where('compania_id', $companiaId)
-                ->where('identificacion', $fila['ruc'])
-                ->first();
+        return view('admin.cxp.facturas.importar-progreso', compact('importacion'));
+    }
 
-            if (! $proveedor) {
-                $codigo = substr($fila['ruc'], 0, 50);
-                if (Contacto::where('compania_id', $companiaId)->where('codigo', $codigo)->exists()) {
-                    $codigo = null;
-                }
+    public function importarEstado(Request $request, CxpImportacion $importacion): JsonResponse
+    {
+        abort_unless($importacion->compania_id === $this->companiaActivaId($request), 404);
 
-                $proveedor = Contacto::create([
-                    'compania_id'    => $companiaId,
-                    'codigo'         => $codigo,
-                    'nombre'         => substr($fila['nombre'] ?: $fila['ruc'], 0, 200),
-                    'tipo_persona'   => 'JURIDICA',
-                    'identificacion' => $fila['ruc'],
-                    'activo'         => true,
-                    'cuenta_gasto_id' => $cuentaGastoDefault,
-                    'created_by'     => $usuario->email,
-                ]);
-
-                if ($tipoProveedor) {
-                    $proveedor->tipos()->attach($tipoProveedor->id);
-                }
-            }
-
-            // El CUFE es único global → mejor clave de deduplicación.
-            $duplicada = CxpDocumento::where('compania_id', $companiaId)
-                ->where('cufe', $fila['cufe'])
-                ->exists();
-
-            if ($duplicada) {
-                $omitidos++;
-                continue;
-            }
-
-            $cuentaId = $proveedor->cuenta_gasto_id ?? $cuentaGastoDefault;
-
-            // Número de documento real del emisor si la DGI lo devolvió; si no, CUFE truncado.
-            $numero = $dgi['numero'] ?? substr($fila['cufe'], 0, 50);
-            $subtotal = $dgi['subtotal'] ?? $fila['subtotal'];
-            $itbms = $dgi['itbms'] ?? $fila['itbms'];
-            $total = $dgi['total'] ?? $fila['total'];
-
-            $factura = CxpDocumento::create([
-                'compania_id'    => $companiaId,
-                'proveedor_id'   => $proveedor->id,
-                'tipo_documento' => CxpDocumento::TIPO_FACTURA,
-                'numero'         => $numero,
-                'cufe'           => $fila['cufe'],
-                'fecha'          => $fila['fecha'],
-                'subtotal'       => $subtotal,
-                'descuento'      => 0,
-                'impuesto'       => $itbms,
-                'total'          => $total,
-                'saldo'          => $total,
-                'estado'         => CxpDocumento::ESTADO_BORRADOR,
-                'created_by'     => $usuario->email,
-            ]);
-
-            if ($dgi && ! empty($dgi['lineas'])) {
-                // Líneas reales de la factura electrónica.
-                foreach ($dgi['lineas'] as $n => $linea) {
-                    CxpDocumentoDetalle::create([
-                        'documento_id'    => $factura->id,
-                        'linea'           => $n + 1,
-                        'descripcion'     => substr($linea['descripcion'], 0, 500),
-                        'cantidad'        => $linea['cantidad'],
-                        'precio_unitario' => $linea['precio_unitario'],
-                        'descuento'       => $linea['descuento'],
-                        'impuesto_monto'  => $linea['itbms'],
-                        'total_linea'     => $linea['total'],
-                        'cuenta_id'       => $cuentaId,
-                        'created_by'      => $usuario->email,
-                    ]);
-                }
-                $conDetalle++;
-            } else {
-                // Sin respuesta de la DGI: una sola línea con los totales del Excel.
-                CxpDocumentoDetalle::create([
-                    'documento_id'    => $factura->id,
-                    'linea'           => 1,
-                    'descripcion'     => substr($fila['nombre'] ?: $fila['tipo'], 0, 500),
-                    'cantidad'        => 1,
-                    'precio_unitario' => $subtotal,
-                    'impuesto_monto'  => $itbms,
-                    'total_linea'     => $total,
-                    'cuenta_id'       => $cuentaId,
-                    'created_by'      => $usuario->email,
-                ]);
-            }
-
-            $creados++;
-        }
-
-        $mensaje = "Importación completada: {$creados} factura(s) creadas como borrador.";
-        if ($conDetalle > 0) {
-            $mensaje .= " {$conDetalle} con detalle de la DGI.";
-        }
-        if ($omitidos > 0) {
-            $mensaje .= " {$omitidos} omitida(s) por duplicado.";
-        }
-
-        $redirect = redirect()->route('admin.cxp.facturas.index')->with('status', $mensaje);
-
-        if (! empty($errores)) {
-            $redirect = redirect()->route('admin.cxp.facturas.index')
-                ->with('status', $mensaje)
-                ->withErrors(['importar' => implode(' | ', array_slice($errores, 0, 5))]);
-        }
-
-        return $redirect;
+        return response()->json([
+            'estado' => $importacion->estado,
+            'total' => $importacion->total,
+            'procesadas' => $importacion->procesadas,
+            'creadas' => $importacion->creadas,
+            'con_detalle' => $importacion->con_detalle,
+            'omitidas' => $importacion->omitidas,
+            'errores' => $importacion->errores ?? [],
+            'mensaje_error' => $importacion->mensaje_error,
+            'porcentaje' => $importacion->porcentaje(),
+            'terminada' => $importacion->terminada(),
+        ]);
     }
 
     public function anular(Request $request, CxpDocumento $documento): RedirectResponse

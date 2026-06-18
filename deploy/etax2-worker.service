@@ -1,0 +1,15 @@
+[Unit]
+Description=etax2 PROD queue worker
+After=network.target
+
+[Service]
+User=apache
+Group=apache
+Environment=HOME=/tmp
+WorkingDirectory=/var/www/etax2.com
+ExecStart=/usr/bin/php artisan queue:work --queue=default --sleep=3 --tries=1 --max-time=3600
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -24,7 +24,7 @@ class DgiFepConsulta
     /**
      * Devuelve la factura parseada, o null si no se pudo consultar/parsear.
      *
-     * @return array{cufe:string,numero:?string,tipo:string,fecha:?string,emisor:array{ruc:?string,dv:?string,nombre:?string},subtotal:float,itbms:float,total:float,lineas:array<int,array{descripcion:string,cantidad:float,precio_unitario:float,descuento:float,monto:float,itbms:float,total:float}>}|null
+     * @return array{cufe:string,numero:?string,tipo:string,fecha:?string,emisor:array{ruc:?string,dv:?string,nombre:?string},subtotal:float,itbms:float,total:float,lineas:array<int,array{codigo:string,descripcion:string,cantidad:float,precio_unitario:float,descuento:float,monto:float,itbms:float,total:float}>}|null
      */
     public function porCufe(string $cufe): ?array
     {
@@ -119,6 +119,8 @@ class DgiFepConsulta
             }
 
             $lineas[] = [
+                // Código del artículo según lo registró el emisor (puede venir vacío).
+                'codigo'          => $celda('Código'),
                 'descripcion'     => $descripcion !== '' ? $descripcion : 'Sin descripción',
                 'cantidad'        => $this->num($celda('Cantidad')) ?: 1.0,
                 'precio_unitario' => $this->num($celda('Precio')),
