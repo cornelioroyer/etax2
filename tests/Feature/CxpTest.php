@@ -30,6 +30,10 @@ class CxpTest extends TestCase
 
     private CuentaContable $banco;
 
+    private CuentaContable $anticipo;
+
+    private CuentaContable $retencion;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -52,8 +56,10 @@ class CxpTest extends TestCase
         $this->gasto = $crear('60101', 'Gastos Generales', 'DEBITO');
         $this->itbmsCredito = $crear('10113', 'ITBMS Credito Fiscal', 'DEBITO');
         $this->banco = $crear('10102', 'Bancos', 'DEBITO');
+        $this->anticipo = $crear('10115', 'Anticipos a Proveedores', 'DEBITO');
+        $this->retencion = $crear('20105', 'Retenciones por Pagar', 'CREDITO');
 
-        foreach (['CXP' => $this->cxp, 'GASTO_DEFAULT' => $this->gasto, 'ITBMS_CREDITO' => $this->itbmsCredito, 'BANCO_DEFAULT' => $this->banco] as $clave => $cuenta) {
+        foreach (['CXP' => $this->cxp, 'GASTO_DEFAULT' => $this->gasto, 'ITBMS_CREDITO' => $this->itbmsCredito, 'BANCO_DEFAULT' => $this->banco, 'ANTICIPO_PROVEEDOR' => $this->anticipo] as $clave => $cuenta) {
             CuentaDefault::create([
                 'compania_id' => $this->compania->id,
                 'clave' => $clave,
@@ -418,5 +424,154 @@ class CxpTest extends TestCase
         // Pago directo: no toca CXP, sí toca banco.
         $this->assertFalse($doc->asiento->detalle->contains('cuenta_id', $this->cxp->id));
         $this->assertTrue($doc->asiento->detalle->contains('cuenta_id', $this->banco->id));
+    }
+
+    public function test_pago_con_retencion_acredita_banco_neto_y_retencion(): void
+    {
+        $factura = $this->crearFactura(100, 7); // total 107
+
+        $this->actuar()->post(route('admin.cxp.pagos.store'), [
+            'proveedor_id' => $this->proveedor->id,
+            'fecha' => '2026-06-13',
+            'cuenta_pago_id' => $this->banco->id,
+            'retencion' => 7,
+            'retencion_cuenta_id' => $this->retencion->id,
+            'aplicaciones' => [['documento_id' => $factura->id, 'monto' => 107]],
+        ])->assertSessionHasNoErrors();
+
+        $factura->refresh();
+        $this->assertSame('PAGADO', $factura->estado);
+        $this->assertSame('0.00', (string) $factura->saldo);
+
+        $pago = CxpDocumento::where('tipo_documento', 'PAGO')->firstOrFail();
+        $this->assertSame('7.00', (string) $pago->retencion);
+        $this->assertSame('107.00', (string) $pago->total);
+
+        // Dr CXP 107; Cr Banco 100 (neto); Cr Retención 7.
+        $det = $pago->asiento->detalle;
+        $this->assertCount(3, $det);
+        $this->assertSame($this->cxp->id, $det[0]->cuenta_id);
+        $this->assertSame('107.00', (string) $det[0]->debito);
+        $this->assertSame($this->banco->id, $det[1]->cuenta_id);
+        $this->assertSame('100.00', (string) $det[1]->credito);
+        $this->assertSame($this->retencion->id, $det[2]->cuenta_id);
+        $this->assertSame('7.00', (string) $det[2]->credito);
+    }
+
+    public function test_retencion_no_puede_exceder_el_pago(): void
+    {
+        $factura = $this->crearFactura(100, 7);
+
+        $this->actuar()->post(route('admin.cxp.pagos.store'), [
+            'proveedor_id' => $this->proveedor->id,
+            'fecha' => '2026-06-13',
+            'cuenta_pago_id' => $this->banco->id,
+            'retencion' => 200,
+            'retencion_cuenta_id' => $this->retencion->id,
+            'aplicaciones' => [['documento_id' => $factura->id, 'monto' => 107]],
+        ])->assertSessionHasErrors('retencion');
+
+        $this->assertSame(0, CxpDocumento::where('tipo_documento', 'PAGO')->count());
+    }
+
+    public function test_anticipo_registra_asiento_y_queda_disponible(): void
+    {
+        $this->actuar()->post(route('admin.cxp.anticipos.store'), [
+            'proveedor_id' => $this->proveedor->id,
+            'fecha' => '2026-06-12',
+            'cuenta_pago_id' => $this->banco->id,
+            'monto' => 500,
+        ])->assertSessionHasNoErrors();
+
+        $anticipo = CxpDocumento::where('tipo_documento', 'ANTICIPO')->firstOrFail();
+        $this->assertSame('AN-000001', $anticipo->numero);
+        $this->assertSame('PENDIENTE', $anticipo->estado);
+        $this->assertSame('500.00', (string) $anticipo->saldo);
+
+        // Dr Anticipos a proveedores 500; Cr Banco 500.
+        $det = $anticipo->asiento->detalle;
+        $this->assertSame('POSTEADO', $anticipo->asiento->estado);
+        $this->assertCount(2, $det);
+        $this->assertSame($this->anticipo->id, $det[0]->cuenta_id);
+        $this->assertSame('500.00', (string) $det[0]->debito);
+        $this->assertSame($this->banco->id, $det[1]->cuenta_id);
+        $this->assertSame('500.00', (string) $det[1]->credito);
+    }
+
+    public function test_anticipo_se_aplica_a_factura_y_reduce_saldos(): void
+    {
+        $factura = $this->crearFactura(100, 7); // saldo 107
+        $anticipo = $this->registrarAnticipo(500);
+
+        $this->actuar()->post(route('admin.cxp.anticipos.aplicar', $anticipo), [
+            'fecha' => '2026-06-13',
+            'aplicaciones' => [['documento_id' => $factura->id, 'monto' => 107]],
+        ])->assertSessionHasNoErrors();
+
+        $factura->refresh();
+        $anticipo->refresh();
+
+        $this->assertSame('PAGADO', $factura->estado);
+        $this->assertSame('0.00', (string) $factura->saldo);
+        $this->assertSame('PARCIAL', $anticipo->estado);
+        $this->assertSame('393.00', (string) $anticipo->saldo);
+
+        // La aplicación postea Dr CXP / Cr Anticipos por 107.
+        $aplicacion = \App\Models\CxpAplicacion::where('documento_origen_id', $anticipo->id)->firstOrFail();
+        $this->assertNotNull($aplicacion->asiento_id);
+        $asiento = \App\Models\Asiento::find($aplicacion->asiento_id);
+        $this->assertSame($this->cxp->id, $asiento->detalle[0]->cuenta_id);
+        $this->assertSame('107.00', (string) $asiento->detalle[0]->debito);
+        $this->assertSame($this->anticipo->id, $asiento->detalle[1]->cuenta_id);
+        $this->assertSame('107.00', (string) $asiento->detalle[1]->credito);
+    }
+
+    public function test_anticipo_aplicado_no_excede_disponible(): void
+    {
+        $factura = $this->crearFactura(1000, 0); // saldo 1000
+        $anticipo = $this->registrarAnticipo(300);
+
+        $this->actuar()->post(route('admin.cxp.anticipos.aplicar', $anticipo), [
+            'fecha' => '2026-06-13',
+            'aplicaciones' => [['documento_id' => $factura->id, 'monto' => 500]],
+        ])->assertSessionHasErrors('aplicaciones');
+
+        $this->assertSame('300.00', (string) $anticipo->fresh()->saldo);
+        $this->assertSame('1000.00', (string) $factura->fresh()->saldo);
+    }
+
+    public function test_anular_anticipo_revierte_aplicaciones(): void
+    {
+        $factura = $this->crearFactura(100, 7);
+        $anticipo = $this->registrarAnticipo(500);
+
+        $this->actuar()->post(route('admin.cxp.anticipos.aplicar', $anticipo), [
+            'fecha' => '2026-06-13',
+            'aplicaciones' => [['documento_id' => $factura->id, 'monto' => 107]],
+        ])->assertSessionHasNoErrors();
+
+        $this->actuar()->post(route('admin.cxp.anticipos.anular', $anticipo))
+            ->assertSessionHasNoErrors();
+
+        $factura->refresh();
+        $anticipo->refresh();
+
+        $this->assertSame('ANULADO', $anticipo->estado);
+        $this->assertSame('PENDIENTE', $factura->estado);
+        $this->assertSame('107.00', (string) $factura->saldo);
+        $this->assertSame('ANULADO', $anticipo->asiento->fresh()->estado);
+        $this->assertSame(0, \App\Models\CxpAplicacion::where('documento_origen_id', $anticipo->id)->count());
+    }
+
+    private function registrarAnticipo(float $monto): CxpDocumento
+    {
+        $this->actuar()->post(route('admin.cxp.anticipos.store'), [
+            'proveedor_id' => $this->proveedor->id,
+            'fecha' => '2026-06-12',
+            'cuenta_pago_id' => $this->banco->id,
+            'monto' => $monto,
+        ])->assertSessionHasNoErrors();
+
+        return CxpDocumento::where('tipo_documento', 'ANTICIPO')->latest('id')->firstOrFail();
     }
 }

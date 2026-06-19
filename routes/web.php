@@ -14,6 +14,7 @@ use App\Http\Controllers\Admin\CxcCobroController;
 use App\Http\Controllers\Admin\CxcEstadoCuentaController;
 use App\Http\Controllers\Admin\CxcFacturaController;
 use App\Http\Controllers\Admin\CxcNotaController;
+use App\Http\Controllers\Admin\CxpAnticipoController;
 use App\Http\Controllers\Admin\CxpAntiguedadController;
 use App\Http\Controllers\Admin\CxpEstadoCuentaController;
 use App\Http\Controllers\Admin\CxpFacturaController;
@@ -226,6 +227,8 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::get('cxp/facturas/{documento}', [CxpFacturaController::class, 'show'])->whereNumber('documento')->name('cxp.facturas.show');
         Route::get('cxp/pagos', [CxpPagoController::class, 'index'])->name('cxp.pagos.index');
         Route::get('cxp/pagos/{documento}', [CxpPagoController::class, 'show'])->whereNumber('documento')->name('cxp.pagos.show');
+        Route::get('cxp/anticipos', [CxpAnticipoController::class, 'index'])->name('cxp.anticipos.index');
+        Route::get('cxp/anticipos/{documento}', [CxpAnticipoController::class, 'show'])->whereNumber('documento')->name('cxp.anticipos.show');
         Route::get('cxp/antiguedad', CxpAntiguedadController::class)->name('cxp.antiguedad');
         Route::get('cxp/estado-cuenta', CxpEstadoCuentaController::class)->name('cxp.estado-cuenta');
         Route::get('cxp/notas', [CxpNotaController::class, 'index'])->name('cxp.notas.index');
@@ -251,6 +254,10 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::get('cxp/pagos/nuevo', [CxpPagoController::class, 'create'])->name('cxp.pagos.create');
         Route::post('cxp/pagos', [CxpPagoController::class, 'store'])->name('cxp.pagos.store');
         Route::post('cxp/pagos/{documento}/anular', [CxpPagoController::class, 'anular'])->whereNumber('documento')->name('cxp.pagos.anular');
+        Route::get('cxp/anticipos/nuevo', [CxpAnticipoController::class, 'create'])->name('cxp.anticipos.create');
+        Route::post('cxp/anticipos', [CxpAnticipoController::class, 'store'])->name('cxp.anticipos.store');
+        Route::post('cxp/anticipos/{documento}/aplicar', [CxpAnticipoController::class, 'aplicar'])->whereNumber('documento')->name('cxp.anticipos.aplicar');
+        Route::post('cxp/anticipos/{documento}/anular', [CxpAnticipoController::class, 'anular'])->whereNumber('documento')->name('cxp.anticipos.anular');
     });
 
     Route::middleware('permission:reportes.ver')->group(function () {

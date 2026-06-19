@@ -79,6 +79,7 @@
                 ['label' => 'Proveedores', 'href' => route('admin.contactos.index', ['tipo' => 'PROVEEDOR']), 'active' => request()->routeIs('admin.contactos.*') && request('tipo') === 'PROVEEDOR', 'show' => $can('contactos.ver')],
                 ['label' => 'Facturas por pagar', 'href' => route('admin.cxp.facturas.index'), 'active' => request()->routeIs('admin.cxp.facturas.*'), 'show' => $can('cxp.ver')],
                 ['label' => 'Pagos', 'href' => route('admin.cxp.pagos.index'), 'active' => request()->routeIs('admin.cxp.pagos.*'), 'show' => $can('cxp.ver')],
+                ['label' => 'Anticipos', 'href' => route('admin.cxp.anticipos.index'), 'active' => request()->routeIs('admin.cxp.anticipos.*'), 'show' => $can('cxp.ver')],
                 ['label' => 'Notas crédito/débito', 'href' => route('admin.cxp.notas.index'), 'active' => request()->routeIs('admin.cxp.notas.*'), 'show' => $can('cxp.ver')],
                 ['label' => 'Antigüedad de saldos', 'href' => route('admin.cxp.antiguedad'), 'active' => request()->routeIs('admin.cxp.antiguedad'), 'show' => $can('cxp.ver')],
                 ['label' => 'Estado de cuenta', 'href' => route('admin.cxp.estado-cuenta'), 'active' => request()->routeIs('admin.cxp.estado-cuenta'), 'show' => $can('cxp.ver')],

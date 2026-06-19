@@ -107,6 +107,7 @@ class CxpPagoController extends Controller
                 ->get(['id', 'codigo', 'nombre']),
             'cuentaBancoId' => CuentaDefault::idPara($companiaId, 'BANCO_DEFAULT')
                 ?? CuentaDefault::idPara($companiaId, 'CAJA_DEFAULT'),
+            'cuentaRetencionId' => CuentaDefault::idPara($companiaId, 'RETENCION_CXP'),
         ]);
     }
 
@@ -126,6 +127,12 @@ class CxpPagoController extends Controller
                 Rule::exists('cgl_cuentas', 'id')->where('compania_id', $companiaId),
             ],
             'referencia' => ['nullable', 'string', 'max:100'],
+            'retencion' => ['nullable', 'numeric', 'gte:0', 'max:999999999'],
+            'retencion_cuenta_id' => [
+                Rule::requiredIf(fn () => (float) $request->input('retencion', 0) > 0),
+                'nullable', 'integer',
+                Rule::exists('cgl_cuentas', 'id')->where('compania_id', $companiaId),
+            ],
             'aplicaciones' => ['required', 'array', 'min:1'],
             'aplicaciones.*.documento_id' => ['required', 'integer'],
             'aplicaciones.*.monto' => ['nullable', 'numeric', 'gte:0', 'max:999999999'],
@@ -171,8 +178,19 @@ class CxpPagoController extends Controller
         }
 
         $total = round($aplicar->sum('monto'), 2);
+        $retencion = round((float) ($data['retencion'] ?? 0), 2);
 
-        $pago = DB::transaction(function () use ($companiaId, $data, $aplicar, $facturas, $total, $cuentaCxpId, $usuario) {
+        // La retención (ITBMS/ISR) se descuenta del efectivo entregado y se
+        // traslada como pasivo a la DGI; no puede superar el monto pagado.
+        if ($retencion > $total + 0.004) {
+            throw ValidationException::withMessages([
+                'retencion' => 'La retención (B/. '.number_format($retencion, 2).') no puede exceder el total a pagar (B/. '.number_format($total, 2).').',
+            ]);
+        }
+
+        $efectivo = round($total - $retencion, 2);
+
+        $pago = DB::transaction(function () use ($companiaId, $data, $aplicar, $facturas, $total, $retencion, $efectivo, $cuentaCxpId, $usuario) {
             $pago = CxpDocumento::create([
                 'compania_id' => $companiaId,
                 'proveedor_id' => $data['proveedor_id'],
@@ -181,6 +199,7 @@ class CxpPagoController extends Controller
                 'fecha' => $data['fecha'],
                 'subtotal' => $total,
                 'impuesto' => 0,
+                'retencion' => $retencion,
                 'total' => $total,
                 'saldo' => 0,
                 'estado' => CxpDocumento::ESTADO_PAGADO,
@@ -206,26 +225,39 @@ class CxpPagoController extends Controller
                 $factura->save();
             }
 
+            // Dr CXP (total liquidado); Cr Banco (efectivo) [+ Cr Retención DGI].
+            $lineasAsiento = [
+                [
+                    'cuenta_id' => $cuentaCxpId,
+                    'contacto_id' => (int) $data['proveedor_id'],
+                    'descripcion' => "Pago {$pago->numero}",
+                    'debito' => $total,
+                    'credito' => 0,
+                ],
+                [
+                    'cuenta_id' => (int) $data['cuenta_pago_id'],
+                    'descripcion' => "Pago {$pago->numero}",
+                    'debito' => 0,
+                    'credito' => $efectivo,
+                ],
+            ];
+
+            if ($retencion > 0) {
+                $lineasAsiento[] = [
+                    'cuenta_id' => (int) $data['retencion_cuenta_id'],
+                    'contacto_id' => (int) $data['proveedor_id'],
+                    'descripcion' => "Retención pago {$pago->numero}",
+                    'debito' => 0,
+                    'credito' => $retencion,
+                ];
+            }
+
             $asiento = app(AsientoAutomatico::class)->postear(
                 $companiaId,
                 $data['fecha'],
                 "Pago {$pago->numero} — ".$pago->proveedor->nombre,
                 $data['referencia'] ?? $pago->numero,
-                [
-                    [
-                        'cuenta_id' => $cuentaCxpId,
-                        'contacto_id' => (int) $data['proveedor_id'],
-                        'descripcion' => "Pago {$pago->numero}",
-                        'debito' => $total,
-                        'credito' => 0,
-                    ],
-                    [
-                        'cuenta_id' => (int) $data['cuenta_pago_id'],
-                        'descripcion' => "Pago {$pago->numero}",
-                        'debito' => 0,
-                        'credito' => $total,
-                    ],
-                ],
+                $lineasAsiento,
                 'CXP',
                 'cxp_documentos',
                 $pago->id,
@@ -237,8 +269,12 @@ class CxpPagoController extends Controller
             return $pago;
         });
 
+        $nota = $retencion > 0
+            ? ' (efectivo B/. '.number_format($efectivo, 2).' + retención B/. '.number_format($retencion, 2).')'
+            : '';
+
         return redirect()->route('admin.cxp.pagos.show', $pago)
-            ->with('status', "Pago {$pago->numero} registrado por B/. ".number_format($total, 2).'.');
+            ->with('status', "Pago {$pago->numero} registrado por B/. ".number_format($total, 2).$nota.'.');
     }
 
     public function show(Request $request, CxpDocumento $documento): View

@@ -16,6 +16,7 @@ class CxpAplicacion extends Model
         'documento_destino_id',
         'fecha',
         'monto_aplicado',
+        'asiento_id',
         'created_by',
         'updated_by',
     ];

@@ -49,9 +49,19 @@
                             </dd>
                         </div>
                         <div>
-                            <dt class="text-gray-500">Monto</dt>
+                            <dt class="text-gray-500">Monto liquidado</dt>
                             <dd class="text-lg font-bold text-[#0d2d5e]">B/. {{ number_format((float) $pago->total, 2) }}</dd>
                         </div>
+                        @if ((float) $pago->retencion > 0)
+                            <div>
+                                <dt class="text-gray-500">Retención</dt>
+                                <dd class="font-medium text-amber-700">B/. {{ number_format((float) $pago->retencion, 2) }}</dd>
+                            </div>
+                            <div>
+                                <dt class="text-gray-500">Efectivo pagado</dt>
+                                <dd class="font-medium text-gray-900">B/. {{ number_format((float) $pago->total - (float) $pago->retencion, 2) }}</dd>
+                            </div>
+                        @endif
                     </dl>
 
                     @can('cxp.gestionar')

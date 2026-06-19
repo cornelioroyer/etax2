@@ -58,6 +58,7 @@ class CxpDocumento extends Model
         'subtotal',
         'descuento',
         'impuesto',
+        'retencion',
         'total',
         'saldo',
         'estado',
@@ -75,6 +76,7 @@ class CxpDocumento extends Model
             'subtotal' => 'decimal:2',
             'descuento' => 'decimal:2',
             'impuesto' => 'decimal:2',
+            'retencion' => 'decimal:2',
             'total' => 'decimal:2',
             'saldo' => 'decimal:2',
         ];
@@ -212,6 +214,27 @@ class CxpDocumento extends Model
             ->max('numero');
 
         $siguiente = $ultimo ? ((int) substr($ultimo, 3)) + 1 : 1;
+
+        return $prefijo.str_pad((string) $siguiente, 6, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Siguiente número correlativo de un tipo con prefijo propio (AN-, etc.) en
+     * la compañía, derivando el prefijo del maestro. Llamar dentro de una
+     * transacción.
+     */
+    public static function siguienteNumeroTipo(int $companiaId, string $tipo): string
+    {
+        $prefijo = static::prefijoDe($tipo) ?? '';
+
+        self::bloquearNumeracion($companiaId.'-'.$prefijo);
+
+        $ultimo = self::where('compania_id', $companiaId)
+            ->where('tipo_documento', $tipo)
+            ->where('numero', 'like', $prefijo.'%')
+            ->max('numero');
+
+        $siguiente = $ultimo ? ((int) substr($ultimo, strlen($prefijo))) + 1 : 1;
 
         return $prefijo.str_pad((string) $siguiente, 6, '0', STR_PAD_LEFT);
     }
