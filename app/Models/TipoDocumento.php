@@ -59,6 +59,10 @@ class TipoDocumento extends Model
             'FACTURA'      => ['signo' => 1,  'naturaleza' => 'CARGO', 'cobrable' => true,  'prefijo' => null,  'reversa' => false, 'descripcion' => 'Factura'],
             'NOTA_DEBITO'  => ['signo' => 1,  'naturaleza' => 'CARGO', 'cobrable' => true,  'prefijo' => 'ND-', 'reversa' => false, 'descripcion' => 'Nota de débito'],
             'NOTA_CREDITO' => ['signo' => -1, 'naturaleza' => 'ABONO', 'cobrable' => false, 'prefijo' => 'NC-', 'reversa' => true,  'descripcion' => 'Nota de crédito'],
+            'REEMBOLSO'    => ['signo' => 1,  'naturaleza' => 'CARGO', 'cobrable' => true,  'prefijo' => 'RE-', 'reversa' => false, 'descripcion' => 'Reembolso de compra'],
+            'IMPORTACION'  => ['signo' => 1,  'naturaleza' => 'CARGO', 'cobrable' => true,  'prefijo' => 'IM-', 'reversa' => false, 'descripcion' => 'Factura de importación'],
+            'ANTICIPO'     => ['signo' => -1, 'naturaleza' => 'ABONO', 'cobrable' => false, 'prefijo' => 'AN-', 'reversa' => false, 'descripcion' => 'Anticipo a proveedor'],
+            'RETENCION'    => ['signo' => -1, 'naturaleza' => 'ABONO', 'cobrable' => false, 'prefijo' => 'RT-', 'reversa' => false, 'descripcion' => 'Retención a proveedor'],
             'PAGO'         => ['signo' => -1, 'naturaleza' => 'ABONO', 'cobrable' => false, 'prefijo' => 'PG-', 'reversa' => false, 'descripcion' => 'Comprobante de pago'],
         ],
     ];

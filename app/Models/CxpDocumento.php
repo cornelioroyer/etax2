@@ -28,6 +28,14 @@ class CxpDocumento extends Model
 
     public const TIPO_NOTA_DEBITO = 'NOTA_DEBITO';
 
+    public const TIPO_REEMBOLSO = 'REEMBOLSO';
+
+    public const TIPO_IMPORTACION = 'IMPORTACION';
+
+    public const TIPO_ANTICIPO = 'ANTICIPO';
+
+    public const TIPO_RETENCION = 'RETENCION';
+
     public const ESTADO_BORRADOR = 'BORRADOR';
 
     public const ESTADO_PENDIENTE = 'PENDIENTE';
