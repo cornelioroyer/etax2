@@ -90,6 +90,14 @@ class CxpFacturaController extends Controller
             }
         }
 
+        // Totales de la columna sobre TODO el conjunto filtrado (no solo la
+        // página): mismo signo que se muestra (notas de crédito en negativo).
+        $totales = (clone $consulta)->toBase()->reorder()->selectRaw(
+            'COALESCE(SUM(CASE WHEN tipo_documento = ? THEN -total ELSE total END), 0) AS total, '.
+            'COALESCE(SUM(CASE WHEN tipo_documento = ? THEN -saldo ELSE saldo END), 0) AS saldo',
+            [CxpDocumento::TIPO_NOTA_CREDITO, CxpDocumento::TIPO_NOTA_CREDITO]
+        )->first();
+
         $facturas = $consulta->paginate(25)->withQueryString();
 
         // Saldo neto: facturas y notas de débito suman; notas de crédito restan.
@@ -104,6 +112,7 @@ class CxpFacturaController extends Controller
             'filtros' => $filtros,
             'proveedores' => $this->proveedores($companiaId),
             'saldoTotal' => $saldoTotal,
+            'totales' => $totales,
         ]);
     }
 

@@ -146,6 +146,17 @@
                                 </tr>
                             @endforelse
                         </tbody>
+                        @if ($facturas->isNotEmpty())
+                            <tfoot class="border-t-2 border-gray-200 bg-gray-50 font-semibold text-gray-800">
+                                <tr>
+                                    <td class="px-4 py-3" colspan="4">Total ({{ $facturas->total() }} {{ \Illuminate\Support\Str::plural('documento', $facturas->total()) }})</td>
+                                    <td class="px-4 py-3 hidden md:table-cell"></td>
+                                    <td class="px-4 py-3 text-right whitespace-nowrap">B/. {{ number_format((float) $totales->total, 2) }}</td>
+                                    <td class="px-4 py-3 text-right whitespace-nowrap">B/. {{ number_format((float) $totales->saldo, 2) }}</td>
+                                    <td class="px-4 py-3"></td>
+                                </tr>
+                            </tfoot>
+                        @endif
                     </table>
                 </div>
                 @if ($facturas->hasPages())
