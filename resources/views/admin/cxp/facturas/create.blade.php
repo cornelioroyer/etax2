@@ -22,11 +22,13 @@
                         <select id="tipo_documento" name="tipo_documento" x-model="tipo"
                                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                             <option value="FACTURA">Factura de compra</option>
+                            <option value="IMPORTACION">Factura de importación</option>
+                            <option value="REEMBOLSO">Reembolso de compra</option>
                             <option value="NOTA_DEBITO">Nota de débito</option>
                             <option value="NOTA_CREDITO">Nota de crédito</option>
                         </select>
                         <p class="mt-1 text-xs text-gray-500"
-                           x-text="tipo === 'NOTA_CREDITO' ? 'Reduce lo que debes al proveedor (abono).' : (tipo === 'NOTA_DEBITO' ? 'Aumenta lo que debes al proveedor (cargo).' : 'Compra normal al proveedor.')"></p>
+                           x-text="{ NOTA_CREDITO: 'Reduce lo que debes al proveedor (abono).', NOTA_DEBITO: 'Aumenta lo que debes al proveedor (cargo).', IMPORTACION: 'Compra de importación; genera deuda al proveedor como una factura.', REEMBOLSO: 'Gasto reembolsable facturado por el proveedor (cargo).' }[tipo] ?? 'Compra normal al proveedor.'"></p>
                         <x-input-error :messages="$errors->get('tipo_documento')" class="mt-1" />
                     </div>
 
@@ -65,8 +67,8 @@
                         </div>
                     </div>
 
-                    {{-- Forma de pago (solo facturas; las notas van a crédito) --}}
-                    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-4" x-show="tipo === 'FACTURA'" x-cloak>
+                    {{-- Forma de pago (solo documentos tipo factura; las notas van a crédito) --}}
+                    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-4" x-show="esContadoPosible()" x-cloak>
                         <div>
                             <x-input-label for="forma_pago" value="Forma de pago *" />
                             <select id="forma_pago" name="forma_pago" x-model="formaPago"
@@ -178,12 +180,12 @@
                     <div class="mt-6 flex flex-wrap items-center gap-3 border-t border-gray-100 pt-4">
                         <button type="submit"
                                 class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
-                                x-text="(tipo === 'FACTURA' && formaPago === 'CONTADO') ? 'Registrar compra al contado' : 'Guardar borrador'">
+                                x-text="(esContadoPosible() && formaPago === 'CONTADO') ? 'Registrar compra al contado' : 'Guardar borrador'">
                             Guardar borrador
                         </button>
                         <a href="{{ route('admin.cxp.facturas.index') }}" class="text-sm text-gray-600 hover:text-gray-900">Cancelar</a>
                         <p class="w-full text-xs text-gray-500 sm:w-auto sm:ml-auto"
-                           x-text="(tipo === 'FACTURA' && formaPago === 'CONTADO') ? 'La compra se contabiliza de inmediato y queda pagada.' : 'Se guarda como borrador editable; el asiento contable se genera al contabilizarlo.'">Se guarda como borrador editable; el asiento contable se genera al contabilizarlo.</p>
+                           x-text="(esContadoPosible() && formaPago === 'CONTADO') ? 'La compra se contabiliza de inmediato y queda pagada.' : 'Se guarda como borrador editable; el asiento contable se genera al contabilizarlo.'">Se guarda como borrador editable; el asiento contable se genera al contabilizarlo.</p>
                     </div>
                 </form>
             </div>
@@ -199,6 +201,7 @@
                 tipo: tipoInicial || 'FACTURA',
                 formaPago: formaPagoInicial || 'CREDITO',
                 cuentaPago: cuentaPagoInicial || '',
+                esContadoPosible() { return ['FACTURA', 'REEMBOLSO', 'IMPORTACION'].includes(this.tipo); },
                 nueva() { return { descripcion: '', cantidad: 1, precio_unitario: 0, tasa_itbms: 7, cuenta_id: this.cuentaActual || '' }; },
                 lineas: lineasIniciales.length
                     ? lineasIniciales.map(l => ({

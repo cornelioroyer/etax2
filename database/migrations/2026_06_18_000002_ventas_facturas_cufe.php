@@ -21,7 +21,11 @@ return new class extends Migration
         }
 
         // Backfill: traer el CUFE que las importaciones previas dejaron en extra.
-        DB::statement("UPDATE ventas_facturas SET cufe = extra->>'cufe' WHERE cufe IS NULL AND extra->>'cufe' IS NOT NULL");
+        // El operador JSON `->>'` es de PostgreSQL; en SQLite (tests) no existe y
+        // además no hay datos previos que rellenar, así que se omite.
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            DB::statement("UPDATE ventas_facturas SET cufe = extra->>'cufe' WHERE cufe IS NULL AND extra->>'cufe' IS NOT NULL");
+        }
     }
 
     public function down(): void

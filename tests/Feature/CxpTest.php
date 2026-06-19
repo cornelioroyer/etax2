@@ -351,4 +351,72 @@ class CxpTest extends TestCase
         $this->assertDatabaseMissing('cxp_documentos', ['id' => $borrador->id]);
         $this->assertDatabaseMissing('cxp_documentos_detalle', ['documento_id' => $borrador->id]);
     }
+
+    /**
+     * Reembolso e importación son cargos +1 cobrables: contabilizan igual que una
+     * factura (Dr contrapartida + Dr ITBMS / Cr CXP) y dejan saldo pagable.
+     */
+    public function test_reembolso_e_importacion_se_contabilizan_como_factura(): void
+    {
+        foreach ([CxpDocumento::TIPO_REEMBOLSO, CxpDocumento::TIPO_IMPORTACION] as $i => $tipo) {
+            $this->actuar()->post(route('admin.cxp.facturas.store'), [
+                'tipo_documento' => $tipo,
+                'proveedor_id' => $this->proveedor->id,
+                'numero' => 'D-'.$i,
+                'fecha' => '2026-06-12',
+                'fecha_vencimiento' => '2026-07-12',
+                'lineas' => [
+                    ['descripcion' => 'Linea', 'cantidad' => 1, 'precio_unitario' => 100, 'tasa_itbms' => 7, 'cuenta_id' => $this->gasto->id],
+                ],
+            ])->assertSessionHasNoErrors();
+
+            $doc = CxpDocumento::where('tipo_documento', $tipo)->latest('id')->firstOrFail();
+            $this->assertSame('BORRADOR', $doc->estado);
+
+            $this->actuar()->post(route('admin.cxp.facturas.contabilizar', $doc))
+                ->assertSessionHasNoErrors();
+
+            $doc->refresh();
+            $this->assertSame('PENDIENTE', $doc->estado);
+            $this->assertSame('107.00', (string) $doc->saldo);
+
+            $asiento = $doc->asiento;
+            $this->assertSame('POSTEADO', $asiento->estado);
+
+            $lineas = $asiento->detalle;
+            $this->assertCount(3, $lineas);
+            $this->assertSame($this->gasto->id, $lineas[0]->cuenta_id);
+            $this->assertSame('100.00', (string) $lineas[0]->debito);
+            $this->assertSame($this->itbmsCredito->id, $lineas[1]->cuenta_id);
+            $this->assertSame('7.00', (string) $lineas[1]->debito);
+            $this->assertSame($this->cxp->id, $lineas[2]->cuenta_id);
+            $this->assertSame('107.00', (string) $lineas[2]->credito);
+
+            // Genera saldo pagable: aparece entre los tipos con saldo del submayor.
+            $this->assertContains($tipo, CxpDocumento::tiposPagables());
+        }
+    }
+
+    public function test_reembolso_al_contado_postea_directo_a_banco(): void
+    {
+        $this->actuar()->post(route('admin.cxp.facturas.store'), [
+            'tipo_documento' => CxpDocumento::TIPO_REEMBOLSO,
+            'proveedor_id' => $this->proveedor->id,
+            'numero' => 'RE-CTDO',
+            'fecha' => '2026-06-12',
+            'forma_pago' => 'CONTADO',
+            'cuenta_pago_id' => $this->banco->id,
+            'lineas' => [
+                ['descripcion' => 'Reembolso contado', 'cantidad' => 1, 'precio_unitario' => 100, 'tasa_itbms' => 7, 'cuenta_id' => $this->gasto->id],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $doc = CxpDocumento::where('tipo_documento', CxpDocumento::TIPO_REEMBOLSO)->latest('id')->firstOrFail();
+
+        $this->assertSame('PAGADO', $doc->estado);
+        $this->assertSame('0.00', (string) $doc->saldo);
+        // Pago directo: no toca CXP, sí toca banco.
+        $this->assertFalse($doc->asiento->detalle->contains('cuenta_id', $this->cxp->id));
+        $this->assertTrue($doc->asiento->detalle->contains('cuenta_id', $this->banco->id));
+    }
 }

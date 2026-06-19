@@ -1,9 +1,5 @@
 @php
-    $tipoLabel = match ($factura->tipo_documento) {
-        \App\Models\CxpDocumento::TIPO_NOTA_CREDITO => 'Nota de crédito',
-        \App\Models\CxpDocumento::TIPO_NOTA_DEBITO => 'Nota de débito',
-        default => 'Factura',
-    };
+    $tipoLabel = $factura->etiquetaTipo();
     $tipoLabelLow = mb_strtolower($tipoLabel);
 @endphp
 <x-app-layout>

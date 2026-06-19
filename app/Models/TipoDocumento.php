@@ -116,6 +116,12 @@ class TipoDocumento extends Model
         return (bool) static::atributo($auxiliar, $tipo, 'cobrable', false);
     }
 
+    /** Descripción del tipo según el maestro (fallback: el propio código). */
+    public static function descripcion(string $auxiliar, string $tipo): string
+    {
+        return (string) static::atributo($auxiliar, $tipo, 'descripcion', $tipo);
+    }
+
     /** Prefijo de numeración del tipo (null = sin serie propia). */
     public static function prefijo(string $auxiliar, string $tipo): ?string
     {

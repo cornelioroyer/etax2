@@ -15,6 +15,7 @@ use App\Models\CxpDocumento;
 use App\Models\CxpDocumentoDetalle;
 use App\Models\CxpImportacion;
 use App\Models\TipoContacto;
+use App\Models\TipoDocumento;
 use App\Services\AsientoAutomatico;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -36,7 +37,7 @@ class CxpFacturaController extends Controller
         $companiaId = $this->companiaActivaId($request);
 
         $filtros = $request->validate([
-            'tipo' => ['nullable', Rule::in([CxpDocumento::TIPO_FACTURA, CxpDocumento::TIPO_NOTA_CREDITO, CxpDocumento::TIPO_NOTA_DEBITO])],
+            'tipo' => ['nullable', Rule::in(CxpDocumento::tiposModulo())],
             'estado' => ['nullable', Rule::in(['BORRADOR', 'PENDIENTE', 'PARCIAL', 'PAGADO', 'ANULADO'])],
             'proveedor_id' => ['nullable', 'integer'],
             'desde' => ['nullable', 'date'],
@@ -47,11 +48,7 @@ class CxpFacturaController extends Controller
         $consulta = CxpDocumento::query()
             ->with('proveedor')
             ->where('compania_id', $companiaId)
-            ->whereIn('tipo_documento', [
-                CxpDocumento::TIPO_FACTURA,
-                CxpDocumento::TIPO_NOTA_CREDITO,
-                CxpDocumento::TIPO_NOTA_DEBITO,
-            ])
+            ->whereIn('tipo_documento', CxpDocumento::tiposModulo())
             ->when($filtros['tipo'] ?? null, fn ($q, $tipo) => $q->where('tipo_documento', $tipo))
             ->when($filtros['estado'] ?? null, fn ($q, $estado) => $q->where('estado', $estado))
             ->when($filtros['proveedor_id'] ?? null, fn ($q, $proveedor) => $q->where('proveedor_id', $proveedor))
@@ -97,11 +94,7 @@ class CxpFacturaController extends Controller
 
         // Saldo neto: facturas y notas de débito suman; notas de crédito restan.
         $saldoTotal = (float) CxpDocumento::where('compania_id', $companiaId)
-            ->whereIn('tipo_documento', [
-                CxpDocumento::TIPO_FACTURA,
-                CxpDocumento::TIPO_NOTA_CREDITO,
-                CxpDocumento::TIPO_NOTA_DEBITO,
-            ])
+            ->whereIn('tipo_documento', CxpDocumento::tiposModulo())
             ->whereNotIn('estado', [CxpDocumento::ESTADO_ANULADO, CxpDocumento::ESTADO_BORRADOR])
             ->selectRaw('COALESCE(SUM(CASE WHEN tipo_documento = ? THEN -saldo ELSE saldo END), 0) AS saldo', [CxpDocumento::TIPO_NOTA_CREDITO])
             ->value('saldo');
@@ -142,9 +135,11 @@ class CxpFacturaController extends Controller
 
         $tipo = $data['tipo_documento'];
 
-        // Solo las facturas se pueden registrar al contado; las notas de crédito
-        // y débito siempre nacen como borrador a crédito y se contabilizan aparte.
-        $contado = $tipo === CxpDocumento::TIPO_FACTURA && (($data['forma_pago'] ?? 'CREDITO') === 'CONTADO');
+        // Solo los documentos tipo factura (factura/reembolso/importación) se
+        // pueden registrar al contado; las notas de crédito y débito siempre
+        // nacen como borrador a crédito y se contabilizan aparte.
+        $contado = in_array($tipo, CxpDocumento::tiposFacturaCargo(), true)
+            && (($data['forma_pago'] ?? 'CREDITO') === 'CONTADO');
 
         $factura = DB::transaction(function () use ($companiaId, $data, $tipo, $lineas, $subtotal, $impuesto, $total, $usuario, $contado) {
             $factura = CxpDocumento::create([
@@ -176,11 +171,7 @@ class CxpFacturaController extends Controller
             return $factura;
         });
 
-        $etiqueta = match ($tipo) {
-            CxpDocumento::TIPO_NOTA_CREDITO => 'Nota de crédito',
-            CxpDocumento::TIPO_NOTA_DEBITO => 'Nota de débito',
-            default => 'Factura',
-        };
+        $etiqueta = TipoDocumento::descripcion(TipoDocumento::AUX_CXP, $tipo);
 
         $mensaje = $contado
             ? "Compra al contado {$factura->numero} registrada y contabilizada. Asiento {$factura->fresh()->asiento->numero}."
@@ -302,11 +293,7 @@ class CxpFacturaController extends Controller
     private function datosValidados(Request $request, int $companiaId, ?int $exceptoId = null, ?string $tipoForzado = null): array
     {
         $data = $request->validate([
-            'tipo_documento' => ['nullable', Rule::in([
-                CxpDocumento::TIPO_FACTURA,
-                CxpDocumento::TIPO_NOTA_CREDITO,
-                CxpDocumento::TIPO_NOTA_DEBITO,
-            ])],
+            'tipo_documento' => ['nullable', Rule::in(CxpDocumento::tiposModulo())],
             'proveedor_id' => [
                 'required', 'integer',
                 Rule::exists('contact_contactos', 'id')->where('compania_id', $companiaId),
@@ -344,11 +331,7 @@ class CxpFacturaController extends Controller
             ->exists();
 
         if ($duplicada) {
-            $etiqueta = match ($tipo) {
-                CxpDocumento::TIPO_NOTA_CREDITO => 'la nota de crédito',
-                CxpDocumento::TIPO_NOTA_DEBITO => 'la nota de débito',
-                default => 'la factura',
-            };
+            $etiqueta = mb_strtolower(TipoDocumento::descripcion(TipoDocumento::AUX_CXP, $tipo));
 
             throw ValidationException::withMessages([
                 'numero' => "Ya existe {$etiqueta} {$data['numero']} de ese proveedor.",
@@ -424,13 +407,12 @@ class CxpFacturaController extends Controller
             ]);
         }
 
-        $esCredito = $factura->tipo_documento === CxpDocumento::TIPO_NOTA_CREDITO;
+        // La dirección del asiento depende del SIGNO del tipo en el maestro: los
+        // abonos (NC, -1) invierten la compra; los cargos (factura/ND/reembolso/
+        // importación, +1) la registran como deuda al proveedor.
+        $esCredito = $factura->esAbono();
         $total = round((float) $factura->total, 2);
-        $etiqueta = match ($factura->tipo_documento) {
-            CxpDocumento::TIPO_NOTA_CREDITO => 'Nota de crédito',
-            CxpDocumento::TIPO_NOTA_DEBITO => 'Nota de débito',
-            default => 'Factura',
-        };
+        $etiqueta = $factura->etiquetaTipo();
 
         $lineasAsiento = [];
 
@@ -576,11 +558,7 @@ class CxpFacturaController extends Controller
     private function autorizarFactura(Request $request, CxpDocumento $documento): void
     {
         abort_unless($documento->compania_id === $this->companiaActivaId($request), 404);
-        abort_unless(in_array($documento->tipo_documento, [
-            CxpDocumento::TIPO_FACTURA,
-            CxpDocumento::TIPO_NOTA_CREDITO,
-            CxpDocumento::TIPO_NOTA_DEBITO,
-        ], true), 404);
+        abort_unless(in_array($documento->tipo_documento, CxpDocumento::tiposModulo(), true), 404);
     }
 
     public function importar(Request $request): RedirectResponse

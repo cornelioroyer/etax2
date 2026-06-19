@@ -46,7 +46,7 @@
                         <x-input-label for="tipo" value="Tipo" />
                         <select id="tipo" name="tipo" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                             <option value="">Todos</option>
-                            @foreach ([\App\Models\CxpDocumento::TIPO_FACTURA => 'Factura', \App\Models\CxpDocumento::TIPO_NOTA_DEBITO => 'Nota débito', \App\Models\CxpDocumento::TIPO_NOTA_CREDITO => 'Nota crédito'] as $val => $lbl)
+                            @foreach ([\App\Models\CxpDocumento::TIPO_FACTURA => 'Factura', \App\Models\CxpDocumento::TIPO_IMPORTACION => 'Importación', \App\Models\CxpDocumento::TIPO_REEMBOLSO => 'Reembolso', \App\Models\CxpDocumento::TIPO_NOTA_DEBITO => 'Nota débito', \App\Models\CxpDocumento::TIPO_NOTA_CREDITO => 'Nota crédito'] as $val => $lbl)
                                 <option value="{{ $val }}" @selected(($filtros['tipo'] ?? '') === $val)>{{ $lbl }}</option>
                             @endforeach
                         </select>
@@ -105,6 +105,8 @@
                                 @php
                                     $esNc = $factura->tipo_documento === \App\Models\CxpDocumento::TIPO_NOTA_CREDITO;
                                     $esNd = $factura->tipo_documento === \App\Models\CxpDocumento::TIPO_NOTA_DEBITO;
+                                    $esReembolso = $factura->tipo_documento === \App\Models\CxpDocumento::TIPO_REEMBOLSO;
+                                    $esImportacion = $factura->tipo_documento === \App\Models\CxpDocumento::TIPO_IMPORTACION;
                                     $signo = $esNc ? -1 : 1;
                                 @endphp
                                 <tr class="hover:bg-gray-50">
@@ -116,6 +118,10 @@
                                             <span class="inline-flex rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800">Nota crédito</span>
                                         @elseif ($esNd)
                                             <span class="inline-flex rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">Nota débito</span>
+                                        @elseif ($esImportacion)
+                                            <span class="inline-flex rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-medium text-sky-800">Importación</span>
+                                        @elseif ($esReembolso)
+                                            <span class="inline-flex rounded-full bg-violet-100 px-2.5 py-0.5 text-xs font-medium text-violet-800">Reembolso</span>
                                         @else
                                             <span class="inline-flex rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">Factura</span>
                                         @endif

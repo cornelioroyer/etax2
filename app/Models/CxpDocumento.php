@@ -128,6 +128,41 @@ class CxpDocumento extends Model
         return static::tiposConSaldo();
     }
 
+    /**
+     * Tipos gestionados por el módulo de documentos por pagar (formulario único
+     * "Nuevo documento por pagar" y listado de facturas): factura, reembolso e
+     * importación (cargos +1) más las notas de crédito/débito.
+     *
+     * @return list<string>
+     */
+    public static function tiposModulo(): array
+    {
+        return [
+            self::TIPO_FACTURA,
+            self::TIPO_REEMBOLSO,
+            self::TIPO_IMPORTACION,
+            self::TIPO_NOTA_DEBITO,
+            self::TIPO_NOTA_CREDITO,
+        ];
+    }
+
+    /**
+     * Tipos "tipo factura": cargos +1 cobrables que contabilizan Dr contrapartida
+     * + Dr ITBMS / Cr CXP y pueden registrarse al contado.
+     *
+     * @return list<string>
+     */
+    public static function tiposFacturaCargo(): array
+    {
+        return [self::TIPO_FACTURA, self::TIPO_REEMBOLSO, self::TIPO_IMPORTACION];
+    }
+
+    /** Descripción legible del tipo, tomada del maestro core_tipos_documento. */
+    public function etiquetaTipo(): string
+    {
+        return TipoDocumento::descripcion(static::auxiliarSubmayor(), (string) $this->tipo_documento);
+    }
+
     /** Estado según el saldo (PENDIENTE / PARCIAL / PAGADO). */
     public function estadoSegunSaldo(): string
     {
