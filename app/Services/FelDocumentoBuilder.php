@@ -30,8 +30,11 @@ class FelDocumentoBuilder
      */
     public const TIPOS_DOCUMENTO = [
         '01' => 'Factura de operación interna',
+        '04' => 'Nota de crédito referente a una o varias facturas electrónicas',
+        '05' => 'Nota de débito referente a una o varias facturas electrónicas',
         '06' => 'Nota de crédito genérica',
         '07' => 'Nota de débito genérica',
+        '09' => 'Reembolso',
     ];
 
     /** Formas de pago según catálogo DGI/HKA */

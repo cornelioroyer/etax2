@@ -54,7 +54,6 @@
                 ['label' => 'Cotizaciones', 'href' => route('admin.ventas.cotizaciones.index'), 'active' => request()->routeIs('admin.ventas.cotizaciones.*'), 'show' => $can('ventas.ver')],
                 ['label' => 'Facturas de venta', 'href' => route('admin.ventas.facturas.index'), 'active' => request()->routeIs('admin.ventas.facturas.*'), 'show' => $can('ventas.ver')],
                 ['label' => 'Cobros / Recibos', 'href' => route('admin.ventas.recibos.index'), 'active' => request()->routeIs('admin.ventas.recibos.*'), 'show' => $can('ventas.ver')],
-                ['label' => 'Notas de crédito', 'href' => route('admin.ventas.notas-credito.index'), 'active' => request()->routeIs('admin.ventas.notas-credito.*'), 'show' => $can('ventas.ver')],
                 ['label' => 'Vendedores', 'href' => route('admin.ventas.vendedores.index'), 'active' => request()->routeIs('admin.ventas.vendedores.*'), 'show' => $can('ventas.ver')],
             ],
         ],
@@ -422,8 +421,8 @@
                     @csrf
                     <input type="hidden" name="compania_id" id="input-compania-activa">
                 </form>
-                <div x-data="{ open: false }" class="relative min-w-0">
-                    <button type="button" @click="open = ! open" class="flex items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-slate-100 sm:gap-3">
+                <div x-data="{ open: false, search: '' }" class="relative min-w-0">
+                    <button type="button" @click="open = ! open; $nextTick(() => { if (open) $refs.buscarCia?.focus() })" class="flex items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-slate-100 sm:gap-3">
                         <span class="hidden h-9 w-9 shrink-0 items-center justify-center rounded-md bg-blue-50 text-[#0d2d5e] sm:flex">
                             <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 21h16.5M4.5 3h15l-.75 18H5.25L4.5 3ZM9 7.5h1.5M13.5 7.5H15M9 12h1.5M13.5 12H15M9 16.5h1.5M13.5 16.5H15" /></svg>
                         </span>
@@ -435,24 +434,46 @@
                         </span>
                         <svg class="h-4 w-4 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
                     </button>
-                    <div x-show="open" x-cloak @click.outside="open = false" class="absolute left-0 z-50 mt-1 w-72 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
-                        @foreach ($companiasDisponibles as $cia)
-                            <button
-                                type="button"
-                                @click="document.getElementById('input-compania-activa').value = '{{ $cia->id }}'; document.getElementById('form-compania-activa').submit();"
-                                class="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-50 {{ ($companiaActiva?->id ?? null) === $cia->id ? 'bg-blue-50' : '' }}"
-                            >
-                                <span class="min-w-0">
-                                    <span class="block truncate text-sm font-medium text-slate-900">{{ $cia->nombre }}</span>
-                                    @if ($cia->ruc)
-                                        <span class="block truncate text-xs text-slate-500">RUC: {{ $cia->ruc }} DV {{ $cia->dv }}</span>
+                    <div x-show="open" x-cloak @click.outside="open = false; search = ''" class="absolute left-0 z-50 mt-1 w-72 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
+                        <div class="border-b border-slate-100 p-2">
+                            <div class="relative">
+                                <svg class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-4.35-4.35M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z" /></svg>
+                                <input
+                                    type="text"
+                                    x-ref="buscarCia"
+                                    x-model="search"
+                                    @keydown.escape.stop="search = '' ; open = false"
+                                    placeholder="Buscar compañía..."
+                                    class="w-full rounded-md border border-slate-200 py-1.5 pl-8 pr-2 text-sm text-slate-900 focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                                >
+                            </div>
+                        </div>
+                        <div style="max-height: 18rem; overflow-y: auto;">
+                            @foreach ($companiasDisponibles as $cia)
+                                <button
+                                    type="button"
+                                    x-show="search === '' || {{ Illuminate\Support\Js::from(\Illuminate\Support\Str::lower(trim($cia->nombre.' '.$cia->ruc))) }}.includes(search.toLowerCase().trim())"
+                                    @click="document.getElementById('input-compania-activa').value = '{{ $cia->id }}'; document.getElementById('form-compania-activa').submit();"
+                                    class="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-50 {{ ($companiaActiva?->id ?? null) === $cia->id ? 'bg-blue-50' : '' }}"
+                                >
+                                    <span class="min-w-0">
+                                        <span class="block truncate text-sm font-medium text-slate-900">{{ $cia->nombre }}</span>
+                                        @if ($cia->ruc)
+                                            <span class="block truncate text-xs text-slate-500">RUC: {{ $cia->ruc }} DV {{ $cia->dv }}</span>
+                                        @endif
+                                    </span>
+                                    @if (($companiaActiva?->id ?? null) === $cia->id)
+                                        <svg class="ml-auto h-4 w-4 shrink-0 text-blue-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
                                     @endif
-                                </span>
-                                @if (($companiaActiva?->id ?? null) === $cia->id)
-                                    <svg class="ml-auto h-4 w-4 shrink-0 text-blue-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
-                                @endif
-                            </button>
-                        @endforeach
+                                </button>
+                            @endforeach
+                            <div
+                                x-show="search !== '' && ![{{ collect($companiasDisponibles)->map(fn ($c) => Illuminate\Support\Js::from(\Illuminate\Support\Str::lower(trim($c->nombre.' '.$c->ruc))))->implode(', ') }}].some(n => n.includes(search.toLowerCase().trim()))"
+                                class="px-4 py-3 text-sm text-slate-500"
+                            >
+                                Sin resultados para "<span x-text="search"></span>"
+                            </div>
+                        </div>
                     </div>
                 </div>
             @endif

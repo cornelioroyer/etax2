@@ -7,14 +7,24 @@
             </h2>
             <div class="flex items-center gap-2">
                 <button onclick="window.print()" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 print:hidden">Imprimir</button>
-                @if (! $nota->esAnulado())
-                    @can('cxp.gestionar')
+                @can('cxp.gestionar')
+                    @if ($nota->esBorrador())
+                        <form method="POST" action="{{ route('admin.cxp.notas.contabilizar', $nota) }}" class="print:hidden">
+                            @csrf
+                            <button class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">Contabilizar</button>
+                        </form>
+                        <form method="POST" action="{{ route('admin.cxp.notas.destroy', $nota) }}" onsubmit="return confirm('¿Eliminar este borrador?');" class="print:hidden">
+                            @csrf
+                            @method('DELETE')
+                            <button class="rounded-md border border-red-300 bg-white px-4 py-2 text-sm text-red-700 hover:bg-red-50">Eliminar</button>
+                        </form>
+                    @elseif (! $nota->esAnulado())
                         <form method="POST" action="{{ route('admin.cxp.notas.anular', $nota) }}" onsubmit="return confirm('¿Anular esta nota? Se revertirá su asiento y los saldos afectados.');" class="print:hidden">
                             @csrf
                             <button class="rounded-md border border-red-300 bg-white px-4 py-2 text-sm text-red-700 hover:bg-red-50">Anular</button>
                         </form>
-                    @endcan
-                @endif
+                    @endif
+                @endcan
             </div>
         </div>
     </x-slot>
@@ -53,6 +63,36 @@
                     <div><div class="text-gray-500">Total</div><div class="font-semibold text-lg">B/. {{ number_format((float) $nota->total, 2) }}</div></div>
                 </div>
             </div>
+
+            @if ($nota->detalle->isNotEmpty())
+                <div class="bg-white shadow-sm sm:rounded-lg overflow-hidden">
+                    <div class="border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-700">Detalle</div>
+                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                            <tr>
+                                <th class="px-4 py-2">Descripción</th>
+                                <th class="px-4 py-2 text-right">Cant.</th>
+                                <th class="px-4 py-2 text-right">Precio</th>
+                                <th class="px-4 py-2 text-right">ITBMS</th>
+                                <th class="px-4 py-2">Cuenta</th>
+                                <th class="px-4 py-2 text-right">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            @foreach ($nota->detalle as $det)
+                                <tr>
+                                    <td class="px-4 py-2">{{ $det->descripcion }}</td>
+                                    <td class="px-4 py-2 text-right">{{ rtrim(rtrim(number_format((float) $det->cantidad, 2), '0'), '.') }}</td>
+                                    <td class="px-4 py-2 text-right">B/. {{ number_format((float) $det->precio_unitario, 2) }}</td>
+                                    <td class="px-4 py-2 text-right">B/. {{ number_format((float) $det->impuesto_monto, 2) }}</td>
+                                    <td class="px-4 py-2 text-gray-600">{{ $det->cuenta->codigo ?? '' }} — {{ $det->cuenta->nombre ?? '' }}</td>
+                                    <td class="px-4 py-2 text-right">B/. {{ number_format((float) $det->total_linea, 2) }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
 
             @if ($nota->aplicacionesComoOrigen->isNotEmpty())
                 <div class="bg-white shadow-sm sm:rounded-lg overflow-hidden">

@@ -1,7 +1,15 @@
+@php
+    $tipoLabel = match ($factura->tipo_documento) {
+        \App\Models\CxpDocumento::TIPO_NOTA_CREDITO => 'Nota de crédito',
+        \App\Models\CxpDocumento::TIPO_NOTA_DEBITO => 'Nota de débito',
+        default => 'Factura',
+    };
+    $tipoLabelLow = mb_strtolower($tipoLabel);
+@endphp
 <x-app-layout>
     <x-slot name="header">
         <div class="flex items-center justify-between">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">Factura {{ $factura->numero }}</h2>
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight">{{ $tipoLabel }} {{ $factura->numero }}</h2>
             <a href="{{ route('admin.cxp.facturas.index') }}" class="text-sm text-gray-600 hover:text-gray-900">← Volver al listado</a>
         </div>
     </x-slot>
@@ -68,7 +76,7 @@
                                     Editar
                                 </a>
                                 <form method="POST" action="{{ route('admin.cxp.facturas.contabilizar', $factura) }}"
-                                      onsubmit="return confirm('¿Contabilizar la factura {{ $factura->numero }}? Se generará el asiento contable y ya no podrá editarse.');">
+                                      onsubmit="return confirm('¿Contabilizar {{ $tipoLabelLow }} {{ $factura->numero }}? Se generará el asiento contable y ya no podrá editarse.');">
                                     @csrf
                                     <button class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
                                         Contabilizar
@@ -84,10 +92,10 @@
                                 </form>
                             @elseif (! $factura->esAnulado())
                                 <form method="POST" action="{{ route('admin.cxp.facturas.anular', $factura) }}"
-                                      onsubmit="return confirm('¿Anular la factura {{ $factura->numero }}? También se anulará su asiento contable.');">
+                                      onsubmit="return confirm('¿Anular {{ $tipoLabelLow }} {{ $factura->numero }}? También se anulará su asiento contable.');">
                                     @csrf
                                     <button class="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">
-                                        Anular factura
+                                        Anular {{ $tipoLabelLow }}
                                     </button>
                                 </form>
                             @endif

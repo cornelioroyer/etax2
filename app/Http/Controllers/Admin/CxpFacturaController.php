@@ -36,7 +36,8 @@ class CxpFacturaController extends Controller
         $companiaId = $this->companiaActivaId($request);
 
         $filtros = $request->validate([
-            'estado' => ['nullable', Rule::in(['PENDIENTE', 'PARCIAL', 'PAGADO', 'ANULADO'])],
+            'tipo' => ['nullable', Rule::in([CxpDocumento::TIPO_FACTURA, CxpDocumento::TIPO_NOTA_CREDITO, CxpDocumento::TIPO_NOTA_DEBITO])],
+            'estado' => ['nullable', Rule::in(['BORRADOR', 'PENDIENTE', 'PARCIAL', 'PAGADO', 'ANULADO'])],
             'proveedor_id' => ['nullable', 'integer'],
             'desde' => ['nullable', 'date'],
             'hasta' => ['nullable', 'date'],
@@ -46,7 +47,12 @@ class CxpFacturaController extends Controller
         $consulta = CxpDocumento::query()
             ->with('proveedor')
             ->where('compania_id', $companiaId)
-            ->where('tipo_documento', CxpDocumento::TIPO_FACTURA)
+            ->whereIn('tipo_documento', [
+                CxpDocumento::TIPO_FACTURA,
+                CxpDocumento::TIPO_NOTA_CREDITO,
+                CxpDocumento::TIPO_NOTA_DEBITO,
+            ])
+            ->when($filtros['tipo'] ?? null, fn ($q, $tipo) => $q->where('tipo_documento', $tipo))
             ->when($filtros['estado'] ?? null, fn ($q, $estado) => $q->where('estado', $estado))
             ->when($filtros['proveedor_id'] ?? null, fn ($q, $proveedor) => $q->where('proveedor_id', $proveedor))
             ->when($filtros['desde'] ?? null, fn ($q, $desde) => $q->whereDate('fecha', '>=', $desde))
@@ -89,10 +95,15 @@ class CxpFacturaController extends Controller
 
         $facturas = $consulta->paginate(25)->withQueryString();
 
+        // Saldo neto: facturas y notas de débito suman; notas de crédito restan.
         $saldoTotal = (float) CxpDocumento::where('compania_id', $companiaId)
-            ->where('tipo_documento', CxpDocumento::TIPO_FACTURA)
+            ->whereIn('tipo_documento', [
+                CxpDocumento::TIPO_FACTURA,
+                CxpDocumento::TIPO_NOTA_CREDITO,
+                CxpDocumento::TIPO_NOTA_DEBITO,
+            ])
             ->whereNotIn('estado', [CxpDocumento::ESTADO_ANULADO, CxpDocumento::ESTADO_BORRADOR])
-            ->selectRaw('COALESCE(SUM(saldo), 0) AS saldo')
+            ->selectRaw('COALESCE(SUM(CASE WHEN tipo_documento = ? THEN -saldo ELSE saldo END), 0) AS saldo', [CxpDocumento::TIPO_NOTA_CREDITO])
             ->value('saldo');
 
         return view('admin.cxp.facturas.index', [
@@ -129,13 +140,17 @@ class CxpFacturaController extends Controller
         $data = $this->datosValidados($request, $companiaId);
         [$lineas, $subtotal, $impuesto, $total] = $this->calcularLineas($data['lineas']);
 
-        $contado = ($data['forma_pago'] ?? 'CREDITO') === 'CONTADO';
+        $tipo = $data['tipo_documento'];
 
-        $factura = DB::transaction(function () use ($companiaId, $data, $lineas, $subtotal, $impuesto, $total, $usuario, $contado) {
+        // Solo las facturas se pueden registrar al contado; las notas de crédito
+        // y débito siempre nacen como borrador a crédito y se contabilizan aparte.
+        $contado = $tipo === CxpDocumento::TIPO_FACTURA && (($data['forma_pago'] ?? 'CREDITO') === 'CONTADO');
+
+        $factura = DB::transaction(function () use ($companiaId, $data, $tipo, $lineas, $subtotal, $impuesto, $total, $usuario, $contado) {
             $factura = CxpDocumento::create([
                 'compania_id' => $companiaId,
                 'proveedor_id' => $data['proveedor_id'],
-                'tipo_documento' => CxpDocumento::TIPO_FACTURA,
+                'tipo_documento' => $tipo,
                 'numero' => $data['numero'],
                 'fecha' => $data['fecha'],
                 // En contado no hay crédito pendiente: vence el mismo día.
@@ -161,9 +176,15 @@ class CxpFacturaController extends Controller
             return $factura;
         });
 
+        $etiqueta = match ($tipo) {
+            CxpDocumento::TIPO_NOTA_CREDITO => 'Nota de crédito',
+            CxpDocumento::TIPO_NOTA_DEBITO => 'Nota de débito',
+            default => 'Factura',
+        };
+
         $mensaje = $contado
             ? "Compra al contado {$factura->numero} registrada y contabilizada. Asiento {$factura->fresh()->asiento->numero}."
-            : "Factura {$factura->numero} guardada como borrador. Revísala y contabilízala cuando esté lista.";
+            : "{$etiqueta} {$factura->numero} guardada como borrador. Revísala y contabilízala cuando esté lista.";
 
         return redirect()->route('admin.cxp.facturas.show', $factura)->with('status', $mensaje);
     }
@@ -212,7 +233,7 @@ class CxpFacturaController extends Controller
         }
 
         $usuario = $request->user();
-        $data = $this->datosValidados($request, $companiaId, $documento->id);
+        $data = $this->datosValidados($request, $companiaId, $documento->id, $documento->tipo_documento);
         [$lineas, $subtotal, $impuesto, $total] = $this->calcularLineas($data['lineas']);
 
         DB::transaction(function () use ($documento, $data, $lineas, $subtotal, $impuesto, $total, $usuario) {
@@ -278,9 +299,14 @@ class CxpFacturaController extends Controller
     }
 
     /** Valida los datos del formulario y verifica que el número no esté duplicado. */
-    private function datosValidados(Request $request, int $companiaId, ?int $exceptoId = null): array
+    private function datosValidados(Request $request, int $companiaId, ?int $exceptoId = null, ?string $tipoForzado = null): array
     {
         $data = $request->validate([
+            'tipo_documento' => ['nullable', Rule::in([
+                CxpDocumento::TIPO_FACTURA,
+                CxpDocumento::TIPO_NOTA_CREDITO,
+                CxpDocumento::TIPO_NOTA_DEBITO,
+            ])],
             'proveedor_id' => [
                 'required', 'integer',
                 Rule::exists('contact_contactos', 'id')->where('compania_id', $companiaId),
@@ -305,16 +331,27 @@ class CxpFacturaController extends Controller
             ],
         ]);
 
+        // Tipo del documento: forzado (al editar conserva el original) o el
+        // elegido en el formulario; por defecto factura.
+        $tipo = $tipoForzado ?? ($data['tipo_documento'] ?? CxpDocumento::TIPO_FACTURA);
+        $data['tipo_documento'] = $tipo;
+
         $duplicada = CxpDocumento::where('compania_id', $companiaId)
             ->where('proveedor_id', $data['proveedor_id'])
-            ->where('tipo_documento', CxpDocumento::TIPO_FACTURA)
+            ->where('tipo_documento', $tipo)
             ->where('numero', $data['numero'])
             ->when($exceptoId, fn ($q, $id) => $q->where('id', '!=', $id))
             ->exists();
 
         if ($duplicada) {
+            $etiqueta = match ($tipo) {
+                CxpDocumento::TIPO_NOTA_CREDITO => 'la nota de crédito',
+                CxpDocumento::TIPO_NOTA_DEBITO => 'la nota de débito',
+                default => 'la factura',
+            };
+
             throw ValidationException::withMessages([
-                'numero' => "Ya existe la factura {$data['numero']} de ese proveedor.",
+                'numero' => "Ya existe {$etiqueta} {$data['numero']} de ese proveedor.",
             ]);
         }
 
@@ -387,40 +424,74 @@ class CxpFacturaController extends Controller
             ]);
         }
 
-        // Asiento: débito gasto/costo por línea, débito ITBMS crédito fiscal, crédito CXP
+        $esCredito = $factura->tipo_documento === CxpDocumento::TIPO_NOTA_CREDITO;
+        $total = round((float) $factura->total, 2);
+        $etiqueta = match ($factura->tipo_documento) {
+            CxpDocumento::TIPO_NOTA_CREDITO => 'Nota de crédito',
+            CxpDocumento::TIPO_NOTA_DEBITO => 'Nota de débito',
+            default => 'Factura',
+        };
+
         $lineasAsiento = [];
 
-        foreach ($factura->detalle as $linea) {
-            $base = round((float) $linea->total_linea - (float) $linea->impuesto_monto, 2);
+        if ($esCredito) {
+            // Nota de crédito: invierte la compra. Dr CXP; Cr contrapartida + Cr ITBMS.
             $lineasAsiento[] = [
-                'cuenta_id' => $linea->cuenta_id,
-                'descripcion' => $linea->descripcion,
-                'debito' => $base,
+                'cuenta_id' => $cuentaCxpId,
+                'contacto_id' => $factura->proveedor_id,
+                'descripcion' => "{$etiqueta} {$factura->numero}",
+                'debito' => $total,
                 'credito' => 0,
             ];
-        }
-
-        if ($impuesto > 0) {
+            foreach ($factura->detalle as $linea) {
+                $base = round((float) $linea->total_linea - (float) $linea->impuesto_monto, 2);
+                $lineasAsiento[] = [
+                    'cuenta_id' => $linea->cuenta_id,
+                    'descripcion' => $linea->descripcion,
+                    'debito' => 0,
+                    'credito' => $base,
+                ];
+            }
+            if ($impuesto > 0) {
+                $lineasAsiento[] = [
+                    'cuenta_id' => $cuentaItbmsId,
+                    'descripcion' => "ITBMS {$etiqueta} {$factura->numero}",
+                    'debito' => 0,
+                    'credito' => $impuesto,
+                ];
+            }
+        } else {
+            // Factura y nota de débito: Dr contrapartida + Dr ITBMS; Cr CXP.
+            foreach ($factura->detalle as $linea) {
+                $base = round((float) $linea->total_linea - (float) $linea->impuesto_monto, 2);
+                $lineasAsiento[] = [
+                    'cuenta_id' => $linea->cuenta_id,
+                    'descripcion' => $linea->descripcion,
+                    'debito' => $base,
+                    'credito' => 0,
+                ];
+            }
+            if ($impuesto > 0) {
+                $lineasAsiento[] = [
+                    'cuenta_id' => $cuentaItbmsId,
+                    'descripcion' => "ITBMS {$etiqueta} {$factura->numero}",
+                    'debito' => $impuesto,
+                    'credito' => 0,
+                ];
+            }
             $lineasAsiento[] = [
-                'cuenta_id' => $cuentaItbmsId,
-                'descripcion' => "ITBMS factura {$factura->numero}",
-                'debito' => $impuesto,
-                'credito' => 0,
+                'cuenta_id' => $cuentaCxpId,
+                'contacto_id' => $factura->proveedor_id,
+                'descripcion' => "{$etiqueta} {$factura->numero}",
+                'debito' => 0,
+                'credito' => $total,
             ];
         }
-
-        $lineasAsiento[] = [
-            'cuenta_id' => $cuentaCxpId,
-            'contacto_id' => $factura->proveedor_id,
-            'descripcion' => "Factura {$factura->numero}",
-            'debito' => 0,
-            'credito' => round((float) $factura->total, 2),
-        ];
 
         $asiento = app(AsientoAutomatico::class)->postear(
             $companiaId,
             $factura->fecha->format('Y-m-d'),
-            "Factura de compra {$factura->numero} — ".$factura->proveedor->nombre,
+            "{$etiqueta} de compra {$factura->numero} — ".$factura->proveedor->nombre,
             $factura->numero,
             $lineasAsiento,
             'CXP',
@@ -505,7 +576,11 @@ class CxpFacturaController extends Controller
     private function autorizarFactura(Request $request, CxpDocumento $documento): void
     {
         abort_unless($documento->compania_id === $this->companiaActivaId($request), 404);
-        abort_unless($documento->tipo_documento === CxpDocumento::TIPO_FACTURA, 404);
+        abort_unless(in_array($documento->tipo_documento, [
+            CxpDocumento::TIPO_FACTURA,
+            CxpDocumento::TIPO_NOTA_CREDITO,
+            CxpDocumento::TIPO_NOTA_DEBITO,
+        ], true), 404);
     }
 
     public function importar(Request $request): RedirectResponse
@@ -525,7 +600,11 @@ class CxpFacturaController extends Controller
 
         // Guarda el archivo y encola el procesamiento (consulta la DGI por CUFE,
         // que es lento) para mostrar barra de progreso sin bloquear la petición.
-        $ruta = $request->file('archivo')->store('imports/cxp');
+        // Conserva la extensión original: el job lee por ruta y PhpSpreadsheet
+        // necesita la extensión para detectar el reader (store() puede no ponerla).
+        $archivo = $request->file('archivo');
+        $ext = strtolower($archivo->getClientOriginalExtension() ?: 'xlsx');
+        $ruta = $archivo->storeAs('imports/cxp', \Illuminate\Support\Str::uuid().'.'.$ext);
 
         $importacion = CxpImportacion::create([
             'compania_id' => $companiaId,

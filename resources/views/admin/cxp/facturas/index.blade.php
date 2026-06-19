@@ -31,16 +31,25 @@
             @endif
 
             <div class="rounded-lg bg-white p-4 shadow-sm sm:flex sm:items-center sm:justify-between">
-                <p class="text-sm text-gray-600">Saldo total por pagar (facturas vigentes)</p>
+                <p class="text-sm text-gray-600">Saldo neto por pagar (facturas + notas débito − notas crédito)</p>
                 <p class="text-2xl font-bold text-[#0d2d5e]">B/. {{ number_format($saldoTotal, 2) }}</p>
             </div>
 
             {{-- Filtros --}}
             <form method="GET" class="bg-white p-4 shadow-sm sm:rounded-lg">
-                <div class="grid grid-cols-2 gap-3 sm:grid-cols-6">
+                <div class="grid grid-cols-2 gap-3 sm:grid-cols-7">
                     <div class="col-span-2">
                         <x-input-label for="q" value="Buscar" />
                         <x-text-input id="q" name="q" type="text" class="mt-1 block w-full" :value="$filtros['q'] ?? ''" placeholder="Número o proveedor" />
+                    </div>
+                    <div>
+                        <x-input-label for="tipo" value="Tipo" />
+                        <select id="tipo" name="tipo" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">Todos</option>
+                            @foreach ([\App\Models\CxpDocumento::TIPO_FACTURA => 'Factura', \App\Models\CxpDocumento::TIPO_NOTA_DEBITO => 'Nota débito', \App\Models\CxpDocumento::TIPO_NOTA_CREDITO => 'Nota crédito'] as $val => $lbl)
+                                <option value="{{ $val }}" @selected(($filtros['tipo'] ?? '') === $val)>{{ $lbl }}</option>
+                            @endforeach
+                        </select>
                     </div>
                     <div>
                         <x-input-label for="proveedor_id" value="Proveedor" />
@@ -82,6 +91,7 @@
                         <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                             <tr>
                                 <th class="px-4 py-3">Número</th>
+                                <th class="px-4 py-3">Tipo</th>
                                 <th class="px-4 py-3">Fecha</th>
                                 <th class="px-4 py-3">Proveedor</th>
                                 <th class="px-4 py-3 hidden md:table-cell">Vence</th>
@@ -92,22 +102,36 @@
                         </thead>
                         <tbody class="divide-y divide-gray-100">
                             @forelse ($facturas as $factura)
+                                @php
+                                    $esNc = $factura->tipo_documento === \App\Models\CxpDocumento::TIPO_NOTA_CREDITO;
+                                    $esNd = $factura->tipo_documento === \App\Models\CxpDocumento::TIPO_NOTA_DEBITO;
+                                    $signo = $esNc ? -1 : 1;
+                                @endphp
                                 <tr class="hover:bg-gray-50">
                                     <td class="px-4 py-3 font-medium">
                                         <a href="{{ route('admin.cxp.facturas.show', $factura) }}" class="text-blue-700 hover:underline">{{ $factura->numero }}</a>
                                     </td>
+                                    <td class="px-4 py-3 whitespace-nowrap">
+                                        @if ($esNc)
+                                            <span class="inline-flex rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800">Nota crédito</span>
+                                        @elseif ($esNd)
+                                            <span class="inline-flex rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">Nota débito</span>
+                                        @else
+                                            <span class="inline-flex rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">Factura</span>
+                                        @endif
+                                    </td>
                                     <td class="px-4 py-3 whitespace-nowrap">{{ $factura->fecha->format('d/m/Y') }}</td>
                                     <td class="px-4 py-3 max-w-xs truncate">{{ $factura->proveedor->nombre ?? '—' }}</td>
                                     <td class="px-4 py-3 whitespace-nowrap hidden md:table-cell">{{ $factura->fecha_vencimiento?->format('d/m/Y') ?? '—' }}</td>
-                                    <td class="px-4 py-3 text-right whitespace-nowrap">B/. {{ number_format((float) $factura->total, 2) }}</td>
-                                    <td class="px-4 py-3 text-right whitespace-nowrap font-medium">B/. {{ number_format((float) $factura->saldo, 2) }}</td>
+                                    <td class="px-4 py-3 text-right whitespace-nowrap {{ $esNc ? 'text-red-600' : '' }}">B/. {{ number_format($signo * (float) $factura->total, 2) }}</td>
+                                    <td class="px-4 py-3 text-right whitespace-nowrap font-medium {{ $esNc ? 'text-red-600' : '' }}">B/. {{ number_format($signo * (float) $factura->saldo, 2) }}</td>
                                     <td class="px-4 py-3">
                                         @include('admin.cxc._estado', ['estado' => $factura->estado])
                                     </td>
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="7" class="px-4 py-10 text-center text-gray-500">
+                                    <td colspan="8" class="px-4 py-10 text-center text-gray-500">
                                         No hay facturas que coincidan con el filtro.
                                         @can('cxp.gestionar')
                                             <a href="{{ route('admin.cxp.facturas.create') }}" class="text-blue-700 underline">Crear la primera</a>
@@ -134,7 +158,7 @@
         </div>
         <p class="text-sm text-gray-600 mb-4">
             Selecciona el Excel de <em>Documentos Electrónicos Recibidos</em> descargado del portal de la DGI.
-            Las facturas se crearán como borrador; si el proveedor no existe, se crea automáticamente con su RUC.
+            Facturas y notas de crédito/débito se crearán como borrador (clasificadas por su tipo); si el proveedor no existe, se crea automáticamente con su RUC.
         </p>
         <form method="POST" action="{{ route('admin.cxp.facturas.importar') }}" enctype="multipart/form-data">
             @csrf

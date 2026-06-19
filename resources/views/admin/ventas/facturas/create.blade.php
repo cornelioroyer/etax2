@@ -14,13 +14,34 @@
 
     <div class="py-8">
         <div class="max-w-5xl mx-auto sm:px-6 lg:px-8">
-            <div class="bg-white p-6 shadow-sm sm:rounded-lg">
+            <div class="bg-white p-6 shadow-sm sm:rounded-lg"
+                 x-data="{
+                    tipo: @js(old('tipo_fel', '01')),
+                    get flujo() {
+                        return { '01': 'factura', '04': 'nc', '06': 'nc', '05': 'nd', '07': 'nd', '09': 'reembolso' }[this.tipo] ?? 'factura';
+                    },
+                 }">
                 @if ($errors->any())
                     <div class="mb-4 rounded-md bg-red-50 p-4 text-sm text-red-800">
                         @foreach ($errors->all() as $error)<div>{{ $error }}</div>@endforeach
                     </div>
                 @endif
 
+                @unless (isset($factura))
+                    <div class="mb-5 max-w-xs">
+                        <x-input-label value="Tipo de documento" />
+                        <select x-model="tipo" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="01">01 — Factura de operación interna</option>
+                            <option value="04">04 — Nota de crédito referente a facturas</option>
+                            <option value="05">05 — Nota de débito referente a facturas</option>
+                            <option value="06">06 — Nota de crédito genérica</option>
+                            <option value="07">07 — Nota de débito genérica</option>
+                            <option value="09">09 — Reembolso</option>
+                        </select>
+                    </div>
+                @endunless
+
+                <div x-show="flujo === 'factura'" x-cloak>
                 @php
                     $lineasIniciales = isset($factura)
                         ? $factura->detalle->map(fn($d) => ['item_id'=>$d->item_id,'descripcion'=>$d->descripcion,'cantidad'=>$d->cantidad,'precio_unitario'=>$d->precio_unitario,'impuesto_id'=>$d->impuesto_id,'cuenta_ingreso_id'=>$d->cuenta_ingreso_id])->values()->toJson()
@@ -33,6 +54,7 @@
                       x-data="facturaForm({{ $lineasIniciales }}, {{ $impuestos->toJson() }}, {{ $cuentasIngreso->toJson() }}, {{ $cuentaVentasId ?? 'null' }}, {{ $items->toJson() }})">
                     @csrf
                     @isset($factura) @method('PUT') @endisset
+                    <input type="hidden" name="tipo_fel" value="01">
 
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
                         <div x-data="{
@@ -187,9 +209,221 @@
                         <a href="{{ route('admin.ventas.facturas.index') }}" class="text-sm text-gray-600 hover:text-gray-900">Cancelar</a>
                     </div>
                 </form>
+                </div>{{-- /factura --}}
+
+                @unless (isset($factura))
+                <div x-show="flujo === 'nc'" x-cloak x-data="ncForm({{ \Illuminate\Support\Js::from($facturasAbiertas) }})">
+                    <form method="POST" action="{{ route('admin.ventas.notas-credito.store') }}">
+                        @csrf
+                        <input type="hidden" name="tipo_fel" :value="tipo">
+                        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div>
+                                <x-input-label value="Cliente *" />
+                                <select name="cliente_id" x-model="clienteId" required
+                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <option value="">— Cliente —</option>
+                                    @foreach ($clientes as $cliente)
+                                        <option value="{{ $cliente->id }}">{{ $cliente->codigo }} — {{ $cliente->nombre }}</option>
+                                    @endforeach
+                                </select>
+                                <x-input-error :messages="$errors->get('cliente_id')" class="mt-1" />
+                            </div>
+                            <div>
+                                <x-input-label value="Fecha *" />
+                                <x-text-input name="fecha" type="text" class="js-date mt-1 block w-full" required
+                                              :value="old('fecha', now()->format('Y-m-d'))" />
+                                <x-input-error :messages="$errors->get('fecha')" class="mt-1" />
+                            </div>
+                        </div>
+
+                        <div class="mt-4">
+                            <x-input-label value="Motivo / Descripción *" />
+                            <textarea name="motivo" rows="2" required
+                                      class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">{{ old('motivo') }}</textarea>
+                            <x-input-error :messages="$errors->get('motivo')" class="mt-1" />
+                        </div>
+
+                        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div>
+                                <x-input-label value="Monto total (B/.) *" />
+                                <x-text-input name="total" type="number" step="0.01" min="0.01" class="mt-1 block w-full" :value="old('total')" required />
+                                <x-input-error :messages="$errors->get('total')" class="mt-1" />
+                            </div>
+                            <div>
+                                <x-input-label x-text="tipo === '04' ? 'Factura referenciada *' : 'Factura a aplicar (opcional)'" />
+                                <select name="factura_id" :required="tipo === '04'"
+                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <option value="">— No aplicar a factura específica —</option>
+                                    <template x-for="f in facturasFiltradas()" :key="f.id">
+                                        <option :value="f.id" x-text="f.numero + ' — B/. ' + f.saldo.toFixed(2) + ' saldo'"></option>
+                                    </template>
+                                </select>
+                                <p class="mt-1 text-xs text-gray-400"
+                                   x-text="tipo === '04' ? 'La NC 04 referencia una factura electrónica del cliente.' : 'Se listan facturas con saldo del cliente seleccionado.'"></p>
+                            </div>
+                        </div>
+
+                        <div class="mt-4">
+                            <x-input-label value="Cuenta de ventas (contrapartida) *" />
+                            <select name="cuenta_id" required
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">— Cuenta —</option>
+                                @foreach ($cuentasIngreso as $cuenta)
+                                    <option value="{{ $cuenta->id }}" @selected(old('cuenta_id', $cuentaVentasId) == $cuenta->id)>{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
+                                @endforeach
+                            </select>
+                            <x-input-error :messages="$errors->get('cuenta_id')" class="mt-1" />
+                        </div>
+
+                        <div class="mt-6 flex flex-wrap items-center gap-3 border-t border-gray-100 pt-4">
+                            <button type="submit" class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
+                                Emitir nota de crédito
+                            </button>
+                            <a href="{{ route('admin.ventas.facturas.index') }}" class="text-sm text-gray-600 hover:text-gray-900">Cancelar</a>
+                        </div>
+                    </form>
+                </div>
+                @endunless
+
+                @unless (isset($factura))
+                <div x-show="flujo === 'nd'" x-cloak x-data="ncForm({{ \Illuminate\Support\Js::from($facturasAbiertas) }})">
+                    <form method="POST" action="{{ route('admin.ventas.notas-debito.store') }}">
+                        @csrf
+                        <input type="hidden" name="tipo_fel" :value="tipo">
+                        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div>
+                                <x-input-label value="Cliente *" />
+                                <select name="cliente_id" x-model="clienteId" required
+                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <option value="">— Cliente —</option>
+                                    @foreach ($clientes as $cliente)
+                                        <option value="{{ $cliente->id }}" @selected(old('cliente_id') == $cliente->id)>{{ $cliente->codigo }} — {{ $cliente->nombre }}</option>
+                                    @endforeach
+                                </select>
+                                <x-input-error :messages="$errors->get('cliente_id')" class="mt-1" />
+                            </div>
+                            <div>
+                                <x-input-label value="Fecha *" />
+                                <x-text-input name="fecha" type="text" class="js-date mt-1 block w-full" required
+                                              :value="old('fecha', now()->format('Y-m-d'))" />
+                                <x-input-error :messages="$errors->get('fecha')" class="mt-1" />
+                            </div>
+                        </div>
+
+                        <div class="mt-4">
+                            <x-input-label value="Motivo / Descripción *" />
+                            <textarea name="motivo" rows="2" required
+                                      class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">{{ old('motivo') }}</textarea>
+                            <x-input-error :messages="$errors->get('motivo')" class="mt-1" />
+                        </div>
+
+                        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div>
+                                <x-input-label value="Monto total (B/.) *" />
+                                <x-text-input name="total" type="number" step="0.01" min="0.01" class="mt-1 block w-full" :value="old('total')" required />
+                                <x-input-error :messages="$errors->get('total')" class="mt-1" />
+                            </div>
+                            <div>
+                                <x-input-label value="Cuenta contrapartida (ingreso/otro) *" />
+                                <select name="cuenta_id" required
+                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <option value="">— Cuenta —</option>
+                                    @foreach ($cuentasIngreso as $cuenta)
+                                        <option value="{{ $cuenta->id }}" @selected(old('cuenta_id', $cuentaVentasId) == $cuenta->id)>{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
+                                    @endforeach
+                                </select>
+                                <x-input-error :messages="$errors->get('cuenta_id')" class="mt-1" />
+                            </div>
+                        </div>
+
+                        <div class="mt-4" x-show="tipo === '05'" x-cloak>
+                            <x-input-label value="Factura referenciada *" />
+                            <select name="factura_ref_id" :required="tipo === '05'"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">— Selecciona factura —</option>
+                                <template x-for="f in facturasFiltradas()" :key="f.id">
+                                    <option :value="f.id" x-text="f.numero + ' — B/. ' + f.saldo.toFixed(2) + ' saldo'"></option>
+                                </template>
+                            </select>
+                            <p class="mt-1 text-xs text-gray-400">La ND 05 referencia una factura electrónica del cliente (no modifica su saldo).</p>
+                        </div>
+
+                        <div class="mt-6 flex flex-wrap items-center gap-3 border-t border-gray-100 pt-4">
+                            <button type="submit" class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
+                                <span x-text="tipo === '05' ? 'Emitir nota de débito (05)' : 'Emitir nota de débito (07)'"></span>
+                            </button>
+                            <a href="{{ route('admin.ventas.facturas.index') }}" class="text-sm text-gray-600 hover:text-gray-900">Cancelar</a>
+                        </div>
+                    </form>
+                </div>
+                @endunless
+
+                {{-- Reembolso (DGI 09) --}}
+                @unless (isset($factura))
+                <div x-show="flujo === 'reembolso'" x-cloak>
+                    <form method="POST" action="{{ route('admin.ventas.reembolsos.store') }}">
+                        @csrf
+                        <input type="hidden" name="tipo_fel" value="09">
+                        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div>
+                                <x-input-label value="Cliente *" />
+                                <select name="cliente_id" required
+                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <option value="">— Cliente —</option>
+                                    @foreach ($clientes as $cliente)
+                                        <option value="{{ $cliente->id }}" @selected(old('cliente_id') == $cliente->id)>{{ $cliente->codigo }} — {{ $cliente->nombre }}</option>
+                                    @endforeach
+                                </select>
+                                <x-input-error :messages="$errors->get('cliente_id')" class="mt-1" />
+                            </div>
+                            <div>
+                                <x-input-label value="Fecha *" />
+                                <x-text-input name="fecha" type="text" class="js-date mt-1 block w-full" required
+                                              :value="old('fecha', now()->format('Y-m-d'))" />
+                                <x-input-error :messages="$errors->get('fecha')" class="mt-1" />
+                            </div>
+                        </div>
+
+                        <div class="mt-4">
+                            <x-input-label value="Motivo / Concepto del reembolso *" />
+                            <textarea name="motivo" rows="2" required
+                                      class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">{{ old('motivo') }}</textarea>
+                            <x-input-error :messages="$errors->get('motivo')" class="mt-1" />
+                        </div>
+
+                        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div>
+                                <x-input-label value="Monto total (B/.) *" />
+                                <x-text-input name="total" type="number" step="0.01" min="0.01" class="mt-1 block w-full" :value="old('total')" required />
+                                <x-input-error :messages="$errors->get('total')" class="mt-1" />
+                            </div>
+                            <div>
+                                <x-input-label value="Cuenta de reembolso (contrapartida) *" />
+                                <select name="cuenta_id" required
+                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <option value="">— Cuenta —</option>
+                                    @foreach ($cuentasIngreso as $cuenta)
+                                        <option value="{{ $cuenta->id }}" @selected(old('cuenta_id', $cuentaVentasId) == $cuenta->id)>{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
+                                    @endforeach
+                                </select>
+                                <x-input-error :messages="$errors->get('cuenta_id')" class="mt-1" />
+                            </div>
+                        </div>
+
+                        <div class="mt-6 flex flex-wrap items-center gap-3 border-t border-gray-100 pt-4">
+                            <button type="submit" class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
+                                Emitir reembolso
+                            </button>
+                            <a href="{{ route('admin.ventas.facturas.index') }}" class="text-sm text-gray-600 hover:text-gray-900">Cancelar</a>
+                        </div>
+                    </form>
+                </div>
+                @endunless
             </div>
         </div>
     </div>
+
+    <style>[x-cloak]{display:none!important}</style>
 
     <script>
         function facturaForm(lineasIniciales, impuestos, cuentasIngreso, cuentaVentasDefault, items) {
@@ -236,6 +470,17 @@
                 subtotal() { return this.lineas.reduce((s,l) => s + this.base(l), 0); },
                 totalItbms() { return this.lineas.reduce((s,l) => s + this.itbmsLinea(l), 0); },
                 fmt(v) { return 'B/. '+(Math.round(v*100)/100).toFixed(2); },
+            };
+        }
+
+        function ncForm(facturas) {
+            return {
+                facturas,
+                clienteId: @js(old('cliente_id', '')),
+                facturasFiltradas() {
+                    if (!this.clienteId) return [];
+                    return this.facturas.filter(f => f.cliente_id == this.clienteId);
+                },
             };
         }
     </script>

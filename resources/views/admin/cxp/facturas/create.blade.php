@@ -1,6 +1,6 @@
 <x-app-layout>
     <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight">Nueva factura por pagar</h2>
+        <h2 class="font-semibold text-xl text-gray-800 leading-tight">Nuevo documento por pagar</h2>
     </x-slot>
 
     <div class="py-8">
@@ -13,9 +13,22 @@
                 @endif
 
                 <form method="POST" action="{{ route('admin.cxp.facturas.store') }}"
-                      x-data="facturaCxp({{ old('lineas') ? collect(old('lineas'))->values()->toJson() : '[]' }}, {{ (int) ($cuentaGastoId ?? 0) }}, {{ $proveedores->pluck('cuenta_gasto_id', 'id')->toJson() }}, '{{ old('forma_pago', 'CREDITO') }}', '{{ old('cuenta_pago_id', $cuentaPagoId) }}')"
+                      x-data="facturaCxp({{ old('lineas') ? collect(old('lineas'))->values()->toJson() : '[]' }}, {{ (int) ($cuentaGastoId ?? 0) }}, {{ $proveedores->pluck('cuenta_gasto_id', 'id')->toJson() }}, '{{ old('forma_pago', 'CREDITO') }}', '{{ old('cuenta_pago_id', $cuentaPagoId) }}', '{{ old('tipo_documento', 'FACTURA') }}')"
                       x-init="$nextTick(() => onProveedor(document.getElementById('proveedor_id').value))">
                     @csrf
+
+                    <div class="mb-4 max-w-xs">
+                        <x-input-label for="tipo_documento" value="Tipo de documento *" />
+                        <select id="tipo_documento" name="tipo_documento" x-model="tipo"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="FACTURA">Factura de compra</option>
+                            <option value="NOTA_DEBITO">Nota de débito</option>
+                            <option value="NOTA_CREDITO">Nota de crédito</option>
+                        </select>
+                        <p class="mt-1 text-xs text-gray-500"
+                           x-text="tipo === 'NOTA_CREDITO' ? 'Reduce lo que debes al proveedor (abono).' : (tipo === 'NOTA_DEBITO' ? 'Aumenta lo que debes al proveedor (cargo).' : 'Compra normal al proveedor.')"></p>
+                        <x-input-error :messages="$errors->get('tipo_documento')" class="mt-1" />
+                    </div>
 
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
                         <div class="sm:col-span-2">
@@ -31,7 +44,9 @@
                             <x-input-error :messages="$errors->get('proveedor_id')" class="mt-1" />
                         </div>
                         <div>
-                            <x-input-label for="numero" value="Número de factura *" />
+                            <x-input-label for="numero">
+                                <span x-text="tipo === 'NOTA_CREDITO' ? 'Número de nota de crédito *' : (tipo === 'NOTA_DEBITO' ? 'Número de nota de débito *' : 'Número de factura *')">Número de factura *</span>
+                            </x-input-label>
                             <x-text-input id="numero" name="numero" type="text" class="mt-1 block w-full" required
                                           :value="old('numero')" placeholder="La del proveedor" />
                             <x-input-error :messages="$errors->get('numero')" class="mt-1" />
@@ -50,8 +65,8 @@
                         </div>
                     </div>
 
-                    {{-- Forma de pago --}}
-                    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-4">
+                    {{-- Forma de pago (solo facturas; las notas van a crédito) --}}
+                    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-4" x-show="tipo === 'FACTURA'" x-cloak>
                         <div>
                             <x-input-label for="forma_pago" value="Forma de pago *" />
                             <select id="forma_pago" name="forma_pago" x-model="formaPago"
@@ -80,7 +95,7 @@
                     {{-- Líneas --}}
                     <div class="mt-6">
                         <div class="mb-2 flex items-center justify-between">
-                            <h3 class="text-sm font-semibold text-gray-700">Detalle de la factura</h3>
+                            <h3 class="text-sm font-semibold text-gray-700">Detalle del documento</h3>
                             <button type="button" @click="agregar()" class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">+ Agregar línea</button>
                         </div>
 
@@ -163,12 +178,12 @@
                     <div class="mt-6 flex flex-wrap items-center gap-3 border-t border-gray-100 pt-4">
                         <button type="submit"
                                 class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
-                                x-text="formaPago === 'CONTADO' ? 'Registrar compra al contado' : 'Guardar borrador'">
+                                x-text="(tipo === 'FACTURA' && formaPago === 'CONTADO') ? 'Registrar compra al contado' : 'Guardar borrador'">
                             Guardar borrador
                         </button>
                         <a href="{{ route('admin.cxp.facturas.index') }}" class="text-sm text-gray-600 hover:text-gray-900">Cancelar</a>
                         <p class="w-full text-xs text-gray-500 sm:w-auto sm:ml-auto"
-                           x-text="formaPago === 'CONTADO' ? 'La compra se contabiliza de inmediato y queda pagada.' : 'Se guarda como borrador editable; el asiento contable se genera al contabilizarla.'">Se guarda como borrador editable; el asiento contable se genera al contabilizarla.</p>
+                           x-text="(tipo === 'FACTURA' && formaPago === 'CONTADO') ? 'La compra se contabiliza de inmediato y queda pagada.' : 'Se guarda como borrador editable; el asiento contable se genera al contabilizarlo.'">Se guarda como borrador editable; el asiento contable se genera al contabilizarlo.</p>
                     </div>
                 </form>
             </div>
@@ -176,11 +191,12 @@
     </div>
 
     <script>
-        function facturaCxp(lineasIniciales, cuentaGastoId, provCuentas, formaPagoInicial, cuentaPagoInicial) {
+        function facturaCxp(lineasIniciales, cuentaGastoId, provCuentas, formaPagoInicial, cuentaPagoInicial, tipoInicial) {
             return {
                 cuentaGlobal: cuentaGastoId || '',
                 provCuentas: provCuentas || {},
                 cuentaActual: cuentaGastoId || '',
+                tipo: tipoInicial || 'FACTURA',
                 formaPago: formaPagoInicial || 'CREDITO',
                 cuentaPago: cuentaPagoInicial || '',
                 nueva() { return { descripcion: '', cantidad: 1, precio_unitario: 0, tasa_itbms: 7, cuenta_id: this.cuentaActual || '' }; },

@@ -308,9 +308,159 @@ class CxpNotaController extends Controller
         abort_unless($documento->compania_id === $this->companiaActivaId($request), 404);
         abort_unless(in_array($documento->tipo_documento, [CxpDocumento::TIPO_NOTA_CREDITO, CxpDocumento::TIPO_NOTA_DEBITO], true), 404);
 
-        $documento->load(['proveedor', 'asiento.detalle.cuenta', 'aplicacionesComoOrigen.destino']);
+        $documento->load(['proveedor', 'detalle.cuenta', 'asiento.detalle.cuenta', 'aplicacionesComoOrigen.destino']);
 
         return view('admin.cxp.notas.show', ['nota' => $documento]);
+    }
+
+    /**
+     * Contabiliza una nota en borrador (típicamente importada de la DGI),
+     * posteando su asiento a partir de las líneas de detalle. La NC queda como
+     * crédito disponible del proveedor; la ND queda con saldo pagable.
+     */
+    public function contabilizar(Request $request, CxpDocumento $documento): RedirectResponse
+    {
+        abort_unless($documento->compania_id === $this->companiaActivaId($request), 404);
+        abort_unless(in_array($documento->tipo_documento, [CxpDocumento::TIPO_NOTA_CREDITO, CxpDocumento::TIPO_NOTA_DEBITO], true), 404);
+
+        if (! $documento->esBorrador()) {
+            return back()->withErrors(['documento' => 'La nota ya está contabilizada o anulada.']);
+        }
+
+        $usuario = $request->user();
+        $documento->load(['proveedor', 'detalle']);
+
+        DB::transaction(function () use ($documento, $usuario) {
+            $this->contabilizarNota($documento, $usuario);
+        });
+
+        return redirect()->route('admin.cxp.notas.show', $documento)
+            ->with('status', "Nota {$documento->numero} contabilizada. Asiento {$documento->fresh()->asiento->numero}.");
+    }
+
+    /** Elimina una nota en borrador (no contabilizada). */
+    public function destroy(Request $request, CxpDocumento $documento): RedirectResponse
+    {
+        abort_unless($documento->compania_id === $this->companiaActivaId($request), 404);
+        abort_unless(in_array($documento->tipo_documento, [CxpDocumento::TIPO_NOTA_CREDITO, CxpDocumento::TIPO_NOTA_DEBITO], true), 404);
+
+        if (! $documento->esBorrador()) {
+            return back()->withErrors(['documento' => 'Solo se pueden eliminar notas en borrador. Una nota contabilizada debe anularse.']);
+        }
+
+        $numero = $documento->numero;
+
+        DB::transaction(function () use ($documento) {
+            $documento->detalle()->delete();
+            $documento->delete();
+        });
+
+        return redirect()->route('admin.cxp.notas.index')
+            ->with('status', "Borrador {$numero} eliminado.");
+    }
+
+    /**
+     * Postea el asiento de una nota en borrador a partir de su detalle.
+     * Debe llamarse dentro de una transacción.
+     */
+    private function contabilizarNota(CxpDocumento $nota, $usuario): void
+    {
+        $companiaId = $nota->compania_id;
+        $esCredito = $nota->tipo_documento === CxpDocumento::TIPO_NOTA_CREDITO;
+        $impuesto = round((float) $nota->impuesto, 2);
+        $total = round((float) $nota->total, 2);
+
+        $cuentaCxpId = CuentaDefault::idPara($companiaId, 'CXP');
+        $cuentaItbmsId = CuentaDefault::idPara($companiaId, 'ITBMS_CREDITO');
+
+        if (! $cuentaCxpId) {
+            throw ValidationException::withMessages([
+                'documento' => 'La compañía no tiene configurada la cuenta default CXP (Cuentas por Pagar).',
+            ]);
+        }
+
+        if ($impuesto > 0 && ! $cuentaItbmsId) {
+            throw ValidationException::withMessages([
+                'documento' => 'La compañía no tiene configurada la cuenta default ITBMS_CREDITO.',
+            ]);
+        }
+
+        $lineasAsiento = [];
+
+        if ($esCredito) {
+            // Dr CXP (total); Cr contrapartida por línea (base); Cr ITBMS crédito.
+            $lineasAsiento[] = [
+                'cuenta_id' => $cuentaCxpId,
+                'contacto_id' => $nota->proveedor_id,
+                'descripcion' => "Nota de crédito {$nota->numero}",
+                'debito' => $total,
+                'credito' => 0,
+            ];
+            foreach ($nota->detalle as $linea) {
+                $base = round((float) $linea->total_linea - (float) $linea->impuesto_monto, 2);
+                $lineasAsiento[] = [
+                    'cuenta_id' => $linea->cuenta_id,
+                    'descripcion' => $linea->descripcion,
+                    'debito' => 0,
+                    'credito' => $base,
+                ];
+            }
+            if ($impuesto > 0) {
+                $lineasAsiento[] = [
+                    'cuenta_id' => $cuentaItbmsId,
+                    'descripcion' => "ITBMS nota {$nota->numero}",
+                    'debito' => 0,
+                    'credito' => $impuesto,
+                ];
+            }
+            $descAsiento = "Nota de crédito {$nota->numero} — ".$nota->proveedor->nombre;
+        } else {
+            // Dr contrapartida por línea (base) + Dr ITBMS crédito; Cr CXP (total).
+            foreach ($nota->detalle as $linea) {
+                $base = round((float) $linea->total_linea - (float) $linea->impuesto_monto, 2);
+                $lineasAsiento[] = [
+                    'cuenta_id' => $linea->cuenta_id,
+                    'descripcion' => $linea->descripcion,
+                    'debito' => $base,
+                    'credito' => 0,
+                ];
+            }
+            if ($impuesto > 0) {
+                $lineasAsiento[] = [
+                    'cuenta_id' => $cuentaItbmsId,
+                    'descripcion' => "ITBMS nota {$nota->numero}",
+                    'debito' => $impuesto,
+                    'credito' => 0,
+                ];
+            }
+            $lineasAsiento[] = [
+                'cuenta_id' => $cuentaCxpId,
+                'contacto_id' => $nota->proveedor_id,
+                'descripcion' => "Nota de débito {$nota->numero}",
+                'debito' => 0,
+                'credito' => $total,
+            ];
+            $descAsiento = "Nota de débito {$nota->numero} — ".$nota->proveedor->nombre;
+        }
+
+        $asiento = app(AsientoAutomatico::class)->postear(
+            $companiaId,
+            $nota->fecha->format('Y-m-d'),
+            $descAsiento,
+            $nota->numero,
+            $lineasAsiento,
+            'CXP',
+            'cxp_documentos',
+            $nota->id,
+            $usuario,
+        );
+
+        $nota->update([
+            'asiento_id' => $asiento->id,
+            'estado' => CxpDocumento::ESTADO_PENDIENTE,
+            'saldo' => $total,
+            'updated_by' => $usuario->email,
+        ]);
     }
 
     public function anular(Request $request, CxpDocumento $documento): RedirectResponse

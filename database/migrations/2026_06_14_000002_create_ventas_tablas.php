@@ -67,6 +67,8 @@ return new class extends Migration
                 $table->decimal('total', 18, 2)->default(0);
                 $table->decimal('saldo', 18, 2)->default(0);
                 $table->string('estado', 30)->default('BORRADOR');
+                $table->string('tipo_documento', 30)->default('FACTURA');
+                $table->text('motivo')->nullable();
                 $table->unsignedBigInteger('cotizacion_id')->nullable();
                 $table->unsignedBigInteger('cxc_documento_id')->nullable();
                 $table->unsignedBigInteger('asiento_id')->nullable();

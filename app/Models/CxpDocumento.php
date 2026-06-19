@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\TipoDocumentoBehavior;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -9,7 +10,15 @@ use Illuminate\Support\Facades\DB;
 
 class CxpDocumento extends Model
 {
+    use TipoDocumentoBehavior;
+
     protected $table = 'cxp_documentos';
+
+    /** Submayor de este documento: cuentas por pagar. */
+    protected static function auxiliarSubmayor(): string
+    {
+        return TipoDocumento::AUX_CXP;
+    }
 
     public const TIPO_FACTURA = 'FACTURA';
 
@@ -102,18 +111,13 @@ class CxpDocumento extends Model
     }
 
     /**
-     * Cargo (aumenta lo que debemos al proveedor): facturas y notas de débito.
-     * Abono (lo reduce): pagos y notas de crédito.
+     * Tipos que generan un saldo pagable (facturas y notas de débito).
+     * Alias de tiposConSaldo() (trait) para no romper llamadas existentes.
+     * El signo (esCargo) lo aporta el trait desde core_tipos_documento.
      */
-    public function esCargo(): bool
-    {
-        return in_array($this->tipo_documento, [self::TIPO_FACTURA, self::TIPO_NOTA_DEBITO], true);
-    }
-
-    /** Tipos que generan un saldo pagable (facturas y notas de débito). */
     public static function tiposPagables(): array
     {
-        return [self::TIPO_FACTURA, self::TIPO_NOTA_DEBITO];
+        return static::tiposConSaldo();
     }
 
     /** Estado según el saldo (PENDIENTE / PARCIAL / PAGADO). */
@@ -135,16 +139,18 @@ class CxpDocumento extends Model
      */
     public static function siguienteNumeroPago(int $companiaId): string
     {
-        self::bloquearNumeracion($companiaId.'-PG-');
+        $prefijo = static::prefijoDe(self::TIPO_PAGO) ?? 'PG-';
+
+        self::bloquearNumeracion($companiaId.'-'.$prefijo);
 
         $ultimo = self::where('compania_id', $companiaId)
             ->where('tipo_documento', self::TIPO_PAGO)
-            ->where('numero', 'like', 'PG-%')
+            ->where('numero', 'like', $prefijo.'%')
             ->max('numero');
 
-        $siguiente = $ultimo ? ((int) substr($ultimo, 3)) + 1 : 1;
+        $siguiente = $ultimo ? ((int) substr($ultimo, strlen($prefijo))) + 1 : 1;
 
-        return 'PG-'.str_pad((string) $siguiente, 6, '0', STR_PAD_LEFT);
+        return $prefijo.str_pad((string) $siguiente, 6, '0', STR_PAD_LEFT);
     }
 
     /**
@@ -153,7 +159,7 @@ class CxpDocumento extends Model
      */
     public static function siguienteNumeroNota(int $companiaId, string $tipo): string
     {
-        $prefijo = $tipo === self::TIPO_NOTA_CREDITO ? 'NC-' : 'ND-';
+        $prefijo = static::prefijoDe($tipo) ?? ($tipo === self::TIPO_NOTA_CREDITO ? 'NC-' : 'ND-');
 
         self::bloquearNumeracion($companiaId.'-'.$prefijo);
 

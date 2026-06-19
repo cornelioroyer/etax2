@@ -26,10 +26,20 @@
 
             {{-- Filtros --}}
             <form method="GET" class="bg-white p-4 shadow-sm sm:rounded-lg">
-                <div class="grid grid-cols-2 gap-3 sm:grid-cols-6">
+                <div class="grid grid-cols-2 gap-3 sm:grid-cols-7">
                     <div class="col-span-2">
                         <x-input-label for="q" value="Buscar" />
                         <x-text-input id="q" name="q" type="text" class="mt-1 block w-full" :value="$filtros['q'] ?? ''" placeholder="Número o cliente" />
+                    </div>
+                    <div>
+                        <x-input-label for="tipo" value="Tipo" />
+                        <select id="tipo" name="tipo" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">Todos</option>
+                            <option value="FACTURA" @selected(($filtros['tipo'] ?? '') === 'FACTURA')>Factura</option>
+                            <option value="NOTA_CREDITO" @selected(($filtros['tipo'] ?? '') === 'NOTA_CREDITO')>Nota crédito</option>
+                            <option value="NOTA_DEBITO" @selected(($filtros['tipo'] ?? '') === 'NOTA_DEBITO')>Nota débito</option>
+                            <option value="REEMBOLSO" @selected(($filtros['tipo'] ?? '') === 'REEMBOLSO')>Reembolso</option>
+                        </select>
                     </div>
                     <div>
                         <x-input-label for="cliente_id" value="Cliente" />
@@ -44,7 +54,7 @@
                         <x-input-label for="estado" value="Estado" />
                         <select id="estado" name="estado" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                             <option value="">Todos</option>
-                            @foreach (['BORRADOR', 'EMITIDA', 'PARCIAL', 'PAGADA', 'ANULADA'] as $est)
+                            @foreach (['BORRADOR', 'EMITIDA', 'PARCIAL', 'PAGADA', 'APLICADA', 'ANULADA'] as $est)
                                 <option value="{{ $est }}" @selected(($filtros['estado'] ?? '') === $est)>{{ ucfirst(strtolower($est)) }}</option>
                             @endforeach
                         </select>
@@ -83,6 +93,7 @@
                         <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                             <tr>
                                 <th class="px-4 py-3"><a href="{{ $sortUrl('numero') }}" class="hover:text-gray-700">Número{!! $sortIcon('numero') !!}</a></th>
+                                <th class="px-4 py-3">Tipo</th>
                                 <th class="px-4 py-3"><a href="{{ $sortUrl('fecha') }}" class="hover:text-gray-700">Fecha{!! $sortIcon('fecha') !!}</a></th>
                                 <th class="px-4 py-3">Cliente</th>
                                 <th class="px-4 py-3 hidden md:table-cell"><a href="{{ $sortUrl('fecha_vencimiento') }}" class="hover:text-gray-700">Vence{!! $sortIcon('fecha_vencimiento') !!}</a></th>
@@ -94,20 +105,45 @@
                         </thead>
                         <tbody class="divide-y divide-gray-100">
                             @forelse ($facturas as $factura)
+                                @php
+                                    $esNc = $factura->tipo_documento === 'NOTA_CREDITO';
+                                    $esNd = $factura->tipo_documento === 'NOTA_DEBITO';
+                                    $esRe = $factura->tipo_documento === 'REEMBOLSO';
+                                    $signo = $esNc ? -1 : 1;
+                                    $showUrl = match ($factura->tipo_documento) {
+                                        'NOTA_CREDITO' => route('admin.ventas.notas-credito.show', $factura->id),
+                                        'NOTA_DEBITO'  => route('admin.ventas.notas-debito.show', $factura->id),
+                                        'REEMBOLSO'    => route('admin.ventas.reembolsos.show', $factura->id),
+                                        default        => route('admin.ventas.facturas.show', $factura->id),
+                                    };
+                                @endphp
                                 <tr class="hover:bg-gray-50">
                                     <td class="px-4 py-3 font-medium">
-                                        <a href="{{ route('admin.ventas.facturas.show', $factura) }}" class="text-blue-700 hover:underline">{{ $factura->numero }}</a>
+                                        <a href="{{ $showUrl }}" class="text-blue-700 hover:underline">{{ $factura->numero }}</a>
+                                    </td>
+                                    <td class="px-4 py-3 whitespace-nowrap">
+                                        @if ($esNc)
+                                            <span class="inline-flex rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800">Nota crédito</span>
+                                        @elseif ($esNd)
+                                            <span class="inline-flex rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">Nota débito</span>
+                                        @elseif ($esRe)
+                                            <span class="inline-flex rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-800">Reembolso</span>
+                                        @else
+                                            <span class="inline-flex rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">Factura</span>
+                                        @endif
                                     </td>
                                     <td class="px-4 py-3 whitespace-nowrap">{{ $factura->fecha->format('d/m/Y') }}</td>
                                     <td class="px-4 py-3 max-w-xs truncate">{{ $factura->cliente->nombre ?? '—' }}</td>
                                     <td class="px-4 py-3 whitespace-nowrap hidden md:table-cell">{{ $factura->fecha_vencimiento?->format('d/m/Y') ?? '—' }}</td>
-                                    <td class="px-4 py-3 text-right whitespace-nowrap">B/. {{ number_format((float) $factura->total, 2) }}</td>
-                                    <td class="px-4 py-3 text-right whitespace-nowrap font-medium">B/. {{ number_format((float) $factura->saldo, 2) }}</td>
+                                    <td class="px-4 py-3 text-right whitespace-nowrap {{ $esNc ? 'text-red-600' : '' }}">B/. {{ number_format($signo * (float) $factura->total, 2) }}</td>
+                                    <td class="px-4 py-3 text-right whitespace-nowrap font-medium">{{ $esNc ? '—' : 'B/. '.number_format((float) $factura->saldo, 2) }}</td>
                                     <td class="px-4 py-3">
                                         @include('admin.ventas.facturas._estado', ['estado' => $factura->estado])
                                     </td>
                                     <td class="px-4 py-3 hidden md:table-cell text-xs">
-                                        @if ($factura->fel_documento_id)
+                                        @if ($esNc || $esNd)
+                                            <span class="text-gray-300">—</span>
+                                        @elseif ($factura->fel_documento_id)
                                             <span class="text-green-600 font-medium">Emitida</span>
                                         @else
                                             <span class="text-gray-400">Pendiente</span>
@@ -116,8 +152,8 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="8" class="px-4 py-10 text-center text-gray-500">
-                                        No hay facturas.
+                                    <td colspan="9" class="px-4 py-10 text-center text-gray-500">
+                                        No hay documentos.
                                     </td>
                                 </tr>
                             @endforelse

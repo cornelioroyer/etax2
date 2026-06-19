@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\TipoDocumentoBehavior;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -9,7 +10,15 @@ use Illuminate\Support\Facades\DB;
 
 class CxcDocumento extends Model
 {
+    use TipoDocumentoBehavior;
+
     protected $table = 'cxc_documentos';
+
+    /** Submayor de este documento: cuentas por cobrar. */
+    protected static function auxiliarSubmayor(): string
+    {
+        return TipoDocumento::AUX_CXC;
+    }
 
     public const TIPO_FACTURA = 'FACTURA';
 
@@ -18,6 +27,8 @@ class CxcDocumento extends Model
     public const TIPO_NOTA_CREDITO = 'NOTA_CREDITO';
 
     public const TIPO_NOTA_DEBITO = 'NOTA_DEBITO';
+
+    public const TIPO_REEMBOLSO = 'REEMBOLSO';
 
     public const ESTADO_PENDIENTE = 'PENDIENTE';
 
@@ -93,18 +104,12 @@ class CxcDocumento extends Model
     }
 
     /**
-     * Cargo (aumenta la deuda del cliente): facturas y notas de débito.
-     * Abono (la reduce): cobros y notas de crédito.
+     * Tipos que generan un saldo cobrable (facturas y notas de débito).
+     * Alias de tiposConSaldo() (trait) para no romper llamadas existentes.
      */
-    public function esCargo(): bool
-    {
-        return in_array($this->tipo_documento, [self::TIPO_FACTURA, self::TIPO_NOTA_DEBITO], true);
-    }
-
-    /** Tipos que generan un saldo cobrable (facturas y notas de débito). */
     public static function tiposCobrables(): array
     {
-        return [self::TIPO_FACTURA, self::TIPO_NOTA_DEBITO];
+        return static::tiposConSaldo();
     }
 
     /** Estado según el saldo (PENDIENTE / PARCIAL / PAGADO). */
@@ -125,12 +130,9 @@ class CxcDocumento extends Model
      */
     public static function siguienteNumero(int $companiaId, string $tipo): string
     {
-        $prefijo = match ($tipo) {
-            self::TIPO_PAGO => 'RC-',
-            self::TIPO_NOTA_CREDITO => 'NC-',
-            self::TIPO_NOTA_DEBITO => 'ND-',
-            default => 'FC-',
-        };
+        // Prefijo declarado en el maestro core_tipos_documento (auxiliar CXC);
+        // fallback FC- por compatibilidad si el tipo no estuviera catalogado.
+        $prefijo = static::prefijoDe($tipo) ?? 'FC-';
 
         // PostgreSQL no permite FOR UPDATE con agregados (max); usamos un
         // advisory lock por compañía+prefijo para serializar la numeración.

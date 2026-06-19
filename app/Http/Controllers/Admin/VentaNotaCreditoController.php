@@ -94,12 +94,15 @@ class VentaNotaCreditoController extends Controller
             'total'          => ['required', 'numeric', 'min:0.01'],
             'cuenta_id'      => ['required', 'integer', 'exists:cgl_cuentas,id'],
             'factura_id'     => ['nullable', 'integer'],
+            'tipo_fel'       => ['nullable', 'in:04,06'],
         ]);
 
         $total       = round((float) $data['total'], 2);
         $cuentaCxcId = CuentaDefault::idPara($companiaId, 'CXC');
+        // Código DGI: 04 si referencia una factura, 06 (genérica) si no.
+        $tipoFel     = $data['tipo_fel'] ?? (! empty($data['factura_id']) ? '04' : '06');
 
-        $nota = DB::transaction(function () use ($companiaId, $data, $total, $cuentaCxcId, $usuario) {
+        $nota = DB::transaction(function () use ($companiaId, $data, $total, $cuentaCxcId, $tipoFel, $usuario) {
             // Crear CxcDocumento de nota crédito
             $cxcNota = CxcDocumento::create([
                 'compania_id'    => $companiaId,
@@ -124,6 +127,7 @@ class VentaNotaCreditoController extends Controller
                 'total'          => $total,
                 'cxc_documento_id' => $cxcNota->id,
                 'estado'         => VentaNotaCredito::ESTADO_EMITIDA,
+                'extra'          => ['tipo_fel' => $tipoFel],
                 'created_by'     => $usuario->email,
                 'updated_by'     => $usuario->email,
             ]);
@@ -190,7 +194,7 @@ class VentaNotaCreditoController extends Controller
                     ],
                 ],
                 'VENTAS',
-                'ventas_notas_credito',
+                'ventas_facturas',
                 $nota->id,
                 $usuario,
             );

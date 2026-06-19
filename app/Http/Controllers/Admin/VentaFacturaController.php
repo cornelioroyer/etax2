@@ -44,6 +44,19 @@ class VentaFacturaController extends Controller
             'cuentasIngreso' => $this->cuentasIngreso($companiaId),
             'cuentaVentasId' => CuentaDefault::idPara($companiaId, 'VENTAS'),
             'items'          => $this->itemsVenta($companiaId),
+            // Para el formulario de nota de crédito integrado (selector de tipo):
+            'facturasAbiertas' => VentaFactura::where('compania_id', $companiaId)
+                ->whereIn('estado', [VentaFactura::ESTADO_EMITIDA, VentaFactura::ESTADO_PARCIAL])
+                ->where('saldo', '>', 0)
+                ->with('cliente:id,nombre')
+                ->orderBy('numero')
+                ->get(['id', 'numero', 'saldo', 'cliente_id'])
+                ->map(fn ($f) => [
+                    'id' => $f->id,
+                    'numero' => $f->numero,
+                    'saldo' => (float) $f->saldo,
+                    'cliente_id' => $f->cliente_id,
+                ]),
         ]);
     }
 
@@ -266,7 +279,8 @@ class VentaFacturaController extends Controller
         $companiaId = $this->companiaActivaId($request);
 
         $filtros = $request->validate([
-            'estado'     => ['nullable', Rule::in(['BORRADOR', 'EMITIDA', 'PARCIAL', 'PAGADA', 'ANULADA'])],
+            'tipo'       => ['nullable', Rule::in(['FACTURA', 'NOTA_CREDITO', 'NOTA_DEBITO'])],
+            'estado'     => ['nullable', Rule::in(['BORRADOR', 'EMITIDA', 'PARCIAL', 'PAGADA', 'APLICADA', 'ANULADA'])],
             'cliente_id' => ['nullable', 'integer'],
             'desde'      => ['nullable', 'date'],
             'hasta'      => ['nullable', 'date'],
@@ -278,9 +292,13 @@ class VentaFacturaController extends Controller
         $sort = $filtros['sort'] ?? 'fecha';
         $dir  = $filtros['dir']  ?? 'desc';
 
-        $consulta = VentaFactura::query()
+        // Listado unificado: facturas y notas de crédito viven en ventas_facturas,
+        // distinguidas por tipo_documento. Se quita el global scope del modelo
+        // VentaFactura para incluir ambos tipos.
+        $consulta = VentaFactura::withoutGlobalScope('tipoFactura')
             ->with('cliente')
             ->where('compania_id', $companiaId)
+            ->when($filtros['tipo'] ?? null, fn ($q, $v) => $q->where('tipo_documento', $v))
             ->when($filtros['estado'] ?? null, fn ($q, $v) => $q->where('estado', $v))
             ->when($filtros['cliente_id'] ?? null, fn ($q, $v) => $q->where('cliente_id', $v))
             ->when($filtros['desde'] ?? null, fn ($q, $v) => $q->whereDate('fecha', '>=', $v))
@@ -298,31 +316,47 @@ class VentaFacturaController extends Controller
         if ($request->query('export')) {
             $todas = (clone $consulta)->get();
             if ($export = $this->exportarReporte($request, 'admin.exports.listado', [
-                'titulo' => 'Facturas de venta',
+                'titulo' => 'Facturas y notas de crédito de venta',
                 'compania' => Compania::find($companiaId)?->nombre ?? '',
-                'subtitulo' => 'Listado al '.now()->format('d/m/Y').' — '.$todas->count().' facturas',
+                'subtitulo' => 'Listado al '.now()->format('d/m/Y').' — '.$todas->count().' documentos',
                 'encabezados' => [
-                    ['titulo' => 'Número'], ['titulo' => 'Fecha'], ['titulo' => 'Vence'],
+                    ['titulo' => 'Número'], ['titulo' => 'Tipo'], ['titulo' => 'Fecha'], ['titulo' => 'Vence'],
                     ['titulo' => 'Cliente'], ['titulo' => 'Total', 'num' => true],
                     ['titulo' => 'Saldo', 'num' => true], ['titulo' => 'Estado'],
                 ],
-                'filas' => $todas->map(fn ($f) => [
-                    $f->numero, $f->fecha->format('d/m/Y'),
-                    $f->fecha_vencimiento?->format('d/m/Y') ?? '',
-                    $f->cliente->nombre ?? '',
-                    number_format((float) $f->total, 2),
-                    number_format((float) $f->saldo, 2),
-                    ucfirst(strtolower($f->estado)),
-                ])->all(),
-                'totales' => ['TOTAL', '', '', '',
-                    number_format((float) $todas->sum('total'), 2),
-                    number_format((float) $todas->sum('saldo'), 2), ''],
-            ], 'facturas_venta_'.now()->format('Y-m-d'))) {
+                'filas' => $todas->map(function ($f) {
+                    $esNc = $f->tipo_documento === 'NOTA_CREDITO';
+                    $etiqueta = match ($f->tipo_documento) {
+                        'NOTA_CREDITO' => 'Nota crédito',
+                        'NOTA_DEBITO'  => 'Nota débito',
+                        'REEMBOLSO'    => 'Reembolso',
+                        default        => 'Factura',
+                    };
+
+                    return [
+                        $f->numero,
+                        $etiqueta,
+                        $f->fecha->format('d/m/Y'),
+                        $f->fecha_vencimiento?->format('d/m/Y') ?? '',
+                        $f->cliente->nombre ?? '',
+                        number_format(($esNc ? -1 : 1) * (float) $f->total, 2),
+                        $esNc ? '' : number_format((float) $f->saldo, 2),
+                        ucfirst(strtolower($f->estado)),
+                    ];
+                })->all(),
+                'totales' => ['TOTAL', '', '', '', '',
+                    number_format($todas->sum(fn ($f) => ($f->tipo_documento === 'NOTA_CREDITO' ? -1 : 1) * (float) $f->total), 2),
+                    number_format($todas->whereIn('tipo_documento', [VentaFactura::TIPO_DOCUMENTO, 'NOTA_DEBITO', 'REEMBOLSO'])->sum(fn ($f) => (float) $f->saldo), 2), ''],
+            ], 'documentos_venta_'.now()->format('Y-m-d'))) {
                 return $export;
             }
         }
 
-        $saldoTotal = VentaFactura::where('compania_id', $companiaId)
+        // Saldo por cobrar: facturas + notas de débito (cargos). Las NC ya
+        // reducen el saldo de la factura a la que se aplican.
+        $saldoTotal = VentaFactura::withoutGlobalScope('tipoFactura')
+            ->where('compania_id', $companiaId)
+            ->whereIn('tipo_documento', [VentaFactura::TIPO_DOCUMENTO, 'NOTA_DEBITO', 'REEMBOLSO'])
             ->whereNotIn('estado', [VentaFactura::ESTADO_ANULADA, VentaFactura::ESTADO_PAGADA])
             ->sum('saldo');
 
@@ -949,7 +983,7 @@ class VentaFacturaController extends Controller
                                 ['cuenta_id' => $cuentaVentasId, 'descripcion' => "Nota crédito {$numero}", 'debito' => $total, 'credito' => 0],
                                 ['cuenta_id' => $cuentaCxcId, 'contacto_id' => $cliente->id, 'descripcion' => "Nota crédito {$numero}", 'debito' => 0, 'credito' => $total],
                             ],
-                            'VENTAS', 'ventas_notas_credito', $nota->id, $usuario,
+                            'VENTAS', 'ventas_facturas', $nota->id, $usuario,
                         );
 
                         $nota->update(['asiento_id' => $asiento->id]);

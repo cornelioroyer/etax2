@@ -40,6 +40,8 @@ use App\Http\Controllers\Admin\VentaCotizacionController;
 use App\Http\Controllers\Admin\VentaFacturaController;
 use App\Http\Controllers\Admin\VentaReciboController;
 use App\Http\Controllers\Admin\VentaNotaCreditoController;
+use App\Http\Controllers\Admin\VentaNotaDebitoController;
+use App\Http\Controllers\Admin\VentaReembolsoController;
 use App\Http\Controllers\Admin\BcoBancoController;
 use App\Http\Controllers\Admin\BcoCuentaController;
 use App\Http\Controllers\Admin\BcoMovimientoController;
@@ -234,6 +236,8 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::get('cxp/notas/crear', [CxpNotaController::class, 'create'])->name('cxp.notas.create');
         Route::post('cxp/notas', [CxpNotaController::class, 'store'])->name('cxp.notas.store');
         Route::post('cxp/notas/{documento}/anular', [CxpNotaController::class, 'anular'])->whereNumber('documento')->name('cxp.notas.anular');
+        Route::post('cxp/notas/{documento}/contabilizar', [CxpNotaController::class, 'contabilizar'])->whereNumber('documento')->name('cxp.notas.contabilizar');
+        Route::delete('cxp/notas/{documento}', [CxpNotaController::class, 'destroy'])->whereNumber('documento')->name('cxp.notas.destroy');
         Route::get('cxp/facturas/nueva', [CxpFacturaController::class, 'create'])->name('cxp.facturas.create');
         Route::post('cxp/facturas/importar', [CxpFacturaController::class, 'importar'])->name('cxp.facturas.importar');
         Route::get('cxp/facturas/importar/{importacion}/progreso', [CxpFacturaController::class, 'importarProgreso'])->whereNumber('importacion')->name('cxp.facturas.importar.progreso');
@@ -375,6 +379,8 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::get('ventas/recibos/{recibo}', [VentaReciboController::class, 'show'])->whereNumber('recibo')->name('ventas.recibos.show');
         Route::get('ventas/notas-credito', [VentaNotaCreditoController::class, 'index'])->name('ventas.notas-credito.index');
         Route::get('ventas/notas-credito/{notaCredito}', [VentaNotaCreditoController::class, 'show'])->whereNumber('notaCredito')->name('ventas.notas-credito.show');
+        Route::get('ventas/notas-debito/{notaDebito}', [VentaNotaDebitoController::class, 'show'])->whereNumber('notaDebito')->name('ventas.notas-debito.show');
+        Route::get('ventas/reembolsos/{reembolso}', [VentaReembolsoController::class, 'show'])->whereNumber('reembolso')->name('ventas.reembolsos.show');
     });
 
     Route::middleware('permission:ventas.gestionar')->group(function () {
@@ -384,6 +390,10 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::get('ventas/notas-credito/nueva', [VentaNotaCreditoController::class, 'create'])->name('ventas.notas-credito.create');
         Route::post('ventas/notas-credito', [VentaNotaCreditoController::class, 'store'])->name('ventas.notas-credito.store');
         Route::post('ventas/notas-credito/{notaCredito}/anular', [VentaNotaCreditoController::class, 'anular'])->whereNumber('notaCredito')->name('ventas.notas-credito.anular');
+        Route::post('ventas/notas-debito', [VentaNotaDebitoController::class, 'store'])->name('ventas.notas-debito.store');
+        Route::post('ventas/notas-debito/{notaDebito}/anular', [VentaNotaDebitoController::class, 'anular'])->whereNumber('notaDebito')->name('ventas.notas-debito.anular');
+        Route::post('ventas/reembolsos', [VentaReembolsoController::class, 'store'])->name('ventas.reembolsos.store');
+        Route::post('ventas/reembolsos/{reembolso}/anular', [VentaReembolsoController::class, 'anular'])->whereNumber('reembolso')->name('ventas.reembolsos.anular');
     });
 
     // Módulo bancario (bco_*)

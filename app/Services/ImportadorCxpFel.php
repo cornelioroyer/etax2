@@ -31,7 +31,11 @@ class ImportadorCxpFel
     public function procesar(CxpImportacion $importacion): void
     {
         $import = new CxpFacturasImport;
-        Excel::import($import, Storage::path($importacion->ruta));
+        // Tipo de lector explícito por extensión: evita "No ReaderType could be
+        // detected" si la ruta guardada no la trae.
+        $ext = strtolower(pathinfo($importacion->ruta, PATHINFO_EXTENSION));
+        $tipo = $ext === 'xls' ? \Maatwebsite\Excel\Excel::XLS : \Maatwebsite\Excel\Excel::XLSX;
+        Excel::import($import, Storage::path($importacion->ruta), null, $tipo);
 
         $importacion->update([
             'estado' => CxpImportacion::ESTADO_PROCESANDO,
@@ -155,10 +159,15 @@ class ImportadorCxpFel
         $itbms = $dgi['itbms'] ?? $fila['itbms'];
         $total = $dgi['total'] ?? $fila['total'];
 
+        // Clasifica el documento: el Excel de la DGI mezcla facturas con notas
+        // de crédito/débito. Las notas van a CxP → Notas (no a "Facturas de
+        // compra") con su tipo correcto; el signo lo da el tipo, no el monto.
+        $tipoDoc = $this->tipoDocumento($dgi, $fila);
+
         $factura = CxpDocumento::create([
             'compania_id' => $companiaId,
             'proveedor_id' => $proveedor->id,
-            'tipo_documento' => CxpDocumento::TIPO_FACTURA,
+            'tipo_documento' => $tipoDoc,
             'numero' => $numero,
             'cufe' => $fila['cufe'],
             'fecha' => $fila['fecha'],
@@ -206,5 +215,28 @@ class ImportadorCxpFel
         }
 
         return ['error' => null, 'omitida' => false, 'con_detalle' => $conDetalle];
+    }
+
+    /**
+     * Determina el tipo de documento (FACTURA / NOTA_CREDITO / NOTA_DEBITO).
+     * Prefiere lo que devolvió la DGI por CUFE; si no, infiere del texto de la
+     * columna "tipo" del Excel de documentos recibidos.
+     */
+    private function tipoDocumento(?array $dgi, array $fila): string
+    {
+        $tipoDgi = $dgi['tipo'] ?? null;
+        if (in_array($tipoDgi, [CxpDocumento::TIPO_NOTA_CREDITO, CxpDocumento::TIPO_NOTA_DEBITO, CxpDocumento::TIPO_FACTURA], true)) {
+            return $tipoDgi;
+        }
+
+        $txt = mb_strtoupper($fila['tipo'] ?? '');
+        if (str_contains($txt, 'CRÉDITO') || str_contains($txt, 'CREDITO')) {
+            return CxpDocumento::TIPO_NOTA_CREDITO;
+        }
+        if (str_contains($txt, 'DÉBITO') || str_contains($txt, 'DEBITO')) {
+            return CxpDocumento::TIPO_NOTA_DEBITO;
+        }
+
+        return CxpDocumento::TIPO_FACTURA;
     }
 }
