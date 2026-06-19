@@ -61,14 +61,14 @@ class CajaTest extends TestCase
 
     private function reembolsar(Caja $caja, float $monto): void
     {
-        $this->actuar()->post(route('admin.caja.cajas.reembolsos', $caja), [
+        $this->actuar()->post(route('admin.caja.reembolso', $caja), [
             'fecha' => '2026-06-13', 'monto' => $monto, 'cuenta_banco_id' => $this->banco->id,
         ])->assertSessionHasNoErrors();
     }
 
     private function movimiento(Caja $caja, string $tipo, float $monto): \Illuminate\Testing\TestResponse
     {
-        return $this->actuar()->post(route('admin.caja.cajas.movimientos', $caja), [
+        return $this->actuar()->post(route('admin.caja.movimiento', $caja), [
             'tipo_movimiento' => $tipo, 'fecha' => '2026-06-13', 'monto' => $monto,
             'beneficiario' => 'Juan', 'descripcion' => 'Prueba', 'cuenta_contable_id' => $this->gasto->id,
         ]);
@@ -76,12 +76,12 @@ class CajaTest extends TestCase
 
     public function test_listado_se_muestra(): void
     {
-        $this->actuar()->get(route('admin.caja.cajas.index'))->assertOk()->assertSee('Caja menuda');
+        $this->actuar()->get(route('admin.caja.index'))->assertOk()->assertSee('Caja menuda');
     }
 
     public function test_crear_caja(): void
     {
-        $this->actuar()->post(route('admin.caja.cajas.store'), [
+        $this->actuar()->post(route('admin.caja.store'), [
             'codigo' => 'CHICA', 'nombre' => 'Caja chica', 'cuenta_contable_id' => $this->efectivo->id,
         ])->assertSessionHasNoErrors();
 
@@ -93,7 +93,7 @@ class CajaTest extends TestCase
     public function test_codigo_no_se_repite(): void
     {
         $this->crearCaja();
-        $this->actuar()->post(route('admin.caja.cajas.store'), ['codigo' => 'CAJA01', 'nombre' => 'Otra'])
+        $this->actuar()->post(route('admin.caja.store'), ['codigo' => 'CAJA01', 'nombre' => 'Otra'])
             ->assertSessionHasErrors('codigo');
         $this->assertSame(1, Caja::count());
     }
@@ -148,7 +148,7 @@ class CajaTest extends TestCase
     {
         $caja = $this->crearCaja();
 
-        $this->actuar()->post(route('admin.caja.cajas.movimientos', $caja), [
+        $this->actuar()->post(route('admin.caja.movimiento', $caja), [
             'tipo_movimiento' => 'EGRESO', 'fecha' => '2026-06-13', 'monto' => 10,
             'cuenta_contable_id' => $this->efectivo->id,
         ])->assertSessionHasErrors('cuenta_contable_id');
@@ -174,7 +174,7 @@ class CajaTest extends TestCase
         $caja = $this->crearCaja();
         $this->reembolsar($caja, 100);
 
-        $this->actuar()->post(route('admin.caja.cajas.vales', $caja), [
+        $this->actuar()->post(route('admin.caja.vale', $caja), [
             'fecha' => '2026-06-13', 'beneficiario' => 'Ana', 'monto' => 40, 'motivo' => 'Compra urgente',
         ])->assertSessionHasNoErrors();
 
@@ -190,12 +190,12 @@ class CajaTest extends TestCase
         $caja = $this->crearCaja();
         $this->reembolsar($caja, 100);
 
-        $this->actuar()->post(route('admin.caja.cajas.vales', $caja), [
+        $this->actuar()->post(route('admin.caja.vale', $caja), [
             'fecha' => '2026-06-13', 'beneficiario' => 'Ana', 'monto' => 40,
         ])->assertSessionHasNoErrors();
         $vale = CajaVale::firstOrFail();
 
-        $this->actuar()->post(route('admin.caja.vales.liquidar', $vale), [
+        $this->actuar()->post(route('admin.caja.vale.liquidar', $vale), [
             'fecha' => '2026-06-14', 'cuenta_contable_id' => $this->gasto->id,
         ])->assertSessionHasNoErrors();
 
@@ -216,7 +216,7 @@ class CajaTest extends TestCase
         $this->reembolsar($caja, 100);
 
         // Conteo físico: 4x20 + 3x5 = 95  -> diferencia -5 vs sistema 100
-        $this->actuar()->post(route('admin.caja.cajas.arqueos', $caja), [
+        $this->actuar()->post(route('admin.caja.arqueo', $caja), [
             'fecha' => '2026-06-13',
             'denominaciones' => [
                 ['denominacion' => 20, 'cantidad' => 4],

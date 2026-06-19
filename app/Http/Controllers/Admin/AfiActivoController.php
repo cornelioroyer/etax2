@@ -127,7 +127,7 @@ class AfiActivoController extends Controller
             }
         });
 
-        return redirect()->route('admin.activos.activos.show', $activo)
+        return redirect()->route('admin.activos.show', $activo)
             ->with('status', "Activo {$activo->codigo} registrado.");
     }
 

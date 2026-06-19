@@ -121,12 +121,12 @@ class ActivoFijoTest extends TestCase
 
     public function test_index_accesible(): void
     {
-        $this->actuar()->get(route('admin.activos.activos.index'))->assertOk();
+        $this->actuar()->get(route('admin.activos.index'))->assertOk();
     }
 
     public function test_index_requiere_autenticacion(): void
     {
-        $this->get(route('admin.activos.activos.index'))->assertRedirect(route('login'));
+        $this->get(route('admin.activos.index'))->assertRedirect(route('login'));
     }
 
     public function test_categorias_index_accesible(): void
@@ -142,7 +142,7 @@ class ActivoFijoTest extends TestCase
     public function test_crear_activo_sin_cuenta_activo_no_genera_asiento(): void
     {
         // Sin cuenta de activo válida la validación falla (cuenta_contrapartida_id required)
-        $res = $this->actuar()->post(route('admin.activos.activos.store'), [
+        $res = $this->actuar()->post(route('admin.activos.store'), [
             'descripcion'              => 'Laptop Dell',
             'fecha_compra'             => '2026-01-15',
             'fecha_inicio_depreciacion' => '2026-02-01',
@@ -165,7 +165,7 @@ class ActivoFijoTest extends TestCase
         $ctaPerdida = $this->cuenta('8000', 'Pérdida Baja Activos');
 
         // 1. Crear activo
-        $res = $this->actuar()->post(route('admin.activos.activos.store'), [
+        $res = $this->actuar()->post(route('admin.activos.store'), [
             'descripcion'                  => 'Torno industrial',
             'fecha_compra'                 => '2026-01-01',
             'fecha_inicio_depreciacion'    => '2026-01-01',
@@ -189,7 +189,7 @@ class ActivoFijoTest extends TestCase
         $this->assertEquals('POSTEADO', $asientoCompra->estado);
 
         // 2. Depreciar
-        $res2 = $this->actuar()->post(route('admin.activos.activos.depreciar', $activo), [
+        $res2 = $this->actuar()->post(route('admin.activos.depreciar', $activo), [
             'fecha'      => '2026-01-31',
             'periodo_id' => $periodo->id,
         ]);
@@ -203,14 +203,14 @@ class ActivoFijoTest extends TestCase
         $this->assertEquals(11000.0, $activo->valorLibros());
 
         // 3. No duplicar depreciación en el mismo período
-        $res3 = $this->actuar()->post(route('admin.activos.activos.depreciar', $activo), [
+        $res3 = $this->actuar()->post(route('admin.activos.depreciar', $activo), [
             'fecha'      => '2026-01-31',
             'periodo_id' => $periodo->id,
         ]);
         $res3->assertSessionHasErrors('depreciar');
 
         // 4. Baja
-        $res4 = $this->actuar()->post(route('admin.activos.activos.baja', $activo), [
+        $res4 = $this->actuar()->post(route('admin.activos.baja', $activo), [
             'fecha'               => '2026-01-31',
             'motivo'              => 'Desincorporado',
             'cuenta_resultado_id' => $ctaPerdida->id,
@@ -226,7 +226,7 @@ class ActivoFijoTest extends TestCase
         $this->assertEquals('POSTEADO', $asientoBaja->estado);
 
         // 5. Segunda baja rechazada
-        $res5 = $this->actuar()->post(route('admin.activos.activos.baja', $activo), [
+        $res5 = $this->actuar()->post(route('admin.activos.baja', $activo), [
             'fecha'               => '2026-02-01',
             'cuenta_resultado_id' => $ctaPerdida->id,
         ]);
