@@ -10,6 +10,7 @@ use App\Models\AfiCategoria;
 use App\Models\AfiDepreciacion;
 use App\Models\AfiUbicacion;
 use App\Models\CuentaContable;
+use App\Models\CxpDocumentoDetalle;
 use App\Models\PeriodoContable;
 use App\Services\AsientoAutomatico;
 use Illuminate\Http\RedirectResponse;
@@ -45,20 +46,39 @@ class AfiActivoController extends Controller
         abort_unless($request->user()->can('activos.gestionar'), 403);
         $companiaId = $this->companiaActivaId($request);
 
-        $categorias = AfiCategoria::where('compania_id', $companiaId)->orderBy('codigo')->get();
+        $categorias  = AfiCategoria::where('compania_id', $companiaId)->orderBy('codigo')->get();
         $ubicaciones = AfiUbicacion::where('compania_id', $companiaId)->orderBy('codigo')->get();
-        $cuentas = CuentaContable::where('compania_id', $companiaId)
-            ->where('acepta_movimientos', true)
+        $cuentas     = CuentaContable::where('compania_id', $companiaId)
+            ->where('permite_movimiento', true)
             ->orderBy('codigo')
             ->get();
 
-        return view('admin.activos.activos.create', compact('categorias', 'ubicaciones', 'cuentas'));
+        $desdeCxp = null;
+        if ($detalleId = $request->query('desde_cxp_detalle')) {
+            $detalle = CxpDocumentoDetalle::with('documento.proveedor')->find((int) $detalleId);
+            if ($detalle && $detalle->documento->compania_id === $companiaId
+                && ! $detalle->documento->esBorrador()
+                && ! $detalle->documento->esAnulado()) {
+                $desdeCxp = $detalle;
+            }
+        }
+
+        return view('admin.activos.activos.create', compact('categorias', 'ubicaciones', 'cuentas', 'desdeCxp'));
     }
 
     public function store(Request $request): RedirectResponse
     {
         abort_unless($request->user()->can('activos.gestionar'), 403);
         $companiaId = $this->companiaActivaId($request);
+
+        // Determinar si viene de una línea de CxP (asiento ya creado)
+        $cxpDetalle = null;
+        if ($request->filled('cxp_detalle_id')) {
+            $cxpDetalle = CxpDocumentoDetalle::with('documento')->find((int) $request->input('cxp_detalle_id'));
+            if (! $cxpDetalle || $cxpDetalle->documento->compania_id !== $companiaId) {
+                abort(404);
+            }
+        }
 
         $data = $request->validate([
             'descripcion'                  => ['required', 'string', 'max:500'],
@@ -72,13 +92,15 @@ class AfiActivoController extends Controller
             'cuenta_activo_id'             => ['nullable', 'integer'],
             'cuenta_depreciacion_acum_id'  => ['nullable', 'integer'],
             'cuenta_gasto_depreciacion_id' => ['nullable', 'integer'],
-            'cuenta_contrapartida_id'      => ['required', 'integer'],
+            'cxp_detalle_id'               => ['nullable', 'integer'],
+            // Contrapartida requerida solo en el flujo manual (sin CxP)
+            'cuenta_contrapartida_id'      => $cxpDetalle ? ['nullable', 'integer'] : ['required', 'integer'],
         ]);
 
         $usuario = $request->user();
-        $activo = null;
+        $activo  = null;
 
-        DB::transaction(function () use ($companiaId, $data, $usuario, &$activo) {
+        DB::transaction(function () use ($companiaId, $data, $usuario, $cxpDetalle, &$activo) {
             $codigo = AfiActivo::siguienteNumero($companiaId);
 
             $activo = AfiActivo::create([
@@ -97,33 +119,39 @@ class AfiActivoController extends Controller
                 'cuenta_depreciacion_acum_id'  => $data['cuenta_depreciacion_acum_id'] ?? null,
                 'cuenta_gasto_depreciacion_id' => $data['cuenta_gasto_depreciacion_id'] ?? null,
                 'estado'                       => AfiActivo::ESTADO_ACTIVO,
+                'cxp_detalle_id'               => $cxpDetalle?->id,
                 'created_by'                   => $usuario->email,
             ]);
 
-            // Asiento de compra: D cuenta_activo / C contrapartida
-            $cuentaActivoId = $activo->cuentaActivoEfectivaId();
-            $cuentaContraId = (int) $data['cuenta_contrapartida_id'];
-            $monto          = round((float) $data['valor_compra'], 2);
+            if ($cxpDetalle) {
+                // El asiento ya existe en CxP — solo vinculamos, no creamos otro.
+                $activo->update(['asiento_compra_id' => $cxpDetalle->documento->asiento_id]);
+            } else {
+                // Flujo manual: asiento Dr Activo / Cr Contrapartida
+                $cuentaActivoId = $activo->cuentaActivoEfectivaId();
+                $cuentaContraId = (int) ($data['cuenta_contrapartida_id'] ?? 0);
+                $monto          = round((float) $data['valor_compra'], 2);
 
-            if ($cuentaActivoId && $cuentaContraId) {
-                $lineas = [
-                    ['cuenta_id' => $cuentaActivoId, 'descripcion' => $activo->descripcion, 'debito' => $monto, 'credito' => 0],
-                    ['cuenta_id' => $cuentaContraId, 'descripcion' => 'Compra activo '.$activo->codigo, 'debito' => 0, 'credito' => $monto],
-                ];
+                if ($cuentaActivoId && $cuentaContraId) {
+                    $lineas = [
+                        ['cuenta_id' => $cuentaActivoId, 'descripcion' => $activo->descripcion, 'debito' => $monto, 'credito' => 0],
+                        ['cuenta_id' => $cuentaContraId, 'descripcion' => 'Compra activo '.$activo->codigo, 'debito' => 0, 'credito' => $monto],
+                    ];
 
-                $asiento = app(AsientoAutomatico::class)->postear(
-                    $companiaId,
-                    $data['fecha_compra'],
-                    'Registro activo fijo: '.$activo->descripcion,
-                    $activo->codigo,
-                    $lineas,
-                    'ACTIVO_FIJO',
-                    'afi_activos',
-                    $activo->id,
-                    $usuario,
-                );
+                    $asiento = app(AsientoAutomatico::class)->postear(
+                        $companiaId,
+                        $data['fecha_compra'],
+                        'Registro activo fijo: '.$activo->descripcion,
+                        $activo->codigo,
+                        $lineas,
+                        'ACTIVO_FIJO',
+                        'afi_activos',
+                        $activo->id,
+                        $usuario,
+                    );
 
-                $activo->update(['asiento_compra_id' => $asiento->id]);
+                    $activo->update(['asiento_compra_id' => $asiento->id]);
+                }
             }
         });
 

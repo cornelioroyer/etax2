@@ -2,12 +2,25 @@
     <x-slot name="header">
         <div class="flex items-center justify-between">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Nuevo activo fijo</h2>
-            <a href="{{ route('admin.activos.index') }}" class="text-sm text-gray-600 hover:text-gray-900">← Volver al listado</a>
+            @if ($desdeCxp)
+                <a href="{{ route('admin.cxp.facturas.show', $desdeCxp->documento) }}" class="text-sm text-gray-600 hover:text-gray-900">← Volver a la factura</a>
+            @else
+                <a href="{{ route('admin.activos.index') }}" class="text-sm text-gray-600 hover:text-gray-900">← Volver al listado</a>
+            @endif
         </div>
     </x-slot>
 
     <div class="py-8">
         <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
+
+            @if ($desdeCxp)
+                <div class="mb-4 rounded-md p-4 text-sm" style="background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe;">
+                    Registrando activo desde factura <strong>{{ $desdeCxp->documento->numero }}</strong>
+                    ({{ $desdeCxp->documento->proveedor->nombre ?? '' }}) — línea {{ $desdeCxp->linea }}: {{ $desdeCxp->descripcion }}.
+                    El asiento contable ya fue generado por CxP; no se creará un asiento adicional.
+                </div>
+            @endif
+
             <div class="bg-white p-6 shadow-sm sm:rounded-lg"
                  x-data="{
                      categoriaId: {{ old('categoria_id', 'null') }},
@@ -33,12 +46,16 @@
                 <form method="POST" action="{{ route('admin.activos.store') }}">
                     @csrf
 
+                    @if ($desdeCxp)
+                        <input type="hidden" name="cxp_detalle_id" value="{{ $desdeCxp->id }}">
+                    @endif
+
                     <h3 class="mb-4 text-sm font-semibold text-gray-700">Datos del activo</h3>
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div class="sm:col-span-2">
                             <x-input-label for="descripcion" value="Descripción *" />
                             <x-text-input id="descripcion" name="descripcion" type="text" class="mt-1 block w-full"
-                                :value="old('descripcion')" required maxlength="500" />
+                                :value="old('descripcion', $desdeCxp?->descripcion)" required maxlength="500" />
                             <x-input-error :messages="$errors->get('descripcion')" class="mt-1" />
                         </div>
                         <div>
@@ -65,14 +82,14 @@
                         <div>
                             <x-input-label for="fecha_compra" value="Fecha de compra *" />
                             <x-text-input id="fecha_compra" name="fecha_compra" type="text" class="js-date mt-1 block w-full"
-                                :value="old('fecha_compra', now()->format('Y-m-d'))" required />
+                                :value="old('fecha_compra', $desdeCxp?->documento->fecha->format('Y-m-d') ?? now()->format('Y-m-d'))" required />
                             <x-input-error :messages="$errors->get('fecha_compra')" class="mt-1" />
                         </div>
                         <div>
                             <x-input-label for="fecha_inicio_depreciacion" value="Inicio depreciación *" />
                             <x-text-input id="fecha_inicio_depreciacion" name="fecha_inicio_depreciacion" type="text"
                                 class="js-date mt-1 block w-full"
-                                :value="old('fecha_inicio_depreciacion', now()->format('Y-m-d'))" required />
+                                :value="old('fecha_inicio_depreciacion', $desdeCxp?->documento->fecha->format('Y-m-d') ?? now()->format('Y-m-d'))" required />
                             <x-input-error :messages="$errors->get('fecha_inicio_depreciacion')" class="mt-1" />
                         </div>
                     </div>
@@ -81,8 +98,16 @@
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
                         <div>
                             <x-input-label for="valor_compra" value="Valor de compra (B/.) *" />
+                            @php
+                                $valorPreLlenado = $desdeCxp
+                                    ? number_format((float)$desdeCxp->total_linea - (float)$desdeCxp->impuesto_monto, 2, '.', '')
+                                    : null;
+                            @endphp
                             <x-text-input id="valor_compra" name="valor_compra" type="number" step="0.01"
-                                class="mt-1 block w-full" :value="old('valor_compra')" required min="0.01" />
+                                class="mt-1 block w-full" :value="old('valor_compra', $valorPreLlenado)" required min="0.01" />
+                            @if ($desdeCxp && (float)$desdeCxp->impuesto_monto > 0)
+                                <p class="mt-1 text-xs text-gray-500">Subtotal sin ITBMS. Si el ITBMS se capitaliza al activo, súmalo manualmente.</p>
+                            @endif
                             <x-input-error :messages="$errors->get('valor_compra')" class="mt-1" />
                         </div>
                         <div>
@@ -131,24 +156,38 @@
                                 @endforeach
                             </select>
                         </div>
-                        <div>
-                            <x-input-label for="cuenta_contrapartida_id" value="Cuenta contrapartida (compra) *" />
-                            <select id="cuenta_contrapartida_id" name="cuenta_contrapartida_id" required
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                <option value="">— seleccionar —</option>
-                                @foreach ($cuentas as $c)
-                                    <option value="{{ $c->id }}" @selected(old('cuenta_contrapartida_id') == $c->id)>{{ $c->codigo }} {{ $c->nombre }}</option>
-                                @endforeach
-                            </select>
-                            <p class="mt-1 text-xs text-gray-500">Cuenta que se acredita al comprar el activo (ej: banco, proveedor CxP).</p>
-                            <x-input-error :messages="$errors->get('cuenta_contrapartida_id')" class="mt-1" />
-                        </div>
+
+                        @if ($desdeCxp)
+                            {{-- Asiento ya creado por CxP; no se necesita contrapartida --}}
+                            <div class="flex items-center rounded-md p-3 text-sm" style="background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;">
+                                Asiento de compra: <a href="{{ route('admin.asientos.show', $desdeCxp->documento->asiento) }}" class="ml-1 font-medium underline">{{ $desdeCxp->documento->asiento->numero }}</a>
+                                (generado por {{ $desdeCxp->documento->numero }})
+                            </div>
+                        @else
+                            <div>
+                                <x-input-label for="cuenta_contrapartida_id" value="Cuenta contrapartida (compra) *" />
+                                <select id="cuenta_contrapartida_id" name="cuenta_contrapartida_id" required
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                    <option value="">— seleccionar —</option>
+                                    @foreach ($cuentas as $c)
+                                        <option value="{{ $c->id }}" @selected(old('cuenta_contrapartida_id') == $c->id)>{{ $c->codigo }} {{ $c->nombre }}</option>
+                                    @endforeach
+                                </select>
+                                <p class="mt-1 text-xs text-gray-500">Cuenta que se acredita al comprar el activo (ej: banco, proveedor CxP).</p>
+                                <x-input-error :messages="$errors->get('cuenta_contrapartida_id')" class="mt-1" />
+                            </div>
+                        @endif
                     </div>
 
                     <div class="mt-6 flex gap-3">
                         <x-primary-button>Registrar activo</x-primary-button>
-                        <a href="{{ route('admin.activos.index') }}"
-                            class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Cancelar</a>
+                        @if ($desdeCxp)
+                            <a href="{{ route('admin.cxp.facturas.show', $desdeCxp->documento) }}"
+                               class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Cancelar</a>
+                        @else
+                            <a href="{{ route('admin.activos.index') }}"
+                               class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Cancelar</a>
+                        @endif
                     </div>
                 </form>
             </div>

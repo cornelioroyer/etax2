@@ -11,6 +11,7 @@ use App\Models\Compania;
 use App\Models\Contacto;
 use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
+use App\Models\AfiActivo;
 use App\Models\CxpDocumento;
 use App\Models\CxpDocumentoDetalle;
 use App\Models\CxpImportacion;
@@ -220,7 +221,14 @@ class CxpFacturaController extends Controller
 
         $documento->load(['proveedor', 'detalle.cuenta', 'asiento', 'aplicacionesComoDestino.origen', 'compraOrden']);
 
-        return view('admin.cxp.facturas.show', ['factura' => $documento]);
+        $activosPorDetalle = AfiActivo::whereIn('cxp_detalle_id', $documento->detalle->pluck('id'))
+            ->get(['id', 'codigo', 'descripcion', 'cxp_detalle_id'])
+            ->keyBy('cxp_detalle_id');
+
+        return view('admin.cxp.facturas.show', [
+            'factura'            => $documento,
+            'activosPorDetalle'  => $activosPorDetalle,
+        ]);
     }
 
     public function edit(Request $request, CxpDocumento $documento): View|RedirectResponse

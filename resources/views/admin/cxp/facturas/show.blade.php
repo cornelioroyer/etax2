@@ -109,6 +109,11 @@
             </div>
 
             {{-- Detalle --}}
+            @php
+                $mostrarColumnaAfi = $factura->esBorrador() === false
+                    && $factura->esAnulado() === false
+                    && in_array($factura->tipo_documento, \App\Models\CxpDocumento::tiposFacturaCargo());
+            @endphp
             <div class="bg-white shadow-sm sm:rounded-lg overflow-hidden">
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200 text-sm">
@@ -121,6 +126,11 @@
                                 <th class="px-4 py-3 text-right">ITBMS</th>
                                 <th class="px-4 py-3 hidden md:table-cell">Cuenta</th>
                                 <th class="px-4 py-3 text-right">Total</th>
+                                @can('activos.gestionar')
+                                    @if ($mostrarColumnaAfi)
+                                        <th class="px-4 py-3 text-center">Activo fijo</th>
+                                    @endif
+                                @endcan
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
@@ -133,6 +143,23 @@
                                     <td class="px-4 py-3 text-right">B/. {{ number_format((float) $linea->impuesto_monto, 2) }}</td>
                                     <td class="px-4 py-3 hidden md:table-cell text-gray-600">{{ $linea->cuenta ? $linea->cuenta->codigo.' — '.$linea->cuenta->nombre : '—' }}</td>
                                     <td class="px-4 py-3 text-right font-medium">B/. {{ number_format((float) $linea->total_linea, 2) }}</td>
+                                    @can('activos.gestionar')
+                                        @if ($mostrarColumnaAfi)
+                                            <td class="px-4 py-3 text-center whitespace-nowrap">
+                                                @if ($activo = $activosPorDetalle[$linea->id] ?? null)
+                                                    <a href="{{ route('admin.activos.show', $activo) }}"
+                                                       class="text-xs font-medium text-green-700 hover:underline">
+                                                        ✓ {{ $activo->codigo }}
+                                                    </a>
+                                                @else
+                                                    <a href="{{ route('admin.activos.create', ['desde_cxp_detalle' => $linea->id]) }}"
+                                                       class="text-xs font-medium text-blue-600 hover:underline">
+                                                        + Activo fijo
+                                                    </a>
+                                                @endif
+                                            </td>
+                                        @endif
+                                    @endcan
                                 </tr>
                             @endforeach
                         </tbody>

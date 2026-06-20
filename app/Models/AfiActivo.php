@@ -19,7 +19,7 @@ class AfiActivo extends Model
         'fecha_compra', 'fecha_inicio_depreciacion',
         'valor_compra', 'valor_residual', 'vida_util_meses', 'metodo_depreciacion',
         'cuenta_activo_id', 'cuenta_depreciacion_acum_id', 'cuenta_gasto_depreciacion_id',
-        'estado', 'asiento_compra_id',
+        'estado', 'asiento_compra_id', 'cxp_detalle_id',
         'created_by', 'updated_by',
     ];
 
@@ -66,6 +66,11 @@ class AfiActivo extends Model
     public function asientoCompra(): BelongsTo
     {
         return $this->belongsTo(Asiento::class, 'asiento_compra_id');
+    }
+
+    public function cxpDetalle(): BelongsTo
+    {
+        return $this->belongsTo(CxpDocumentoDetalle::class, 'cxp_detalle_id');
     }
 
     public function depreciaciones(): HasMany
