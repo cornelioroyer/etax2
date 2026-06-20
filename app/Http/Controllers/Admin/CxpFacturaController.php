@@ -165,8 +165,9 @@ class CxpFacturaController extends Controller
         // Solo los documentos tipo factura (factura/reembolso/importación) se
         // pueden registrar al contado; las notas de crédito y débito siempre
         // nacen como borrador a crédito y se contabilizan aparte.
+        $formaPago = $data['forma_pago'] ?? 'CREDITO';
         $contado = in_array($tipo, CxpDocumento::tiposFacturaCargo(), true)
-            && (($data['forma_pago'] ?? 'CREDITO') === 'CONTADO');
+            && in_array($formaPago, ['CONTADO', 'TARJETA'], true);
 
         $factura = DB::transaction(function () use ($companiaId, $data, $tipo, $lineas, $subtotal, $impuesto, $total, $usuario, $contado) {
             $factura = CxpDocumento::create([
@@ -192,7 +193,7 @@ class CxpFacturaController extends Controller
 
             if ($contado) {
                 $factura->load(['proveedor', 'detalle']);
-                $this->contabilizarContado($factura, (int) $data['cuenta_pago_id'], $usuario);
+                $this->contabilizarContado($factura, (int) $data['cuenta_pago_id'], $usuario, $formaPago);
             }
 
             return $factura;
@@ -200,8 +201,14 @@ class CxpFacturaController extends Controller
 
         $etiqueta = TipoDocumento::descripcion(TipoDocumento::AUX_CXP, $tipo);
 
+        $labelPago = match ($formaPago) {
+            'TARJETA' => 'con tarjeta',
+            'CONTADO' => 'al contado',
+            default   => '',
+        };
+
         $mensaje = $contado
-            ? "Compra al contado {$factura->numero} registrada y contabilizada. Asiento {$factura->fresh()->asiento->numero}."
+            ? "Compra {$labelPago} {$factura->numero} registrada y contabilizada. Asiento {$factura->fresh()->asiento->numero}."
             : "{$etiqueta} {$factura->numero} guardada como borrador. Revísala y contabilízala cuando esté lista.";
 
         return redirect()->route('admin.cxp.facturas.show', $factura)->with('status', $mensaje);
@@ -328,9 +335,9 @@ class CxpFacturaController extends Controller
             'numero' => ['required', 'string', 'max:50'],
             'fecha' => ['required', 'date'],
             'fecha_vencimiento' => ['nullable', 'date', 'after_or_equal:fecha'],
-            'forma_pago' => ['nullable', Rule::in(['CREDITO', 'CONTADO'])],
+            'forma_pago' => ['nullable', Rule::in(['CREDITO', 'CONTADO', 'TARJETA'])],
             'cuenta_pago_id' => [
-                Rule::requiredIf(fn () => $request->input('forma_pago') === 'CONTADO'),
+                Rule::requiredIf(fn () => in_array($request->input('forma_pago'), ['CONTADO', 'TARJETA'])),
                 'nullable', 'integer',
                 Rule::exists('cgl_cuentas', 'id')->where('compania_id', $companiaId),
             ],
@@ -517,11 +524,11 @@ class CxpFacturaController extends Controller
     }
 
     /**
-     * Postea el asiento de una compra al contado (pago directo desde banco/caja,
+     * Postea el asiento de una compra pagada de inmediato (contado o tarjeta,
      * sin pasar por CXP) y deja la factura PAGADA. Debe llamarse dentro de una
      * transacción, con $factura->detalle y proveedor ya cargados.
      */
-    private function contabilizarContado(CxpDocumento $factura, int $cuentaPagoId, $usuario): void
+    private function contabilizarContado(CxpDocumento $factura, int $cuentaPagoId, $usuario, string $formaPago = 'CONTADO'): void
     {
         $companiaId = $factura->compania_id;
         $impuesto = round((float) $factura->impuesto, 2);
@@ -556,9 +563,11 @@ class CxpFacturaController extends Controller
             ];
         }
 
+        $labelPago = $formaPago === 'TARJETA' ? 'con tarjeta' : 'al contado';
+
         $lineasAsiento[] = [
             'cuenta_id' => $cuentaPagoId,
-            'descripcion' => "Compra al contado {$factura->numero}",
+            'descripcion' => "Compra {$labelPago} {$factura->numero}",
             'debito' => 0,
             'credito' => round((float) $factura->total, 2),
         ];
@@ -566,7 +575,7 @@ class CxpFacturaController extends Controller
         $asiento = app(AsientoAutomatico::class)->postear(
             $companiaId,
             $factura->fecha->format('Y-m-d'),
-            "Compra al contado {$factura->numero} — ".$factura->proveedor->nombre,
+            "Compra {$labelPago} {$factura->numero} — ".$factura->proveedor->nombre,
             $factura->numero,
             $lineasAsiento,
             'CXP',

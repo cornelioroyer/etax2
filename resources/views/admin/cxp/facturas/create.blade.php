@@ -59,7 +59,7 @@
                                           :value="old('fecha', now()->format('Y-m-d'))" />
                             <x-input-error :messages="$errors->get('fecha')" class="mt-1" />
                         </div>
-                        <div x-show="formaPago !== 'CONTADO'">
+                        <div x-show="!pagoInmediato()">
                             <x-input-label for="fecha_vencimiento" value="Vence" />
                             <x-text-input id="fecha_vencimiento" name="fecha_vencimiento" type="text" class="js-date mt-1 block w-full"
                                           :value="old('fecha_vencimiento')" />
@@ -73,13 +73,16 @@
                             <x-input-label for="forma_pago" value="Forma de pago *" />
                             <select id="forma_pago" name="forma_pago" x-model="formaPago"
                                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="CREDITO">Crédito (a pagar después)</option>
-                                <option value="CONTADO">Contado (pago directo)</option>
+                                <option value="CREDITO">Crédito — Cuenta por pagar</option>
+                                <option value="CONTADO">Contado — Banco / Caja</option>
+                                <option value="TARJETA">Tarjeta de crédito</option>
                             </select>
                             <x-input-error :messages="$errors->get('forma_pago')" class="mt-1" />
                         </div>
-                        <div class="sm:col-span-2" x-show="formaPago === 'CONTADO'" x-cloak>
-                            <x-input-label for="cuenta_pago_id" value="Cuenta de pago (banco/caja) *" />
+                        <div class="sm:col-span-2" x-show="pagoInmediato()" x-cloak>
+                            <x-input-label for="cuenta_pago_id">
+                                <span x-text="formaPago === 'TARJETA' ? 'Cuenta de tarjeta (pasivo) *' : 'Cuenta de banco / caja *'">Cuenta de banco / caja *</span>
+                            </x-input-label>
                             <select id="cuenta_pago_id" name="cuenta_pago_id" x-model="cuentaPago"
                                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                 <option value="">— Cuenta —</option>
@@ -89,8 +92,12 @@
                             </select>
                             <x-input-error :messages="$errors->get('cuenta_pago_id')" class="mt-1" />
                         </div>
-                        <div class="flex items-end" x-show="formaPago === 'CONTADO'" x-cloak>
-                            <p class="text-xs text-gray-500">Se contabiliza al instante: gasto + ITBMS contra la cuenta de banco/caja, factura pagada. Alimenta el libro de compras.</p>
+                        <div class="flex items-end" x-show="pagoInmediato()" x-cloak>
+                            <p class="text-xs text-gray-500"
+                               x-text="formaPago === 'TARJETA'
+                                   ? 'Se contabiliza al instante: gasto/inventario/activo + ITBMS contra la cuenta de tarjeta (pasivo). Alimenta el libro de compras.'
+                                   : 'Se contabiliza al instante: gasto/inventario/activo + ITBMS contra banco/caja. Alimenta el libro de compras.'">
+                            </p>
                         </div>
                     </div>
 
@@ -109,7 +116,7 @@
                                         <th class="w-24 py-2 pr-2 text-right">Cant.</th>
                                         <th class="w-32 py-2 pr-2 text-right">Precio</th>
                                         <th class="w-24 py-2 pr-2">ITBMS</th>
-                                        <th class="py-2 pr-2 min-w-[14rem]">Cuenta de gasto/costo</th>
+                                        <th class="py-2 pr-2 min-w-[14rem]">Cuenta contable (gasto / inventario / activo)</th>
                                         <th class="w-28 py-2 pr-2 text-right">Total</th>
                                         <th class="w-10"></th>
                                     </tr>
@@ -182,12 +189,14 @@
                     <div class="mt-6 flex flex-wrap items-center gap-3 border-t border-gray-100 pt-4">
                         <button type="submit"
                                 class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
-                                x-text="(esContadoPosible() && formaPago === 'CONTADO') ? 'Registrar compra al contado' : 'Guardar borrador'">
+                                x-text="esContadoPosible() && formaPago === 'TARJETA' ? 'Registrar compra con tarjeta'
+                                       : (esContadoPosible() && formaPago === 'CONTADO' ? 'Registrar compra al contado'
+                                       : 'Guardar borrador')">
                             Guardar borrador
                         </button>
                         <a href="{{ route('admin.cxp.facturas.index') }}" class="text-sm text-gray-600 hover:text-gray-900">Cancelar</a>
                         <p class="w-full text-xs text-gray-500 sm:w-auto sm:ml-auto"
-                           x-text="(esContadoPosible() && formaPago === 'CONTADO') ? 'La compra se contabiliza de inmediato y queda pagada.' : 'Se guarda como borrador editable; el asiento contable se genera al contabilizarlo.'">Se guarda como borrador editable; el asiento contable se genera al contabilizarlo.</p>
+                           x-text="esContadoPosible() && pagoInmediato() ? 'La compra se contabiliza de inmediato y queda pagada.' : 'Se guarda como borrador editable; el asiento contable se genera al contabilizarlo.'">Se guarda como borrador editable; el asiento contable se genera al contabilizarlo.</p>
                     </div>
                 </form>
             </div>
@@ -236,6 +245,7 @@
                 formaPago: formaPagoInicial || 'CREDITO',
                 cuentaPago: cuentaPagoInicial || '',
                 esContadoPosible() { return ['FACTURA', 'REEMBOLSO', 'IMPORTACION'].includes(this.tipo); },
+                pagoInmediato() { return this.esContadoPosible() && ['CONTADO', 'TARJETA'].includes(this.formaPago); },
                 nueva() { return { descripcion: '', cantidad: 1, precio_unitario: 0, tasa_itbms: 7, cuenta_id: this.cuentaActual || '' }; },
                 lineas: lineasIniciales.length
                     ? lineasIniciales.map(l => ({
