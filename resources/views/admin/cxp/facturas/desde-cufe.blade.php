@@ -92,7 +92,7 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="/js/jsqr.min.js"></script>
     <script>
     var _qrStream = null;
     var _qrRaf    = null;
@@ -138,13 +138,18 @@
             c.width  = v.videoWidth;
             c.height = v.videoHeight;
             cx.drawImage(v, 0, 0, c.width, c.height);
-            var img  = cx.getImageData(0, 0, c.width, c.height);
-            var code = jsQR(img.data, img.width, img.height);
+            var img = cx.getImageData(0, 0, c.width, c.height);
 
-            if (code && code.data) {
-                document.getElementById('cufe_input').value = code.data;
-                setMsg('✓ QR detectado — campo actualizado', '#16a34a');
-                setTimeout(cerrarScanner, 700);
+            try {
+                var code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
+                if (code && code.data) {
+                    document.getElementById('cufe_input').value = code.data;
+                    setMsg('✓ QR detectado — campo actualizado', '#16a34a');
+                    setTimeout(cerrarScanner, 700);
+                    return;
+                }
+            } catch (e) {
+                setMsg('Error al leer QR: ' + e.message, '#dc2626');
                 return;
             }
         }
