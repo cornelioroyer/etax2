@@ -20,6 +20,7 @@ class CajaArqueo extends Model
         'diferencia',
         'usuario_id',
         'estado',
+        'asiento_id',
         'created_by',
         'updated_by',
     ];
@@ -42,5 +43,10 @@ class CajaArqueo extends Model
     public function detalle(): HasMany
     {
         return $this->hasMany(CajaArqueoDetalle::class, 'arqueo_id');
+    }
+
+    public function asiento(): BelongsTo
+    {
+        return $this->belongsTo(Asiento::class, 'asiento_id');
     }
 }

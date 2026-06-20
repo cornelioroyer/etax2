@@ -35,4 +35,9 @@ class InvMovimiento extends Model
     {
         return $this->hasMany(InvMovimientoDetalle::class, 'movimiento_id');
     }
+
+    public function asiento(): BelongsTo
+    {
+        return $this->belongsTo(Asiento::class, 'asiento_id');
+    }
 }

@@ -10,6 +10,7 @@ use App\Models\CajaArqueoDetalle;
 use App\Models\CajaMovimiento;
 use App\Models\CajaReembolso;
 use App\Models\CajaVale;
+use App\Models\CuentaDefault;
 use App\Services\AsientoAutomatico;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -269,6 +270,34 @@ class CajaOperacionController extends Controller
 
             foreach ($detalle as $d) {
                 CajaArqueoDetalle::create($d + ['arqueo_id' => $arqueo->id, 'created_by' => $usuario->email]);
+            }
+
+            // Asiento de diferencia del arqueo
+            if ($diferencia != 0.0 && $caja->cuenta_contable_id) {
+                $cuentaGastoId = CuentaDefault::idPara($caja->compania_id, 'GASTO_DEFAULT');
+                if ($cuentaGastoId) {
+                    $absDif    = abs($diferencia);
+                    $cuentaCaja = (int) $caja->cuenta_contable_id;
+                    if ($diferencia > 0) {
+                        // Sobrante: hay más efectivo del esperado → Dr Caja / Cr Ingreso
+                        $lineas = [
+                            ['cuenta_id' => $cuentaCaja,    'descripcion' => 'Sobrante arqueo caja '.$caja->codigo, 'debito' => $absDif, 'credito' => 0],
+                            ['cuenta_id' => $cuentaGastoId, 'descripcion' => 'Sobrante arqueo caja '.$caja->codigo, 'debito' => 0, 'credito' => $absDif],
+                        ];
+                    } else {
+                        // Faltante: hay menos efectivo → Dr Gasto / Cr Caja
+                        $lineas = [
+                            ['cuenta_id' => $cuentaGastoId, 'descripcion' => 'Faltante arqueo caja '.$caja->codigo, 'debito' => $absDif, 'credito' => 0],
+                            ['cuenta_id' => $cuentaCaja,    'descripcion' => 'Faltante arqueo caja '.$caja->codigo, 'debito' => 0, 'credito' => $absDif],
+                        ];
+                    }
+                    $glosa   = ($diferencia > 0 ? 'Sobrante' : 'Faltante').' arqueo caja '.$caja->codigo;
+                    $asiento = app(AsientoAutomatico::class)->postear(
+                        $caja->compania_id, $data['fecha'], $glosa, null,
+                        $lineas, 'CAJA', 'caj_arqueos', $arqueo->id, $usuario,
+                    );
+                    $arqueo->update(['asiento_id' => $asiento->id]);
+                }
             }
         });
 

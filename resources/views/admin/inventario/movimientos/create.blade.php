@@ -34,8 +34,9 @@
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Tipo <span class="text-red-500">*</span></label>
-                            <select name="tipo_movimiento" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 text-sm" required>
-                                <option value="ENTRADA" @selected(old('tipo_movimiento') === 'ENTRADA')>Entrada</option>
+                            <select name="tipo_movimiento" x-model="tipo"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 text-sm" required>
+                                <option value="ENTRADA" @selected(old('tipo_movimiento', 'ENTRADA') === 'ENTRADA')>Entrada</option>
                                 <option value="SALIDA" @selected(old('tipo_movimiento') === 'SALIDA')>Salida</option>
                                 <option value="AJUSTE" @selected(old('tipo_movimiento') === 'AJUSTE')>Ajuste de inventario</option>
                             </select>
@@ -45,6 +46,21 @@
                         <label class="block text-sm font-medium text-gray-700">Descripción</label>
                         <input type="text" name="descripcion" value="{{ old('descripcion') }}"
                             class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 text-sm">
+                    </div>
+
+                    {{-- Cuenta contrapartida: solo para ENTRADA (proveedor, banco, etc.) --}}
+                    <div x-show="tipo === 'ENTRADA'" x-cloak>
+                        <label class="block text-sm font-medium text-gray-700">Cuenta contrapartida <span class="text-red-500">*</span>
+                            <span class="font-normal text-gray-400">(cuenta que se acredita al recibir el inventario)</span>
+                        </label>
+                        <select name="cuenta_contrapartida_id" :required="tipo === 'ENTRADA'"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 text-sm">
+                            <option value="">Seleccionar cuenta…</option>
+                            @foreach ($cuentasContables as $c)
+                                <option value="{{ $c->id }}" @selected(old('cuenta_contrapartida_id') == $c->id)>{{ $c->codigo }} — {{ $c->nombre }}</option>
+                            @endforeach
+                        </select>
+                        @error('cuenta_contrapartida_id')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
                     </div>
                 </div>
 
@@ -123,6 +139,7 @@ const costosPorItem = {
 
 function invForm() {
     return {
+        tipo: '{{ old('tipo_movimiento', 'ENTRADA') }}',
         lineas: [{ item_id: '', cantidad: 1, costo: 0, total: 0 }],
         get totalGeneral() { return this.lineas.reduce((s, l) => s + l.total, 0); },
         agregarLinea() { this.lineas.push({ item_id: '', cantidad: 1, costo: 0, total: 0 }); },

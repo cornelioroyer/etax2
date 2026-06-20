@@ -53,4 +53,14 @@ class ItemProducto extends Model
     {
         return $this->belongsTo(CuentaContable::class, 'cuenta_gasto_id');
     }
+
+    public function cuentaInventario(): BelongsTo
+    {
+        return $this->belongsTo(CuentaContable::class, 'cuenta_inventario_id');
+    }
+
+    public function cuentaCostoVenta(): BelongsTo
+    {
+        return $this->belongsTo(CuentaContable::class, 'cuenta_costo_venta_id');
+    }
 }

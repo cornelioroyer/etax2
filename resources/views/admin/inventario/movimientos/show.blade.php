@@ -24,6 +24,16 @@
                         <dt class="text-gray-500">Estado</dt>
                         <dd><span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700">{{ $movimiento->estado }}</span></dd>
                     </div>
+                    <div>
+                        <dt class="text-gray-500">Asiento</dt>
+                        <dd class="font-medium">
+                            @if ($movimiento->asiento)
+                                <a href="{{ route('admin.asientos.show', $movimiento->asiento) }}" class="text-blue-700 hover:underline">{{ $movimiento->asiento->numero }}</a>
+                            @else
+                                <span class="text-gray-400">Sin asiento</span>
+                            @endif
+                        </dd>
+                    </div>
                     @if ($movimiento->descripcion)
                         <div class="sm:col-span-3">
                             <dt class="text-gray-500">Descripción</dt>

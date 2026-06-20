@@ -18,6 +18,7 @@ use App\Models\CxpImportacion;
 use App\Models\TipoContacto;
 use App\Models\TipoDocumento;
 use App\Services\AsientoAutomatico;
+use App\Services\DgiFepConsulta;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -603,6 +604,129 @@ class CxpFacturaController extends Controller
     {
         abort_unless($documento->compania_id === $this->companiaActivaId($request), 404);
         abort_unless(in_array($documento->tipo_documento, CxpDocumento::tiposModulo(), true), 404);
+    }
+
+    public function desdeCufeForm(Request $request): View
+    {
+        return view('admin.cxp.facturas.desde-cufe');
+    }
+
+    public function desdeCufe(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()->can('cxp.gestionar'), 403);
+        $companiaId = $this->companiaActivaId($request);
+        $usuario    = $request->user();
+
+        $data = $request->validate([
+            'cufe_input' => ['required', 'string', 'max:500'],
+        ]);
+
+        // Extrae el CUFE de una URL de QR o del CUFE puro
+        $raw = trim($data['cufe_input']);
+        if (preg_match('#/FacturasPorCUFE/([A-Za-z0-9]+)#i', $raw, $m)) {
+            $cufe = $m[1];
+        } else {
+            $cufe = $raw;
+        }
+
+        if (strlen($cufe) < 20) {
+            throw ValidationException::withMessages(['cufe_input' => 'El valor ingresado no parece un CUFE válido.']);
+        }
+
+        // Si ya existe, redirigir a la factura existente
+        $existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $cufe)->first();
+        if ($existente) {
+            return redirect()->route('admin.cxp.facturas.show', $existente)
+                ->with('status', 'Esta factura ya estaba registrada.');
+        }
+
+        // Consultar la DGI
+        $dgi = app(DgiFepConsulta::class)->porCufe($cufe);
+
+        if (! $dgi) {
+            throw ValidationException::withMessages(['cufe_input' => 'No se pudo obtener la factura de la DGI. Verifica el CUFE/QR e intenta nuevamente.']);
+        }
+
+        $emisor = $dgi['emisor'];
+        $ruc    = $emisor['ruc'] ?? null;
+
+        if (! $ruc) {
+            throw ValidationException::withMessages(['cufe_input' => 'La DGI no devolvió el RUC del emisor. Registra la factura manualmente.']);
+        }
+
+        $cuentaGastoDefault = CuentaDefault::idPara($companiaId, 'GASTO_DEFAULT');
+        $tipoProveedor      = TipoContacto::where('codigo', 'PROVEEDOR')->first();
+
+        $proveedor = Contacto::where('compania_id', $companiaId)->where('identificacion', $ruc)->first();
+
+        if (! $proveedor) {
+            $codigo = substr($ruc, 0, 50);
+            if (Contacto::where('compania_id', $companiaId)->where('codigo', $codigo)->exists()) {
+                $codigo = null;
+            }
+
+            $proveedor = Contacto::create([
+                'compania_id'     => $companiaId,
+                'codigo'          => $codigo,
+                'nombre'          => substr($emisor['nombre'] ?? $ruc, 0, 200),
+                'tipo_persona'    => 'JURIDICA',
+                'identificacion'  => $ruc,
+                'dv'              => isset($emisor['dv']) ? substr($emisor['dv'], 0, 5) : null,
+                'direccion'       => $emisor['direccion'] ?? null,
+                'telefono'        => isset($emisor['telefono']) ? substr($emisor['telefono'], 0, 50) : null,
+                'activo'          => true,
+                'cuenta_gasto_id' => $cuentaGastoDefault,
+                'created_by'      => $usuario->email,
+            ]);
+
+            if ($tipoProveedor) {
+                $proveedor->tipos()->attach($tipoProveedor->id);
+            }
+        }
+
+        $cuentaId = $proveedor->cuenta_gasto_id ?? $cuentaGastoDefault;
+        $numero   = $dgi['numero'] ?? substr($cufe, 0, 50);
+        $tipoDoc  = in_array($dgi['tipo'], [CxpDocumento::TIPO_NOTA_CREDITO, CxpDocumento::TIPO_NOTA_DEBITO], true)
+            ? $dgi['tipo']
+            : CxpDocumento::TIPO_FACTURA;
+
+        $factura = DB::transaction(function () use ($companiaId, $proveedor, $dgi, $cufe, $numero, $tipoDoc, $cuentaId, $usuario) {
+            $factura = CxpDocumento::create([
+                'compania_id'    => $companiaId,
+                'proveedor_id'   => $proveedor->id,
+                'tipo_documento' => $tipoDoc,
+                'numero'         => $numero,
+                'cufe'           => $cufe,
+                'fecha'          => $dgi['fecha'] ?? now()->toDateString(),
+                'subtotal'       => $dgi['subtotal'],
+                'descuento'      => 0,
+                'impuesto'       => $dgi['itbms'],
+                'total'          => $dgi['total'],
+                'saldo'          => $dgi['total'],
+                'estado'         => CxpDocumento::ESTADO_BORRADOR,
+                'created_by'     => $usuario->email,
+            ]);
+
+            foreach ($dgi['lineas'] as $n => $linea) {
+                CxpDocumentoDetalle::create([
+                    'documento_id'    => $factura->id,
+                    'linea'           => $n + 1,
+                    'descripcion'     => substr($linea['descripcion'], 0, 500),
+                    'cantidad'        => $linea['cantidad'],
+                    'precio_unitario' => $linea['precio_unitario'],
+                    'descuento'       => $linea['descuento'],
+                    'impuesto_monto'  => $linea['itbms'],
+                    'total_linea'     => $linea['total'],
+                    'cuenta_id'       => $cuentaId,
+                    'created_by'      => $usuario->email,
+                ]);
+            }
+
+            return $factura;
+        });
+
+        return redirect()->route('admin.cxp.facturas.show', $factura)
+            ->with('status', "Factura {$factura->numero} registrada desde QR/CUFE. Revisa las cuentas contables y contabiliza.");
     }
 
     public function importar(Request $request): RedirectResponse

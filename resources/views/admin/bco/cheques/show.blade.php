@@ -25,6 +25,15 @@
                     <div><span class="text-gray-500">Fecha</span><p class="font-medium">{{ $cheque->fecha->format('d/m/Y') }}</p></div>
                     <div><span class="text-gray-500">Beneficiario</span><p>{{ $cheque->beneficiario?->nombre ?? '—' }}</p></div>
                     <div><span class="text-gray-500">Monto</span><p class="font-bold text-red-700 text-lg">B/. {{ number_format((float) $cheque->monto, 2) }}</p></div>
+                    <div><span class="text-gray-500">Asiento</span>
+                        <p class="font-medium">
+                            @if ($cheque->asiento)
+                                <a href="{{ route('admin.asientos.show', $cheque->asiento) }}" class="text-blue-700 hover:underline">{{ $cheque->asiento->numero }}</a>
+                            @else
+                                <span class="text-gray-400">Sin asiento</span>
+                            @endif
+                        </p>
+                    </div>
                 </div>
 
                 @can('bancos.gestionar')

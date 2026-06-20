@@ -241,6 +241,8 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('cxp/notas/{documento}/contabilizar', [CxpNotaController::class, 'contabilizar'])->whereNumber('documento')->name('cxp.notas.contabilizar');
         Route::delete('cxp/notas/{documento}', [CxpNotaController::class, 'destroy'])->whereNumber('documento')->name('cxp.notas.destroy');
         Route::get('cxp/facturas/nueva', [CxpFacturaController::class, 'create'])->name('cxp.facturas.create');
+        Route::get('cxp/facturas/desde-cufe', [CxpFacturaController::class, 'desdeCufeForm'])->name('cxp.facturas.desde-cufe.form');
+        Route::post('cxp/facturas/desde-cufe', [CxpFacturaController::class, 'desdeCufe'])->name('cxp.facturas.desde-cufe');
         Route::post('cxp/facturas/importar', [CxpFacturaController::class, 'importar'])->name('cxp.facturas.importar');
         Route::get('cxp/facturas/importar/{importacion}/progreso', [CxpFacturaController::class, 'importarProgreso'])->whereNumber('importacion')->name('cxp.facturas.importar.progreso');
         Route::get('cxp/facturas/importar/{importacion}/estado', [CxpFacturaController::class, 'importarEstado'])->whereNumber('importacion')->name('cxp.facturas.importar.estado');

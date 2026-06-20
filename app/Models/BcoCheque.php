@@ -23,7 +23,7 @@ class BcoCheque extends Model
 
     protected $fillable = [
         'compania_id', 'cuenta_bancaria_id', 'numero_cheque', 'fecha',
-        'beneficiario_id', 'monto', 'estado', 'created_by', 'updated_by',
+        'beneficiario_id', 'monto', 'estado', 'asiento_id', 'created_by', 'updated_by',
     ];
 
     protected function casts(): array
