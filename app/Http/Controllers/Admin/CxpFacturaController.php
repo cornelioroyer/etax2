@@ -611,6 +611,32 @@ class CxpFacturaController extends Controller
         return view('admin.cxp.facturas.desde-cufe');
     }
 
+    public function consultarCufe(Request $request): JsonResponse
+    {
+        $data = $request->validate(['cufe' => ['required', 'string', 'max:500']]);
+        $companiaId = $this->companiaActivaId($request);
+
+        $cufe = trim($data['cufe']);
+
+        $existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $cufe)->first();
+        if ($existente) {
+            return response()->json([
+                'ya_registrada' => true,
+                'numero'        => $existente->numero,
+                'id'            => $existente->id,
+                'url'           => route('admin.cxp.facturas.show', $existente),
+            ]);
+        }
+
+        $dgi = app(DgiFepConsulta::class)->porCufe($cufe);
+
+        if (! $dgi) {
+            return response()->json(['error' => 'No se pudo obtener la factura de la DGI. Verifica el QR e intenta de nuevo.'], 422);
+        }
+
+        return response()->json(array_merge($dgi, ['cufe' => $cufe]));
+    }
+
     public function desdeCufe(Request $request): RedirectResponse
     {
         abort_unless($request->user()->can('cxp.gestionar'), 403);
