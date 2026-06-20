@@ -59,7 +59,7 @@
             { id: 11, cat: 'cxp', title: '¿Cómo registrar un proveedor?',
               body: `<p>Ve a <em>Cuentas por Pagar → Proveedores</em> y haz clic en <strong>Nuevo proveedor</strong>. Ingresa nombre, RUC, correo y condiciones de pago. El mismo contacto puede ser cliente y proveedor.</p>` },
             { id: 12, cat: 'cxp', title: '¿Cómo registrar una factura de proveedor?',
-              body: `<p>Ve a <em>Cuentas por Pagar → Facturas por pagar</em> y haz clic en <strong>Nueva factura</strong>. Selecciona el proveedor, ingresa el número de factura del proveedor, la fecha y las líneas de gasto o producto.<br><br>
+              body: `<p>Ve a <em>Cuentas por Pagar → Facturas de Compras</em> y haz clic en <strong>Nueva factura</strong>. Selecciona el proveedor, ingresa el número de factura del proveedor, la fecha y las líneas de gasto o producto.<br><br>
               Al confirmar, el sistema genera el asiento (débito Gasto/Compra e ITBMS Crédito, crédito CXP).</p>` },
             { id: 13, cat: 'cxp', title: '¿Cómo registrar un pago a proveedor?',
               body: `<p>Ve a <em>Cuentas por Pagar → Pagos</em> y haz clic en <strong>Nuevo pago</strong>. Selecciona el proveedor, la fecha, el monto y la cuenta bancaria de donde sale el dinero. En <em>Documentos a aplicar</em>, elige las facturas que cancela este pago.<br><br>
@@ -83,9 +83,6 @@
             { id: 18, cat: 'compras', title: '¿Cómo crear una orden de compra?',
               body: `<p>Ve a <em>Compras → Órdenes de compra</em> y haz clic en <strong>Nueva orden</strong>. Selecciona el proveedor y agrega los ítems que deseas comprar con cantidades y precios estimados.<br><br>
               La orden de compra no genera asiento — es un documento de autorización interna. Al recibir la mercancía, se convierte en factura de proveedor.</p>` },
-            { id: 19, cat: 'compras', title: '¿Qué son los gastos directos?',
-              body: `<p>Los gastos directos son egresos que no provienen de una factura de proveedor formal — por ejemplo, servicios públicos, taxis, papelería pagada en efectivo. Ve a <em>Compras → Gastos directos</em> para registrarlos.<br><br>
-              Al confirmar un gasto directo, el sistema genera el asiento contable (débito Gasto, crédito Caja o Banco según el método de pago).</p>` },
 
             // ── Bancos ────────────────────────────────────────────────────
             { id: 20, cat: 'bancos', title: '¿Cómo registrar una cuenta bancaria?',

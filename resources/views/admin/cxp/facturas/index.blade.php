@@ -1,7 +1,7 @@
 <x-app-layout>
     <x-slot name="header">
         <div class="flex items-center justify-between">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">Facturas por pagar</h2>
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight">Facturas de Compras</h2>
             <div class="flex items-center gap-2">
                 <a href="{{ route('admin.cxp.facturas.index', array_merge(request()->query(), ['export' => 'xlsx'])) }}" class="rounded-md border border-green-300 bg-white px-3 py-2 text-sm text-green-700 hover:bg-green-50">Excel</a>
                 <a href="{{ route('admin.cxp.facturas.index', array_merge(request()->query(), ['export' => 'pdf'])) }}" class="rounded-md border border-red-300 bg-white px-3 py-2 text-sm text-red-700 hover:bg-red-50">PDF</a>
@@ -51,15 +51,58 @@
                             @endforeach
                         </select>
                     </div>
-                    <div>
-                        <x-input-label for="proveedor_id" value="Proveedor" />
-                        <select id="proveedor_id" name="proveedor_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="">Todos</option>
-                            @foreach ($proveedores as $proveedor)
-                                <option value="{{ $proveedor->id }}" @selected(($filtros['proveedor_id'] ?? null) == $proveedor->id)>{{ $proveedor->nombre }}</option>
+                    <div id="combo-proveedor" class="relative">
+                        <x-input-label for="proveedor_buscar" value="Proveedor" />
+                        <input type="hidden" name="proveedor_id" id="proveedor_id_val"
+                               value="{{ $filtros['proveedor_id'] ?? '' }}">
+                        <input type="text" id="proveedor_buscar" autocomplete="off"
+                               placeholder="Buscar por nombre..."
+                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                               value="{{ $proveedores->firstWhere('id', $filtros['proveedor_id'] ?? null)?->nombre ?? '' }}">
+                        <div id="proveedor-lista"
+                             class="hidden absolute z-30 mt-1 w-full bg-white rounded-md shadow-lg border border-gray-200 max-h-52 overflow-y-auto text-sm">
+                            <div data-id="" data-nombre="" class="px-3 py-2 hover:bg-indigo-50 cursor-pointer text-gray-400">Todos</div>
+                            @foreach ($proveedores as $p)
+                                <div data-id="{{ $p->id }}" data-nombre="{{ $p->nombre }}"
+                                     class="px-3 py-2 hover:bg-indigo-50 cursor-pointer text-gray-700">{{ $p->nombre }}</div>
                             @endforeach
-                        </select>
+                        </div>
                     </div>
+                    <script>
+                    (function () {
+                        var inp  = document.getElementById('proveedor_buscar');
+                        var hid  = document.getElementById('proveedor_id_val');
+                        var list = document.getElementById('proveedor-lista');
+                        var items = Array.from(list.querySelectorAll('[data-id]'));
+
+                        function mostrar(q) {
+                            q = (q || '').toLowerCase();
+                            items.forEach(function (el) {
+                                var nombre = el.dataset.nombre.toLowerCase();
+                                el.classList.toggle('hidden', q !== '' && el.dataset.id !== '' && nombre.indexOf(q) === -1);
+                            });
+                            list.classList.remove('hidden');
+                        }
+
+                        inp.addEventListener('input',  function () { mostrar(inp.value); });
+                        inp.addEventListener('focus',  function () { mostrar(inp.value); });
+
+                        items.forEach(function (el) {
+                            el.addEventListener('mousedown', function (e) {
+                                e.preventDefault();
+                                hid.value = el.dataset.id;
+                                inp.value = el.dataset.id ? el.dataset.nombre : '';
+                                list.classList.add('hidden');
+                            });
+                        });
+
+                        document.addEventListener('click', function (e) {
+                            if (!document.getElementById('combo-proveedor').contains(e.target)) {
+                                list.classList.add('hidden');
+                            }
+                        });
+                    })();
+                    </script>
                     <div>
                         <x-input-label for="estado" value="Estado" />
                         <select id="estado" name="estado" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -85,19 +128,25 @@
             </form>
 
             {{-- Tabla --}}
+            @php
+                $sf  = fn($col) => request()->fullUrlWithQuery(['sort' => $col, 'dir' => ($sort === $col && $dir === 'asc') ? 'desc' : 'asc', 'page' => null]);
+                $ico = fn($col) => $sort === $col ? ($dir === 'asc' ? ' ↑' : ' ↓') : '';
+                $thSort = 'px-4 py-3 cursor-pointer select-none whitespace-nowrap hover:bg-gray-100';
+            @endphp
             <div class="bg-white shadow-sm sm:rounded-lg overflow-hidden">
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200 text-sm">
                         <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                             <tr>
-                                <th class="px-4 py-3">Número</th>
-                                <th class="px-4 py-3">Tipo</th>
-                                <th class="px-4 py-3">Fecha</th>
-                                <th class="px-4 py-3">Proveedor</th>
-                                <th class="px-4 py-3 hidden md:table-cell">Vence</th>
-                                <th class="px-4 py-3 text-right">Total</th>
-                                <th class="px-4 py-3 text-right">Saldo</th>
-                                <th class="px-4 py-3">Estado</th>
+                                <th class="{{ $thSort }}" onclick="location.href='{{ $sf('numero') }}'">Número{{ $ico('numero') }}</th>
+                                <th class="{{ $thSort }}" onclick="location.href='{{ $sf('tipo_documento') }}'">Tipo{{ $ico('tipo_documento') }}</th>
+                                <th class="{{ $thSort }}" onclick="location.href='{{ $sf('fecha') }}'">Fecha{{ $ico('fecha') }}</th>
+                                <th class="{{ $thSort }}" onclick="location.href='{{ $sf('proveedor') }}'">Proveedor{{ $ico('proveedor') }}</th>
+                                <th class="{{ $thSort }} text-right" onclick="location.href='{{ $sf('subtotal') }}'">Subtotal{{ $ico('subtotal') }}</th>
+                                <th class="{{ $thSort }} text-right" onclick="location.href='{{ $sf('impuesto') }}'">ITBMS{{ $ico('impuesto') }}</th>
+                                <th class="{{ $thSort }} text-right" onclick="location.href='{{ $sf('total') }}'">Total{{ $ico('total') }}</th>
+                                <th class="{{ $thSort }} text-right" onclick="location.href='{{ $sf('saldo') }}'">Saldo{{ $ico('saldo') }}</th>
+                                <th class="{{ $thSort }}" onclick="location.href='{{ $sf('estado') }}'">Estado{{ $ico('estado') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
@@ -110,7 +159,7 @@
                                     $signo = $esNc ? -1 : 1;
                                 @endphp
                                 <tr class="hover:bg-gray-50">
-                                    <td class="px-4 py-3 font-medium">
+                                    <td class="px-4 py-3 font-medium whitespace-nowrap">
                                         <a href="{{ route('admin.cxp.facturas.show', $factura) }}" class="text-blue-700 hover:underline">{{ $factura->numero }}</a>
                                     </td>
                                     <td class="px-4 py-3 whitespace-nowrap">
@@ -128,7 +177,8 @@
                                     </td>
                                     <td class="px-4 py-3 whitespace-nowrap">{{ $factura->fecha->format('d/m/Y') }}</td>
                                     <td class="px-4 py-3 max-w-xs truncate">{{ $factura->proveedor->nombre ?? '—' }}</td>
-                                    <td class="px-4 py-3 whitespace-nowrap hidden md:table-cell">{{ $factura->fecha_vencimiento?->format('d/m/Y') ?? '—' }}</td>
+                                    <td class="px-4 py-3 text-right whitespace-nowrap {{ $esNc ? 'text-red-600' : '' }}">B/. {{ number_format($signo * (float) $factura->subtotal, 2) }}</td>
+                                    <td class="px-4 py-3 text-right whitespace-nowrap {{ $esNc ? 'text-red-600' : '' }}">B/. {{ number_format($signo * (float) $factura->impuesto, 2) }}</td>
                                     <td class="px-4 py-3 text-right whitespace-nowrap {{ $esNc ? 'text-red-600' : '' }}">B/. {{ number_format($signo * (float) $factura->total, 2) }}</td>
                                     <td class="px-4 py-3 text-right whitespace-nowrap font-medium {{ $esNc ? 'text-red-600' : '' }}">B/. {{ number_format($signo * (float) $factura->saldo, 2) }}</td>
                                     <td class="px-4 py-3">
@@ -137,7 +187,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="8" class="px-4 py-10 text-center text-gray-500">
+                                    <td colspan="9" class="px-4 py-10 text-center text-gray-500">
                                         No hay facturas que coincidan con el filtro.
                                         @can('cxp.gestionar')
                                             <a href="{{ route('admin.cxp.facturas.create') }}" class="text-blue-700 underline">Crear la primera</a>
@@ -149,8 +199,9 @@
                         @if ($facturas->isNotEmpty())
                             <tfoot class="border-t-2 border-gray-200 bg-gray-50 font-semibold text-gray-800">
                                 <tr>
-                                    <td class="px-4 py-3" colspan="4">Total ({{ $facturas->total() }} {{ \Illuminate\Support\Str::plural('documento', $facturas->total()) }})</td>
-                                    <td class="px-4 py-3 hidden md:table-cell"></td>
+                                    <td class="px-4 py-3" colspan="4">Total ({{ $facturas->total() }} {{ $facturas->total() === 1 ? 'documento' : 'documentos' }})</td>
+                                    <td class="px-4 py-3 text-right whitespace-nowrap">B/. {{ number_format((float) $totales->subtotal, 2) }}</td>
+                                    <td class="px-4 py-3 text-right whitespace-nowrap">B/. {{ number_format((float) $totales->impuesto, 2) }}</td>
                                     <td class="px-4 py-3 text-right whitespace-nowrap">B/. {{ number_format((float) $totales->total, 2) }}</td>
                                     <td class="px-4 py-3 text-right whitespace-nowrap">B/. {{ number_format((float) $totales->saldo, 2) }}</td>
                                     <td class="px-4 py-3"></td>

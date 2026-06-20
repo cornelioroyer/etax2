@@ -151,14 +151,16 @@ class PeriodoTest extends TestCase
             'nivel' => 3, 'naturaleza' => 'DEBITO', 'permite_movimiento' => true, 'conciliable' => false, 'activa' => true,
         ]);
 
-        $this->actuar()->post(route('admin.compras.gastos.store'), [
-            'fecha' => '2026-03-15',
-            'descripcion' => 'Gasto en periodo cerrado',
-            'cuenta_gasto_id' => $gasto->id,
-            'cuenta_pago_id' => $banco->id,
-            'monto' => 50,
+        $this->actuar()->post(route('admin.asientos.store'), [
+            'fecha'       => '2026-03-15',
+            'descripcion' => 'Asiento en periodo cerrado',
+            'accion'      => 'postear',
+            'lineas'      => [
+                ['cuenta_id' => $gasto->id, 'descripcion' => 'Gasto', 'debito' => 50, 'credito' => 0],
+                ['cuenta_id' => $banco->id, 'descripcion' => 'Banco', 'debito' => 0, 'credito' => 50],
+            ],
         ])->assertSessionHasErrors('fecha');
 
-        $this->assertSame(0, Asiento::where('origen_modulo', 'GASTO')->count());
+        $this->assertSame(0, Asiento::whereDate('fecha', '2026-03-15')->where('estado', 'POSTEADO')->count());
     }
 }

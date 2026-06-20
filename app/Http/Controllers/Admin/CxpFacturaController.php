@@ -43,7 +43,12 @@ class CxpFacturaController extends Controller
             'desde' => ['nullable', 'date'],
             'hasta' => ['nullable', 'date'],
             'q' => ['nullable', 'string', 'max:100'],
+            'sort' => ['nullable', Rule::in(['numero', 'tipo_documento', 'fecha', 'proveedor', 'subtotal', 'impuesto', 'total', 'saldo', 'estado'])],
+            'dir'  => ['nullable', Rule::in(['asc', 'desc'])],
         ]);
+
+        $sort = $filtros['sort'] ?? 'fecha';
+        $dir  = $filtros['dir']  ?? 'desc';
 
         $consulta = CxpDocumento::query()
             ->with('proveedor')
@@ -61,28 +66,36 @@ class CxpFacturaController extends Controller
                         ->orWhereHas('proveedor', fn ($c) => $c->whereRaw('LOWER(nombre) LIKE ?', [$busqueda]));
                 });
             })
-            ->orderByDesc('fecha')
-            ->orderByDesc('numero');
+            ->when($sort === 'proveedor',
+                fn ($q) => $q->orderByRaw('(SELECT nombre FROM contact_contactos WHERE id = cxp_documentos.proveedor_id) '.($dir === 'asc' ? 'ASC' : 'DESC'))
+            )
+            ->when($sort !== 'proveedor', fn ($q) => $q->orderBy($sort, $dir))
+            ->when($sort !== 'fecha', fn ($q) => $q->orderByDesc('fecha'));
 
         if ($request->query('export')) {
             $todas = (clone $consulta)->get();
 
             if ($export = $this->exportarReporte($request, 'admin.exports.listado', [
-                'titulo' => 'Facturas por pagar',
+                'titulo' => 'Facturas de Compras',
                 'compania' => Compania::find($companiaId)?->nombre ?? '',
                 'subtitulo' => 'Listado al '.now()->format('d/m/Y').' — '.$todas->count().' facturas',
                 'encabezados' => [
-                    ['titulo' => 'Número'], ['titulo' => 'Fecha'], ['titulo' => 'Vence'],
-                    ['titulo' => 'Proveedor'], ['titulo' => 'Total', 'num' => true],
-                    ['titulo' => 'Saldo', 'num' => true], ['titulo' => 'Estado'],
+                    ['titulo' => 'Número'], ['titulo' => 'Fecha'],
+                    ['titulo' => 'Proveedor'],
+                    ['titulo' => 'Subtotal', 'num' => true], ['titulo' => 'ITBMS', 'num' => true],
+                    ['titulo' => 'Total', 'num' => true], ['titulo' => 'Saldo', 'num' => true],
+                    ['titulo' => 'Estado'],
                 ],
                 'filas' => $todas->map(fn ($f) => [
                     $f->numero, $f->fecha->format('d/m/Y'),
-                    $f->fecha_vencimiento?->format('d/m/Y') ?? '',
-                    $f->proveedor->nombre ?? '', number_format((float) $f->total, 2),
-                    number_format((float) $f->saldo, 2), ucfirst(strtolower($f->estado)),
+                    $f->proveedor->nombre ?? '',
+                    number_format((float) $f->subtotal, 2), number_format((float) $f->impuesto, 2),
+                    number_format((float) $f->total, 2), number_format((float) $f->saldo, 2),
+                    ucfirst(strtolower($f->estado)),
                 ])->all(),
-                'totales' => ['TOTAL', '', '', '',
+                'totales' => ['TOTAL', '', '',
+                    number_format((float) $todas->sum('subtotal'), 2),
+                    number_format((float) $todas->sum('impuesto'), 2),
                     number_format((float) $todas->sum('total'), 2),
                     number_format((float) $todas->sum('saldo'), 2), ''],
             ], 'facturas_cxp_'.now()->format('Y-m-d'))) {
@@ -92,10 +105,13 @@ class CxpFacturaController extends Controller
 
         // Totales de la columna sobre TODO el conjunto filtrado (no solo la
         // página): mismo signo que se muestra (notas de crédito en negativo).
+        $nc = CxpDocumento::TIPO_NOTA_CREDITO;
         $totales = (clone $consulta)->toBase()->reorder()->selectRaw(
-            'COALESCE(SUM(CASE WHEN tipo_documento = ? THEN -total ELSE total END), 0) AS total, '.
-            'COALESCE(SUM(CASE WHEN tipo_documento = ? THEN -saldo ELSE saldo END), 0) AS saldo',
-            [CxpDocumento::TIPO_NOTA_CREDITO, CxpDocumento::TIPO_NOTA_CREDITO]
+            'COALESCE(SUM(CASE WHEN tipo_documento = ? THEN -subtotal ELSE subtotal END), 0) AS subtotal, '.
+            'COALESCE(SUM(CASE WHEN tipo_documento = ? THEN -impuesto ELSE impuesto END), 0) AS impuesto, '.
+            'COALESCE(SUM(CASE WHEN tipo_documento = ? THEN -total   ELSE total   END), 0) AS total, '.
+            'COALESCE(SUM(CASE WHEN tipo_documento = ? THEN -saldo   ELSE saldo   END), 0) AS saldo',
+            [$nc, $nc, $nc, $nc]
         )->first();
 
         $facturas = $consulta->paginate(25)->withQueryString();
@@ -113,6 +129,8 @@ class CxpFacturaController extends Controller
             'proveedores' => $this->proveedores($companiaId),
             'saldoTotal' => $saldoTotal,
             'totales' => $totales,
+            'sort' => $sort,
+            'dir'  => $dir,
         ]);
     }
 

@@ -41,7 +41,6 @@
                 ['label' => 'Proveedores', 'href' => route('admin.contactos.index', ['tipo' => 'PROVEEDOR']), 'active' => request()->routeIs('admin.contactos.*') && request('tipo') === 'PROVEEDOR', 'show' => $can('contactos.ver')],
                 ['label' => 'Órdenes de compra', 'href' => route('admin.compras.ordenes.index'), 'active' => request()->routeIs('admin.compras.ordenes.*'), 'show' => $can('compras.ver')],
                 ['label' => 'Facturas de compra', 'href' => route('admin.cxp.facturas.index'), 'active' => request()->routeIs('admin.cxp.facturas.*'), 'show' => $can('cxp.ver')],
-                ['label' => 'Gastos directos', 'href' => route('admin.compras.gastos.index'), 'active' => request()->routeIs('admin.compras.gastos.*'), 'show' => $can('compras.ver')],
             ],
         ],
         [
@@ -77,7 +76,7 @@
             'active' => (request()->routeIs('admin.contactos.*') && request('tipo') === 'PROVEEDOR') || request()->routeIs('admin.cxp.*'),
             'children' => [
                 ['label' => 'Proveedores', 'href' => route('admin.contactos.index', ['tipo' => 'PROVEEDOR']), 'active' => request()->routeIs('admin.contactos.*') && request('tipo') === 'PROVEEDOR', 'show' => $can('contactos.ver')],
-                ['label' => 'Facturas por pagar', 'href' => route('admin.cxp.facturas.index'), 'active' => request()->routeIs('admin.cxp.facturas.*'), 'show' => $can('cxp.ver')],
+                ['label' => 'Facturas de Compras', 'href' => route('admin.cxp.facturas.index'), 'active' => request()->routeIs('admin.cxp.facturas.*'), 'show' => $can('cxp.ver')],
                 ['label' => 'Pagos', 'href' => route('admin.cxp.pagos.index'), 'active' => request()->routeIs('admin.cxp.pagos.*'), 'show' => $can('cxp.ver')],
                 ['label' => 'Anticipos', 'href' => route('admin.cxp.anticipos.index'), 'active' => request()->routeIs('admin.cxp.anticipos.*'), 'show' => $can('cxp.ver')],
                 ['label' => 'Notas crédito/débito', 'href' => route('admin.cxp.notas.index'), 'active' => request()->routeIs('admin.cxp.notas.*'), 'show' => $can('cxp.ver')],

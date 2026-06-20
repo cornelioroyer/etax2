@@ -30,7 +30,6 @@ use App\Http\Controllers\Admin\BancoCuentaController;
 use App\Http\Controllers\Admin\CierreAnualController;
 use App\Http\Controllers\Admin\CuentaDefaultController;
 use App\Http\Controllers\Admin\DiarioController;
-use App\Http\Controllers\Admin\GastoController;
 use App\Http\Controllers\Admin\PeriodoContableController;
 use App\Http\Controllers\Admin\ReporteFlujoCajaController;
 use App\Http\Controllers\Admin\ReporteLiquidacionItbmsController;
@@ -282,14 +281,11 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     });
 
     Route::middleware('permission:compras.ver')->group(function () {
-        Route::get('compras/gastos', [GastoController::class, 'index'])->name('compras.gastos.index');
         Route::get('compras/ordenes', [CompraOrdenController::class, 'index'])->name('compras.ordenes.index');
         Route::get('compras/ordenes/{orden}', [CompraOrdenController::class, 'show'])->whereNumber('orden')->name('compras.ordenes.show');
     });
 
     Route::middleware('permission:compras.gestionar')->group(function () {
-        Route::get('compras/gastos/nuevo', [GastoController::class, 'create'])->name('compras.gastos.create');
-        Route::post('compras/gastos', [GastoController::class, 'store'])->name('compras.gastos.store');
         Route::get('compras/ordenes/nueva', [CompraOrdenController::class, 'create'])->name('compras.ordenes.create');
         Route::post('compras/ordenes', [CompraOrdenController::class, 'store'])->name('compras.ordenes.store');
         Route::post('compras/ordenes/{orden}/aprobar', [CompraOrdenController::class, 'aprobar'])->whereNumber('orden')->name('compras.ordenes.aprobar');

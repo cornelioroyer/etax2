@@ -111,9 +111,11 @@
                                                     <option value="15">15%</option>
                                                 </select>
                                             </td>
-                                            <td class="py-2 pr-2">
+                                            <td class="py-2 pr-2 min-w-[16rem]">
+                                                <input type="text" class="cuenta-buscar block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-indigo-500 focus:ring-indigo-500 mb-1"
+                                                       placeholder="Buscar cuenta..." autocomplete="off" style="padding:.25rem .5rem">
                                                 <select :name="`lineas[${idx}][cuenta_id]`" x-model="linea.cuenta_id" required
-                                                        class="block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                                        class="cuenta-select block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                                     <option value="">— Cuenta —</option>
                                                     @foreach ($cuentas as $cuenta)
                                                         <option value="{{ $cuenta->id }}">{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
@@ -162,6 +164,41 @@
             </div>
         </div>
     </div>
+
+    <script>
+    (function () {
+        // Búsqueda de cuenta en líneas: filtra opciones del select al escribir
+        document.addEventListener('input', function (e) {
+            if (!e.target.classList.contains('cuenta-buscar')) return;
+            var q = e.target.value.trim().toLowerCase();
+            var sel = e.target.closest('td').querySelector('.cuenta-select');
+            var vis = 0;
+            Array.from(sel.options).forEach(function (o) {
+                var show = !q || !o.value || o.text.toLowerCase().indexOf(q) !== -1;
+                o.hidden = !show;
+                if (show) vis++;
+            });
+            sel.size = q ? Math.min(8, vis) : 1;
+        });
+        // Al seleccionar, limpiar búsqueda y colapsar
+        document.addEventListener('change', function (e) {
+            if (!e.target.classList.contains('cuenta-select')) return;
+            var td = e.target.closest('td');
+            var inp = td.querySelector('.cuenta-buscar');
+            if (inp) inp.value = '';
+            e.target.size = 1;
+            Array.from(e.target.options).forEach(function (o) { o.hidden = false; });
+        });
+        // Colapsar al perder foco el select
+        document.addEventListener('blur', function (e) {
+            if (!e.target.classList.contains('cuenta-select')) return;
+            e.target.size = 1;
+            var inp = e.target.closest('td').querySelector('.cuenta-buscar');
+            if (inp) inp.value = '';
+            Array.from(e.target.options).forEach(function (o) { o.hidden = false; });
+        }, true);
+    })();
+    </script>
 
     <script>
         function facturaCxp(lineasIniciales, cuentaGastoId, provCuentas) {

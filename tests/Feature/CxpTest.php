@@ -112,7 +112,7 @@ class CxpTest extends TestCase
     {
         $this->actuar()->get(route('admin.cxp.facturas.index'))
             ->assertOk()
-            ->assertSee('Facturas por pagar');
+            ->assertSee('Facturas de Compras');
     }
 
     public function test_crear_factura_genera_asiento_posteado(): void
