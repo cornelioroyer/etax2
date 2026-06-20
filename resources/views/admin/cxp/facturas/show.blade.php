@@ -56,6 +56,14 @@
                             <dt class="text-gray-500">Saldo</dt>
                             <dd class="text-lg font-bold text-[#0d2d5e]">B/. {{ number_format((float) $factura->saldo, 2) }}</dd>
                         </div>
+                        @if ($factura->compraOrden)
+                            <div>
+                                <dt class="text-gray-500">Orden de compra</dt>
+                                <dd class="font-medium">
+                                    <a href="{{ route('admin.compras.ordenes.show', $factura->compraOrden) }}" class="text-blue-700 hover:underline">{{ $factura->compraOrden->numero }}</a>
+                                </dd>
+                            </div>
+                        @endif
                     </dl>
 
                     <div class="flex flex-wrap items-center gap-2">

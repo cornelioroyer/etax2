@@ -56,15 +56,17 @@
                         <input type="hidden" name="proveedor_id" id="proveedor_id_val"
                                value="{{ $filtros['proveedor_id'] ?? '' }}">
                         <input type="text" id="proveedor_buscar" autocomplete="off"
-                               placeholder="Buscar por nombre..."
+                               placeholder="Buscar por nombre o código..."
                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                                value="{{ $proveedores->firstWhere('id', $filtros['proveedor_id'] ?? null)?->nombre ?? '' }}">
                         <div id="proveedor-lista"
                              class="hidden absolute z-30 mt-1 w-full bg-white rounded-md shadow-lg border border-gray-200 max-h-52 overflow-y-auto text-sm">
-                            <div data-id="" data-nombre="" class="px-3 py-2 hover:bg-indigo-50 cursor-pointer text-gray-400">Todos</div>
+                            <div data-id="" data-nombre="" data-codigo="" class="px-3 py-2 hover:bg-indigo-50 cursor-pointer text-gray-400">Todos</div>
                             @foreach ($proveedores as $p)
-                                <div data-id="{{ $p->id }}" data-nombre="{{ $p->nombre }}"
-                                     class="px-3 py-2 hover:bg-indigo-50 cursor-pointer text-gray-700">{{ $p->nombre }}</div>
+                                <div data-id="{{ $p->id }}" data-nombre="{{ $p->nombre }}" data-codigo="{{ $p->codigo ?? '' }}"
+                                     class="px-3 py-2 hover:bg-indigo-50 cursor-pointer text-gray-700">
+                                    @if($p->codigo)<span class="font-mono text-xs text-gray-400">{{ $p->codigo }}</span> — @endif{{ $p->nombre }}
+                                </div>
                             @endforeach
                         </div>
                     </div>
@@ -79,7 +81,8 @@
                             q = (q || '').toLowerCase();
                             items.forEach(function (el) {
                                 var nombre = el.dataset.nombre.toLowerCase();
-                                el.classList.toggle('hidden', q !== '' && el.dataset.id !== '' && nombre.indexOf(q) === -1);
+                                var codigo = (el.dataset.codigo || '').toLowerCase();
+                                el.classList.toggle('hidden', q !== '' && el.dataset.id !== '' && nombre.indexOf(q) === -1 && codigo.indexOf(q) === -1);
                             });
                             list.classList.remove('hidden');
                         }

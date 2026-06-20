@@ -6,6 +6,7 @@ use App\Models\Concerns\TipoDocumentoBehavior;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\DB;
 
 class CxpDocumento extends Model
@@ -107,6 +108,11 @@ class CxpDocumento extends Model
     public function aplicacionesComoDestino(): HasMany
     {
         return $this->hasMany(CxpAplicacion::class, 'documento_destino_id');
+    }
+
+    public function compraOrden(): HasOne
+    {
+        return $this->hasOne(CompraOrden::class, 'cxp_documento_id');
     }
 
     public function esAnulado(): bool

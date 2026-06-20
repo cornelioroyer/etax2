@@ -3,6 +3,14 @@
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Editar contacto — {{ $contacto->nombre }}</h2>
+            <div class="flex items-center gap-2">
+            <a href="{{ route('admin.contactos.index') }}"
+               class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+                </svg>
+                Proveedores
+            </a>
             <button type="button"
                 onclick="window.dispatchEvent(new CustomEvent('open-help', { detail: { module: {{ $ayudaModulo ? "'".$ayudaModulo."'" : 'null' }} } }))"
                 class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
@@ -12,6 +20,7 @@
                 </svg>
                 Ayuda
             </button>
+            </div>
         </div>
     </x-slot>
 

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+
 class CompraOrdenDetalle extends Model
 {
     protected $table = 'compras_ordenes_detalle';
@@ -17,6 +18,7 @@ class CompraOrdenDetalle extends Model
         'cantidad',
         'precio_unitario',
         'impuesto_id',
+        'cuenta_id',
         'total_linea',
         'created_by',
         'updated_by',
@@ -39,5 +41,10 @@ class CompraOrdenDetalle extends Model
     public function impuesto(): BelongsTo
     {
         return $this->belongsTo(TaxImpuesto::class, 'impuesto_id');
+    }
+
+    public function cuenta(): BelongsTo
+    {
+        return $this->belongsTo(CuentaContable::class, 'cuenta_id');
     }
 }

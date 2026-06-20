@@ -211,7 +211,7 @@ class CxpFacturaController extends Controller
     {
         $this->autorizarFactura($request, $documento);
 
-        $documento->load(['proveedor', 'detalle.cuenta', 'asiento', 'aplicacionesComoDestino.origen']);
+        $documento->load(['proveedor', 'detalle.cuenta', 'asiento', 'aplicacionesComoDestino.origen', 'compraOrden']);
 
         return view('admin.cxp.facturas.show', ['factura' => $documento]);
     }

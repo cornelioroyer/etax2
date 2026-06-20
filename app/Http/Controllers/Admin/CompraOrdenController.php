@@ -4,12 +4,15 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Concerns\ConCompaniaActiva;
 use App\Http\Controllers\Controller;
+use App\Models\Compania;
 use App\Models\CompraOrden;
 use App\Models\CompraOrdenDetalle;
 use App\Models\Contacto;
+use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
 use App\Models\CxpDocumento;
 use App\Models\CxpDocumentoDetalle;
+use App\Models\ItemProducto;
 use App\Models\TaxImpuesto;
 use App\Services\AsientoAutomatico;
 use Illuminate\Http\RedirectResponse;
@@ -72,6 +75,8 @@ class CompraOrdenController extends Controller
         return view('admin.compras.ordenes.create', [
             'proveedores' => $this->proveedores($companiaId),
             'impuestos'   => TaxImpuesto::itbmsGlobales(),
+            'cuentas'     => $this->cuentasGasto($companiaId),
+            'items'       => $this->itemsCompra($companiaId),
         ]);
     }
 
@@ -81,22 +86,26 @@ class CompraOrdenController extends Controller
         $companiaId = $this->companiaActivaId($request);
 
         $impuestosValidos = TaxImpuesto::itbmsGlobales()->pluck('id')->all();
+        $cuentasValidas   = $this->cuentasGasto($companiaId)->pluck('id')->all();
 
         $data = $request->validate([
             'proveedor_id'             => ['required', 'integer', Rule::exists('contact_contactos', 'id')->where('compania_id', $companiaId)],
             'fecha'                    => ['required', 'date'],
+            'observaciones'            => ['nullable', 'string', 'max:2000'],
             'lineas'                   => ['required', 'array', 'min:1'],
             'lineas.*.descripcion'     => ['required', 'string', 'max:500'],
             'lineas.*.cantidad'        => ['required', 'numeric', 'gt:0', 'max:999999999'],
             'lineas.*.precio_unitario' => ['required', 'numeric', 'gte:0', 'max:999999999'],
             'lineas.*.impuesto_id'     => ['required', 'integer', Rule::in($impuestosValidos)],
+            'lineas.*.cuenta_id'       => ['nullable', 'integer', Rule::in($cuentasValidas)],
+            'lineas.*.item_id'         => ['nullable', 'integer'],
         ]);
 
         $impuestosMap = TaxImpuesto::itbmsGlobales()->keyBy('id');
 
-        $lineas = [];
+        $lineas   = [];
         $subtotal = 0.0;
-        $itbms = 0.0;
+        $itbms    = 0.0;
 
         foreach (array_values($data['lineas']) as $i => $linea) {
             $cantidad = round((float) $linea['cantidad'], 4);
@@ -110,10 +119,12 @@ class CompraOrdenController extends Controller
 
             $lineas[] = [
                 'linea'           => $i + 1,
+                'item_id'         => ! empty($linea['item_id']) ? (int) $linea['item_id'] : null,
                 'descripcion'     => $linea['descripcion'],
                 'cantidad'        => $cantidad,
                 'precio_unitario' => $precio,
                 'impuesto_id'     => (int) $linea['impuesto_id'],
+                'cuenta_id'       => ! empty($linea['cuenta_id']) ? (int) $linea['cuenta_id'] : null,
                 'total_linea'     => round($base + $impMonto, 2),
             ];
         }
@@ -128,15 +139,16 @@ class CompraOrdenController extends Controller
 
         $orden = DB::transaction(function () use ($companiaId, $data, $lineas, $subtotal, $itbms, $total, $request) {
             $orden = CompraOrden::create([
-                'compania_id'  => $companiaId,
-                'proveedor_id' => $data['proveedor_id'],
-                'numero'       => CompraOrden::siguienteNumero($companiaId),
-                'fecha'        => $data['fecha'],
-                'estado'       => CompraOrden::ESTADO_BORRADOR,
-                'subtotal'     => $subtotal,
-                'itbms'        => $itbms,
-                'total'        => $total,
-                'created_by'   => $request->user()->email,
+                'compania_id'   => $companiaId,
+                'proveedor_id'  => $data['proveedor_id'],
+                'numero'        => CompraOrden::siguienteNumero($companiaId),
+                'fecha'         => $data['fecha'],
+                'estado'        => CompraOrden::ESTADO_BORRADOR,
+                'subtotal'      => $subtotal,
+                'itbms'         => $itbms,
+                'total'         => $total,
+                'observaciones' => $data['observaciones'] ?? null,
+                'created_by'    => $request->user()->email,
             ]);
 
             foreach ($lineas as $linea) {
@@ -154,9 +166,8 @@ class CompraOrdenController extends Controller
     {
         abort_unless($orden->compania_id === $this->companiaActivaId($request), 404);
 
-        $orden->load(['proveedor', 'detalle.impuesto', 'recepciones.detalle', 'cxpDocumento']);
+        $orden->load(['proveedor', 'detalle.impuesto', 'detalle.cuenta', 'recepciones.detalle', 'cxpDocumento']);
 
-        // Cantidad recibida por línea, para el formulario de recepción.
         $recibido = \App\Models\CompraRecepcionDetalle::query()
             ->whereIn('recepcion_id', $orden->recepciones->pluck('id'))
             ->selectRaw('orden_detalle_id, SUM(cantidad) AS recibido')
@@ -167,6 +178,108 @@ class CompraOrdenController extends Controller
             'orden'    => $orden,
             'recibido' => $recibido,
         ]);
+    }
+
+    public function edit(Request $request, CompraOrden $orden): View
+    {
+        abort_unless($request->user()->can('compras.gestionar'), 403);
+        abort_unless($orden->compania_id === $this->companiaActivaId($request), 404);
+
+        if ($orden->estado !== CompraOrden::ESTADO_BORRADOR) {
+            abort(403, 'Solo se puede editar una orden en borrador.');
+        }
+
+        $orden->load(['detalle.impuesto']);
+
+        return view('admin.compras.ordenes.edit', [
+            'orden'       => $orden,
+            'proveedores' => $this->proveedores($orden->compania_id),
+            'impuestos'   => TaxImpuesto::itbmsGlobales(),
+            'cuentas'     => $this->cuentasGasto($orden->compania_id),
+            'items'       => $this->itemsCompra($orden->compania_id),
+        ]);
+    }
+
+    public function update(Request $request, CompraOrden $orden): RedirectResponse
+    {
+        abort_unless($request->user()->can('compras.gestionar'), 403);
+        abort_unless($orden->compania_id === $this->companiaActivaId($request), 404);
+
+        if ($orden->estado !== CompraOrden::ESTADO_BORRADOR) {
+            return back()->withErrors(['orden' => 'Solo se puede editar una orden en borrador.']);
+        }
+
+        $companiaId     = $orden->compania_id;
+        $impuestosValidos = TaxImpuesto::itbmsGlobales()->pluck('id')->all();
+        $cuentasValidas   = $this->cuentasGasto($companiaId)->pluck('id')->all();
+
+        $data = $request->validate([
+            'proveedor_id'             => ['required', 'integer', Rule::exists('contact_contactos', 'id')->where('compania_id', $companiaId)],
+            'fecha'                    => ['required', 'date'],
+            'observaciones'            => ['nullable', 'string', 'max:2000'],
+            'lineas'                   => ['required', 'array', 'min:1'],
+            'lineas.*.descripcion'     => ['required', 'string', 'max:500'],
+            'lineas.*.cantidad'        => ['required', 'numeric', 'gt:0', 'max:999999999'],
+            'lineas.*.precio_unitario' => ['required', 'numeric', 'gte:0', 'max:999999999'],
+            'lineas.*.impuesto_id'     => ['required', 'integer', Rule::in($impuestosValidos)],
+            'lineas.*.cuenta_id'       => ['nullable', 'integer', Rule::in($cuentasValidas)],
+        ]);
+
+        $impuestosMap = TaxImpuesto::itbmsGlobales()->keyBy('id');
+
+        $lineas   = [];
+        $subtotal = 0.0;
+        $itbms    = 0.0;
+
+        foreach (array_values($data['lineas']) as $i => $linea) {
+            $cantidad = round((float) $linea['cantidad'], 4);
+            $precio   = round((float) $linea['precio_unitario'], 4);
+            $base     = round($cantidad * $precio, 2);
+            $tasa     = (float) ($impuestosMap[(int) $linea['impuesto_id']]->porcentaje ?? 0);
+            $impMonto = round($base * $tasa / 100, 2);
+
+            $subtotal += $base;
+            $itbms    += $impMonto;
+
+            $lineas[] = [
+                'linea'           => $i + 1,
+                'descripcion'     => $linea['descripcion'],
+                'cantidad'        => $cantidad,
+                'precio_unitario' => $precio,
+                'impuesto_id'     => (int) $linea['impuesto_id'],
+                'cuenta_id'       => ! empty($linea['cuenta_id']) ? (int) $linea['cuenta_id'] : null,
+                'total_linea'     => round($base + $impMonto, 2),
+            ];
+        }
+
+        $subtotal = round($subtotal, 2);
+        $itbms    = round($itbms, 2);
+        $total    = round($subtotal + $itbms, 2);
+
+        if ($total <= 0) {
+            throw ValidationException::withMessages(['lineas' => 'El total de la orden debe ser mayor que cero.']);
+        }
+
+        DB::transaction(function () use ($orden, $data, $lineas, $subtotal, $itbms, $total, $request) {
+            $orden->update([
+                'proveedor_id'  => $data['proveedor_id'],
+                'fecha'         => $data['fecha'],
+                'subtotal'      => $subtotal,
+                'itbms'         => $itbms,
+                'total'         => $total,
+                'observaciones' => $data['observaciones'] ?? null,
+                'updated_by'    => $request->user()->email,
+            ]);
+
+            $orden->detalle()->delete();
+
+            foreach ($lineas as $linea) {
+                CompraOrdenDetalle::create($linea + ['orden_id' => $orden->id, 'created_by' => $request->user()->email]);
+            }
+        });
+
+        return redirect()->route('admin.compras.ordenes.show', $orden)
+            ->with('status', "Orden {$orden->numero} actualizada.");
     }
 
     public function aprobar(Request $request, CompraOrden $orden): RedirectResponse
@@ -202,7 +315,7 @@ class CompraOrdenController extends Controller
 
     /**
      * Genera la factura de compra (CxpDocumento) + asiento desde la orden.
-     * Reusa la maquinaria contable de CxP. Usa GASTO_DEFAULT por línea.
+     * Usa la cuenta_id de cada línea; si no tiene, cae en GASTO_DEFAULT.
      */
     public function facturar(Request $request, CompraOrden $orden): RedirectResponse
     {
@@ -229,8 +342,20 @@ class CompraOrdenController extends Controller
         if (! $cuentaCxpId) {
             return back()->withErrors(['orden' => 'La compañía no tiene configurada la cuenta default CXP.']);
         }
-        if (! $cuentaGastoId) {
-            return back()->withErrors(['orden' => 'La compañía no tiene configurada la cuenta default GASTO_DEFAULT para la contrapartida de compras.']);
+
+        $orden->load('detalle.impuesto');
+
+        $impuesto = (float) $orden->itbms;
+        if ($impuesto > 0 && ! $cuentaItbmsId) {
+            throw ValidationException::withMessages(['orden' => 'La compañía no tiene configurada la cuenta default ITBMS_CREDITO.']);
+        }
+
+        // Verificar que toda línea tenga cuenta resolvible
+        foreach ($orden->detalle as $linea) {
+            if (! $linea->cuenta_id && ! $cuentaGastoId) {
+                throw ValidationException::withMessages(['orden' =>
+                    "La línea «{$linea->descripcion}» no tiene cuenta contable y la compañía no tiene GASTO_DEFAULT configurado."]);
+            }
         }
 
         $duplicada = CxpDocumento::where('compania_id', $companiaId)
@@ -241,13 +366,6 @@ class CompraOrdenController extends Controller
 
         if ($duplicada) {
             throw ValidationException::withMessages(['numero' => "Ya existe la factura {$data['numero']} de ese proveedor."]);
-        }
-
-        $orden->load('detalle.impuesto');
-
-        $impuesto = (float) $orden->itbms;
-        if ($impuesto > 0 && ! $cuentaItbmsId) {
-            throw ValidationException::withMessages(['orden' => 'La compañía no tiene configurada la cuenta default ITBMS_CREDITO.']);
         }
 
         $factura = DB::transaction(function () use ($orden, $data, $companiaId, $usuario, $cuentaCxpId, $cuentaItbmsId, $cuentaGastoId, $impuesto) {
@@ -270,23 +388,24 @@ class CompraOrdenController extends Controller
             $lineasAsiento = [];
 
             foreach ($orden->detalle as $linea) {
-                $impLinea = round((float) $linea->cantidad * (float) $linea->precio_unitario * (float) ($linea->impuesto->porcentaje ?? 0) / 100, 2);
+                $impLinea  = round((float) $linea->cantidad * (float) $linea->precio_unitario * (float) ($linea->impuesto->porcentaje ?? 0) / 100, 2);
                 $baseLinea = round((float) $linea->total_linea - $impLinea, 2);
+                $cuentaId  = $linea->cuenta_id ?? $cuentaGastoId;
 
                 CxpDocumentoDetalle::create([
-                    'documento_id'   => $factura->id,
-                    'linea'          => $linea->linea,
-                    'descripcion'    => $linea->descripcion,
-                    'cantidad'       => $linea->cantidad,
-                    'precio_unitario'=> $linea->precio_unitario,
-                    'impuesto_monto' => $impLinea,
-                    'total_linea'    => $linea->total_linea,
-                    'cuenta_id'      => $cuentaGastoId,
-                    'created_by'     => $usuario->email,
+                    'documento_id'    => $factura->id,
+                    'linea'           => $linea->linea,
+                    'descripcion'     => $linea->descripcion,
+                    'cantidad'        => $linea->cantidad,
+                    'precio_unitario' => $linea->precio_unitario,
+                    'impuesto_monto'  => $impLinea,
+                    'total_linea'     => $linea->total_linea,
+                    'cuenta_id'       => $cuentaId,
+                    'created_by'      => $usuario->email,
                 ]);
 
                 $lineasAsiento[] = [
-                    'cuenta_id'   => $cuentaGastoId,
+                    'cuenta_id'   => $cuentaId,
                     'descripcion' => $linea->descripcion,
                     'debito'      => $baseLinea,
                     'credito'     => 0,
@@ -330,6 +449,16 @@ class CompraOrdenController extends Controller
             ->with('status', "Factura {$factura->numero} generada desde la orden {$orden->numero}.");
     }
 
+    public function imprimir(Request $request, CompraOrden $orden): View
+    {
+        abort_unless($orden->compania_id === $this->companiaActivaId($request), 404);
+
+        $orden->load(['proveedor', 'detalle.impuesto']);
+        $compania = Compania::find($orden->compania_id);
+
+        return view('admin.compras.ordenes.print', compact('orden', 'compania'));
+    }
+
     private function proveedores(int $companiaId)
     {
         return Contacto::where('compania_id', $companiaId)
@@ -337,5 +466,22 @@ class CompraOrdenController extends Controller
             ->whereHas('tipos', fn ($q) => $q->where('codigo', 'PROVEEDOR'))
             ->orderBy('nombre')
             ->get(['id', 'codigo', 'nombre']);
+    }
+
+    private function cuentasGasto(int $companiaId)
+    {
+        return CuentaContable::where('compania_id', $companiaId)
+            ->where('activa', true)
+            ->where('permite_movimiento', true)
+            ->orderBy('codigo')
+            ->get(['id', 'codigo', 'nombre']);
+    }
+
+    private function itemsCompra(int $companiaId)
+    {
+        return ItemProducto::where('compania_id', $companiaId)
+            ->where('activo', true)
+            ->orderBy('nombre')
+            ->get(['id', 'codigo', 'nombre', 'costo', 'impuesto_id', 'cuenta_gasto_id']);
     }
 }

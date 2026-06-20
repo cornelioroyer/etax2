@@ -5,7 +5,13 @@
                 Orden de compra {{ $orden->numero }}
                 @include('admin.compras.ordenes._estado', ['estado' => $orden->estado])
             </h2>
-            <a href="{{ route('admin.compras.ordenes.index') }}" class="text-sm text-gray-600 hover:text-gray-900">← Volver al listado</a>
+            <div class="flex items-center gap-3">
+                <a href="{{ route('admin.compras.ordenes.imprimir', $orden) }}" target="_blank"
+                   class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                    Imprimir / PDF
+                </a>
+                <a href="{{ route('admin.compras.ordenes.index') }}" class="text-sm text-gray-600 hover:text-gray-900">← Volver al listado</a>
+            </div>
         </div>
     </x-slot>
 
@@ -36,6 +42,12 @@
                     </div>
                 </div>
 
+                @if ($orden->observaciones)
+                    <div class="mt-4 rounded-md bg-gray-50 p-3 text-sm text-gray-700">
+                        <span class="font-medium text-gray-500">Observaciones:</span> {{ $orden->observaciones }}
+                    </div>
+                @endif
+
                 <div class="mt-4 overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -45,6 +57,7 @@
                                 <th class="w-28 py-2 pr-2 text-right">Precio</th>
                                 <th class="w-28 py-2 pr-2 text-right">Total</th>
                                 <th class="w-24 py-2 pr-2 text-right">Recibido</th>
+                                <th class="py-2 pr-2 hidden md:table-cell">Cuenta</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -55,13 +68,16 @@
                                     <td class="py-2 pr-2 text-right">{{ number_format((float) $linea->precio_unitario, 2) }}</td>
                                     <td class="py-2 pr-2 text-right">{{ number_format((float) $linea->total_linea, 2) }}</td>
                                     <td class="py-2 pr-2 text-right">{{ rtrim(rtrim(number_format((float) ($recibido[$linea->id] ?? 0), 4), '0'), '.') }}</td>
+                                    <td class="py-2 pr-2 text-gray-600 text-xs hidden md:table-cell">
+                                        {{ $linea->cuenta ? $linea->cuenta->codigo.' — '.$linea->cuenta->nombre : '—' }}
+                                    </td>
                                 </tr>
                             @endforeach
                         </tbody>
                         <tfoot class="border-t-2 border-gray-200 text-sm">
-                            <tr><td colspan="3" class="py-1 pr-2 text-right text-gray-600">Subtotal</td><td class="py-1 pr-2 text-right">{{ number_format((float) $orden->subtotal, 2) }}</td><td></td></tr>
-                            <tr><td colspan="3" class="py-1 pr-2 text-right text-gray-600">ITBMS</td><td class="py-1 pr-2 text-right">{{ number_format((float) $orden->itbms, 2) }}</td><td></td></tr>
-                            <tr class="font-semibold"><td colspan="3" class="py-2 pr-2 text-right text-gray-700">Total</td><td class="py-2 pr-2 text-right">{{ number_format((float) $orden->total, 2) }}</td><td></td></tr>
+                            <tr><td colspan="3" class="py-1 pr-2 text-right text-gray-600">Subtotal</td><td class="py-1 pr-2 text-right">{{ number_format((float) $orden->subtotal, 2) }}</td><td colspan="2"></td></tr>
+                            <tr><td colspan="3" class="py-1 pr-2 text-right text-gray-600">ITBMS</td><td class="py-1 pr-2 text-right">{{ number_format((float) $orden->itbms, 2) }}</td><td colspan="2"></td></tr>
+                            <tr class="font-semibold"><td colspan="3" class="py-2 pr-2 text-right text-gray-700">Total</td><td class="py-2 pr-2 text-right">{{ number_format((float) $orden->total, 2) }}</td><td colspan="2"></td></tr>
                         </tfoot>
                     </table>
                 </div>
@@ -70,6 +86,10 @@
                 @can('compras.gestionar')
                     <div class="mt-6 flex flex-wrap items-center gap-3 border-t border-gray-100 pt-4">
                         @if ($orden->estado === \App\Models\CompraOrden::ESTADO_BORRADOR)
+                            <a href="{{ route('admin.compras.ordenes.edit', $orden) }}"
+                               class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                                Editar
+                            </a>
                             <form method="POST" action="{{ route('admin.compras.ordenes.aprobar', $orden) }}">
                                 @csrf
                                 <button class="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500">Aprobar orden</button>
@@ -165,12 +185,18 @@
                     <h3 class="mb-3 text-sm font-semibold text-gray-700">Recepciones</h3>
                     <table class="min-w-full text-sm">
                         <thead class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                            <tr><th class="py-2 pr-2">Número</th><th class="py-2 pr-2">Fecha</th><th class="py-2 pr-2 text-right">Líneas</th></tr>
+                            <tr>
+                                <th class="py-2 pr-2">Número</th>
+                                <th class="py-2 pr-2">Fecha</th>
+                                <th class="py-2 pr-2 text-right">Líneas</th>
+                            </tr>
                         </thead>
                         <tbody>
                             @foreach ($orden->recepciones as $recepcion)
                                 <tr class="border-t border-gray-100">
-                                    <td class="py-2 pr-2 font-medium">{{ $recepcion->numero }}</td>
+                                    <td class="py-2 pr-2 font-medium">
+                                        <a href="{{ route('admin.compras.ordenes.recepciones.show', [$orden, $recepcion]) }}" class="text-blue-700 hover:underline">{{ $recepcion->numero }}</a>
+                                    </td>
                                     <td class="py-2 pr-2">{{ $recepcion->fecha->format('d/m/Y') }}</td>
                                     <td class="py-2 pr-2 text-right">{{ $recepcion->detalle->count() }}</td>
                                 </tr>

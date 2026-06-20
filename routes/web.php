@@ -283,11 +283,15 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::middleware('permission:compras.ver')->group(function () {
         Route::get('compras/ordenes', [CompraOrdenController::class, 'index'])->name('compras.ordenes.index');
         Route::get('compras/ordenes/{orden}', [CompraOrdenController::class, 'show'])->whereNumber('orden')->name('compras.ordenes.show');
+        Route::get('compras/ordenes/{orden}/imprimir', [CompraOrdenController::class, 'imprimir'])->whereNumber('orden')->name('compras.ordenes.imprimir');
+        Route::get('compras/ordenes/{orden}/recepciones/{recepcion}', [CompraRecepcionController::class, 'show'])->whereNumber(['orden', 'recepcion'])->name('compras.ordenes.recepciones.show');
     });
 
     Route::middleware('permission:compras.gestionar')->group(function () {
         Route::get('compras/ordenes/nueva', [CompraOrdenController::class, 'create'])->name('compras.ordenes.create');
         Route::post('compras/ordenes', [CompraOrdenController::class, 'store'])->name('compras.ordenes.store');
+        Route::get('compras/ordenes/{orden}/editar', [CompraOrdenController::class, 'edit'])->whereNumber('orden')->name('compras.ordenes.edit');
+        Route::put('compras/ordenes/{orden}', [CompraOrdenController::class, 'update'])->whereNumber('orden')->name('compras.ordenes.update');
         Route::post('compras/ordenes/{orden}/aprobar', [CompraOrdenController::class, 'aprobar'])->whereNumber('orden')->name('compras.ordenes.aprobar');
         Route::post('compras/ordenes/{orden}/anular', [CompraOrdenController::class, 'anular'])->whereNumber('orden')->name('compras.ordenes.anular');
         Route::post('compras/ordenes/{orden}/facturar', [CompraOrdenController::class, 'facturar'])->whereNumber('orden')->name('compras.ordenes.facturar');

@@ -32,6 +32,7 @@ class CompraOrden extends Model
         'subtotal',
         'itbms',
         'total',
+        'observaciones',
         'adjunto_id',
         'cxp_documento_id',
         'created_by',

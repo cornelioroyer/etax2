@@ -37,11 +37,13 @@
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
                     <div class="sm:col-span-2">
                         <x-input-label for="cliente_id" value="Cliente" />
-                        <select id="cliente_id" name="cliente_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="">Consumidor final (sin RUC)</option>
+                        <input type="text" class="cliente-buscar mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                               placeholder="Buscar por nombre o RUC…" autocomplete="off" style="padding:.375rem .75rem">
+                        <select id="cliente_id" name="cliente_id" class="cliente-select mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="" @selected(! old('cliente_id'))>Consumidor final (sin RUC)</option>
                             @foreach ($clientes as $cli)
                                 <option value="{{ $cli->id }}" @selected(old('cliente_id') == $cli->id)>
-                                    {{ $cli->nombre }} {{ $cli->identificacion ? "— RUC {$cli->identificacion}" . ($cli->dv ? " DV {$cli->dv}" : '') : '(sin RUC)' }}
+                                    {{ $cli->nombre }}{{ $cli->identificacion ? ' — RUC ' . $cli->identificacion . ($cli->dv ? ' DV ' . $cli->dv : '') : '' }}
                                 </option>
                             @endforeach
                         </select>
@@ -131,6 +133,38 @@
             </form>
         </div>
     </div>
+
+    <script>
+    (function () {
+        document.addEventListener('input', function (e) {
+            if (!e.target.classList.contains('cliente-buscar')) return;
+            var q = e.target.value.trim().toLowerCase();
+            var sel = e.target.closest('div').querySelector('.cliente-select');
+            var vis = 0;
+            Array.from(sel.options).forEach(function (o) {
+                var show = !q || !o.value || o.text.toLowerCase().indexOf(q) !== -1;
+                o.hidden = !show;
+                if (show) vis++;
+            });
+            sel.size = q ? Math.min(8, vis) : 1;
+        });
+        document.addEventListener('change', function (e) {
+            if (!e.target.classList.contains('cliente-select')) return;
+            var div = e.target.closest('div');
+            var inp = div.querySelector('.cliente-buscar');
+            if (inp) inp.value = '';
+            e.target.size = 1;
+            Array.from(e.target.options).forEach(function (o) { o.hidden = false; });
+        });
+        document.addEventListener('blur', function (e) {
+            if (!e.target.classList.contains('cliente-select')) return;
+            e.target.size = 1;
+            var inp = e.target.closest('div').querySelector('.cliente-buscar');
+            if (inp) inp.value = '';
+            Array.from(e.target.options).forEach(function (o) { o.hidden = false; });
+        }, true);
+    })();
+    </script>
 
     <script>
         function facturaFel() {

@@ -11,10 +11,25 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Illuminate\View\View;
 
 class CompraRecepcionController extends Controller
 {
     use ConCompaniaActiva;
+
+    public function show(Request $request, CompraOrden $orden, CompraRecepcion $recepcion): View
+    {
+        abort_unless($orden->compania_id === $this->companiaActivaId($request), 404);
+        abort_unless($recepcion->orden_id === $orden->id, 404);
+
+        $recepcion->load(['detalle', 'proveedor']);
+        $orden->load('proveedor');
+
+        return view('admin.compras.recepciones.show', [
+            'orden'     => $orden,
+            'recepcion' => $recepcion,
+        ]);
+    }
 
     /**
      * Registra una recepción de mercancía contra una orden de compra.
