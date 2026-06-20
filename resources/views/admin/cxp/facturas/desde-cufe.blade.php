@@ -43,24 +43,6 @@
                 </div>
             </div>
 
-            {{-- Paso reCAPTCHA (la DGI lo exige) --}}
-            <div id="panel-captcha" style="display:none;" class="bg-white p-6 shadow-sm sm:rounded-lg text-center">
-                <div style="font-size:0.7rem;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;">CUFE detectado</div>
-                <div id="cap-cufe" style="font-size:0.75rem;color:#374151;word-break:break-all;margin:0.35rem 0 1rem;background:#f9fafb;border-radius:0.375rem;padding:0.5rem;"></div>
-                <p class="text-sm text-gray-600 mb-3">La DGI exige verificar que no eres un robot:</p>
-                <div style="display:flex;justify-content:center;">
-                    <div id="recaptcha-box"></div>
-                </div>
-                <button type="button" id="btn-consultar" onclick="ejecutarConsulta()" disabled
-                        style="margin-top:1rem;width:100%;background:#9ca3af;color:#fff;border:none;border-radius:0.375rem;padding:0.65rem;font-size:0.95rem;font-weight:700;cursor:not-allowed;">
-                    Consultar DGI
-                </button>
-                <button type="button" onclick="resetear()"
-                        style="margin-top:0.5rem;font-size:0.8rem;color:#6b7280;background:none;border:none;cursor:pointer;text-decoration:underline;">
-                    Cancelar
-                </button>
-            </div>
-
             {{-- Estado / spinner --}}
             <div id="panel-cargando" style="display:none;" class="bg-white p-6 shadow-sm sm:rounded-lg text-center">
                 <div style="display:inline-block;width:2rem;height:2rem;border:3px solid #e5e7eb;border-top-color:#4f46e5;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
@@ -166,42 +148,7 @@
     </div>
 
     <script src="/js/jsqr.min.js"></script>
-    <script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaReady&render=explicit" async defer></script>
     <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
-    <script>
-    // ── reCAPTCHA (site key de la propia DGI) ───────────────────────
-    var _captchaSiteKey = '6LeukHQUAAAAABeb1kJnVsj9NieVyfjmUVvup7dD';
-    var _captchaWidget  = null;
-    var _captchaToken   = '';
-    var _cufePendiente  = '';
-
-    function onRecaptchaReady() {
-        try {
-            _captchaWidget = grecaptcha.render('recaptcha-box', {
-                sitekey  : _captchaSiteKey,
-                callback : function (token) {
-                    _captchaToken = token;
-                    var b = document.getElementById('btn-consultar');
-                    b.disabled = false;
-                    b.style.background = '#16a34a';
-                    b.style.cursor = 'pointer';
-                },
-                'expired-callback': function () { _captchaToken = ''; deshabilitarConsultar(); }
-            });
-        } catch (e) {
-            var el = document.getElementById('cam-msg');
-            if (el) { el.textContent = 'reCAPTCHA: ' + e.message; }
-        }
-    }
-
-    function deshabilitarConsultar() {
-        var b = document.getElementById('btn-consultar');
-        if (!b) return;
-        b.disabled = true;
-        b.style.background = '#9ca3af';
-        b.style.cursor = 'not-allowed';
-    }
-    </script>
     <script>
     var _stream   = null;
     var _scanning = false;
@@ -331,51 +278,20 @@
         if (e.key === 'Enter') { e.preventDefault(); procesarCufeManual(); }
     });
 
-    // ── PASO 1: preparar (extraer CUFE y pedir reCAPTCHA) ───────────
+    // ── CONSULTA DGI usando el QR completo (chFE + digestValue + JWT) ─
     function consultarDGI(raw) {
-        var cufe = raw;
-        var m = raw.match(/\/FacturasPorCUFE\/([A-Za-z0-9\-]+)/i);
-        if (m) cufe = m[1];
-
-        _cufePendiente = cufe;
-        _captchaToken  = '';
-        if (window.grecaptcha && _captchaWidget !== null) {
-            try { grecaptcha.reset(_captchaWidget); } catch (e) {}
-        }
-        deshabilitarConsultar();
-
-        ocultarTodo();
-        document.getElementById('cap-cufe').textContent = cufe;
-        document.getElementById('panel-captcha').style.display = 'block';
-    }
-
-    // ── PASO 2: consultar la DGI con el token del reCAPTCHA ─────────
-    function ejecutarConsulta() {
-        if (!_captchaToken) return;
-        var cufe = _cufePendiente;
-
         mostrarCargando('Consultando la DGI…');
 
         fetch(_cufeUrl, {
             method : 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': _csrf, 'Accept': 'application/json' },
-            body   : JSON.stringify({ cufe: cufe, recaptcha: _captchaToken }),
+            body   : JSON.stringify({ qr: raw }),
         })
         .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
         .then(function (r) {
-            if (!r.ok) {
-                // Si el captcha fue rechazado, volver a pedirlo (sin re-escanear)
-                if (r.data.motivo === 'captcha') {
-                    consultarDGI(cufe);
-                    var el = document.getElementById('cap-cufe');
-                    if (el) { el.insertAdjacentHTML('afterend', '<div style="color:#dc2626;font-size:0.8rem;margin-bottom:0.5rem;">' + (r.data.error || 'reCAPTCHA rechazado, intenta de nuevo.') + '</div>'); }
-                    return;
-                }
-                mostrarError(r.data.error || r.data.message || 'Error al consultar la DGI.');
-                return;
-            }
+            if (!r.ok) { mostrarError(r.data.error || r.data.message || 'Error al consultar la DGI.'); return; }
             if (r.data.ya_registrada) { mostrarYaRegistrada(r.data); return; }
-            mostrarPreview(cufe, r.data);
+            mostrarPreview(r.data.cufe || raw, r.data);
         })
         .catch(function () { mostrarError('No se pudo conectar al servidor.'); });
     }
@@ -441,7 +357,7 @@
     }
 
     function ocultarTodo() {
-        ['panel-captcha','panel-cargando','panel-preview','panel-error'].forEach(function (id) {
+        ['panel-cargando','panel-preview','panel-error'].forEach(function (id) {
             document.getElementById(id).style.display = 'none';
         });
     }

@@ -614,24 +614,25 @@ class CxpFacturaController extends Controller
     public function consultarCufe(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'cufe'      => ['required', 'string', 'max:500'],
-            'recaptcha' => ['required', 'string'],
+            'qr' => ['required', 'string', 'max:4000'],
         ]);
         $companiaId = $this->companiaActivaId($request);
 
-        $cufe = trim($data['cufe']);
+        $r = app(DgiFepConsulta::class)->porQr(trim($data['qr']));
 
-        $existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $cufe)->first();
-        if ($existente) {
-            return response()->json([
-                'ya_registrada' => true,
-                'numero'        => $existente->numero,
-                'id'            => $existente->id,
-                'url'           => route('admin.cxp.facturas.show', $existente),
-            ]);
+        // Deduplicar por el CUFE extraído del QR (si lo hay).
+        $cufe = $r['cufe'] ?? null;
+        if ($cufe) {
+            $existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $cufe)->first();
+            if ($existente) {
+                return response()->json([
+                    'ya_registrada' => true,
+                    'numero'        => $existente->numero,
+                    'id'            => $existente->id,
+                    'url'           => route('admin.cxp.facturas.show', $existente),
+                ]);
+            }
         }
-
-        $r = app(DgiFepConsulta::class)->porCufeConCaptcha($cufe, $data['recaptcha']);
 
         if (! $r['ok']) {
             return response()->json([
