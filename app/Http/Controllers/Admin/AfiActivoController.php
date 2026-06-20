@@ -174,7 +174,7 @@ class AfiActivoController extends Controller
 
         $companiaId = $activo->compania_id;
         $cuentas = CuentaContable::where('compania_id', $companiaId)
-            ->where('acepta_movimientos', true)
+            ->where('permite_movimiento', true)
             ->orderBy('codigo')
             ->get();
 
