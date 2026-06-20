@@ -156,6 +156,11 @@
     var _cufeUrl  = '{{ route('admin.cxp.facturas.consultar-cufe') }}';
     var _csrf     = document.querySelector('meta[name="csrf-token"]').content;
 
+    window.addEventListener('error', function (ev) {
+        var el = document.getElementById('cam-msg');
+        if (el) { el.textContent = 'JS: ' + ev.message; el.style.color = '#dc2626'; }
+    });
+
     // ── CÁMARA ──────────────────────────────────────────────────────
     function abrirScanner() {
         document.getElementById('qr-modal').style.display = 'flex';
@@ -191,41 +196,66 @@
     }
 
     function iniciarDeteccion(video) {
-        // Preferimos BarcodeDetector (nativo, maneja rotación de Android)
-        if ('BarcodeDetector' in window) {
-            var bd = new BarcodeDetector({ formats: ['qr_code'] });
-            _timer = setInterval(function () {
-                if (!_scanning) return;
-                bd.detect(video).then(function (codes) {
-                    if (codes.length > 0 && _scanning) {
-                        _scanning = false;
-                        clearInterval(_timer);
-                        cerrarCamara();
-                        consultarDGI(codes[0].rawValue);
-                    }
-                }).catch(function () {});
-            }, 250);
-        } else {
-            // Fallback: jsQR (funciona en iOS donde no hay problema de rotación)
-            var c  = document.getElementById('qr-canvas');
-            var cx = c.getContext('2d');
-            _timer = setInterval(function () {
-                if (!_scanning || video.videoWidth === 0) return;
-                c.width  = video.videoWidth;
-                c.height = video.videoHeight;
-                cx.drawImage(video, 0, 0);
-                var img  = cx.getImageData(0, 0, c.width, c.height);
-                try {
-                    var code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
-                    if (code && code.data) {
-                        _scanning = false;
-                        clearInterval(_timer);
-                        cerrarCamara();
-                        consultarDGI(code.data);
-                    }
-                } catch (e) {}
-            }, 300);
+        var tieneBD   = ('BarcodeDetector' in window);
+        var tieneJsqr = (typeof jsQR === 'function');
+        var frames    = 0;
+        var detector  = tieneBD ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
+        var c  = document.getElementById('qr-canvas');
+        var cx = c.getContext('2d', { willReadFrequently: true });
+
+        setCamMsg('Detector: ' + (tieneBD ? 'nativo' : (tieneJsqr ? 'jsQR' : 'NINGUNO ❌')) + ' — iniciando…', '#6b7280');
+
+        if (!tieneBD && !tieneJsqr) {
+            setCamMsg('Este navegador no puede leer QR. Pega el CUFE/URL en el campo de texto.', '#dc2626');
+            return;
         }
+
+        function exito(valor) {
+            if (!_scanning) return;
+            _scanning = false;
+            clearInterval(_timer);
+            setCamMsg('✓ QR detectado', '#16a34a');
+            cerrarCamara();
+            consultarDGI(valor);
+        }
+
+        // jsQR sobre el frame actual, probando 4 rotaciones (vence rotación Android)
+        function intentarJsqr() {
+            if (video.videoWidth === 0) return;
+            var w = video.videoWidth, h = video.videoHeight;
+            for (var rot = 0; rot < 4; rot++) {
+                if (rot === 0 || rot === 2) { c.width = w; c.height = h; }
+                else                        { c.width = h; c.height = w; }
+                cx.save();
+                cx.translate(c.width / 2, c.height / 2);
+                cx.rotate(rot * Math.PI / 2);
+                cx.drawImage(video, -w / 2, -h / 2, w, h);
+                cx.restore();
+                try {
+                    var img  = cx.getImageData(0, 0, c.width, c.height);
+                    var code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
+                    if (code && code.data) { exito(code.data); return; }
+                } catch (e) {}
+            }
+        }
+
+        _timer = setInterval(function () {
+            if (!_scanning) return;
+            frames++;
+            if (frames % 4 === 0) {
+                setCamMsg('Buscando QR… (' + frames + ') · ' + (tieneBD ? 'nativo' : 'jsQR'), '#6b7280');
+            }
+            if (tieneBD) {
+                detector.detect(video).then(function (codes) {
+                    if (codes && codes.length > 0) { exito(codes[0].rawValue); }
+                }).catch(function (e) {
+                    // Si el detector nativo falla, caemos a jsQR
+                    if (tieneJsqr) intentarJsqr();
+                });
+            } else {
+                intentarJsqr();
+            }
+        }, 250);
     }
 
     function setCamMsg(t, c) {
