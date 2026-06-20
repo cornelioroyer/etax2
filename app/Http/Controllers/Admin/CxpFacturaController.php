@@ -613,7 +613,10 @@ class CxpFacturaController extends Controller
 
     public function consultarCufe(Request $request): JsonResponse
     {
-        $data = $request->validate(['cufe' => ['required', 'string', 'max:500']]);
+        $data = $request->validate([
+            'cufe'      => ['required', 'string', 'max:500'],
+            'recaptcha' => ['required', 'string'],
+        ]);
         $companiaId = $this->companiaActivaId($request);
 
         $cufe = trim($data['cufe']);
@@ -628,13 +631,16 @@ class CxpFacturaController extends Controller
             ]);
         }
 
-        $dgi = app(DgiFepConsulta::class)->porCufe($cufe);
+        $r = app(DgiFepConsulta::class)->porCufeConCaptcha($cufe, $data['recaptcha']);
 
-        if (! $dgi) {
-            return response()->json(['error' => 'No se pudo obtener la factura de la DGI. Verifica el QR e intenta de nuevo.'], 422);
+        if (! $r['ok']) {
+            return response()->json([
+                'error'  => $r['mensaje'] ?? 'No se pudo obtener la factura de la DGI.',
+                'motivo' => $r['motivo'] ?? 'error',
+            ], 422);
         }
 
-        return response()->json(array_merge($dgi, ['cufe' => $cufe]));
+        return response()->json(array_merge($r['factura'], ['cufe' => $cufe]));
     }
 
     public function desdeCufe(Request $request): RedirectResponse

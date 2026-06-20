@@ -49,9 +49,77 @@ class DgiFepConsulta
         }
     }
 
-    private function parsear(string $cufe, string $html): ?array
+    /**
+     * Consulta usando un token de reCAPTCHA resuelto por el usuario.
+     *
+     * El portal de la DGI exige reCAPTCHA desde mediados de 2026: el GET directo
+     * solo devuelve el formulario. Hay que hacer un POST a ConsultarFacturasPorCUFE
+     * con el CUFE y el `g-recaptcha-response`; la respuesta es JSON con FacturaHTML.
+     *
+     * @return array{ok:bool,motivo?:string,mensaje?:string,factura?:array}
+     */
+    public function porCufeConCaptcha(string $cufe, string $recaptcha): array
     {
-        if (stripos($html, 'detalle') === false || stripos($html, $cufe) === false) {
+        $cufe = trim($cufe);
+        if ($cufe === '') {
+            return ['ok' => false, 'motivo' => 'error', 'mensaje' => 'CUFE vacío.'];
+        }
+
+        try {
+            $jar = new \GuzzleHttp\Cookie\CookieJar;
+            $ua  = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+
+            // 1) GET de la página de búsqueda para sembrar cookies de sesión.
+            Http::withOptions(['cookies' => $jar])
+                ->timeout(25)
+                ->withHeaders(['User-Agent' => $ua])
+                ->get(self::BASE.rawurlencode($cufe));
+
+            // 2) POST con el token de reCAPTCHA. Responde JSON.
+            $resp = Http::withOptions(['cookies' => $jar])
+                ->timeout(30)
+                ->asForm()
+                ->withHeaders([
+                    'User-Agent'       => $ua,
+                    'X-Requested-With' => 'XMLHttpRequest',
+                    'Referer'          => self::BASE.rawurlencode($cufe),
+                ])
+                ->post('https://dgi-fep.mef.gob.pa/Consultas/ConsultarFacturasPorCUFE?Length=9', [
+                    'CUFE'                 => $cufe,
+                    'g-recaptcha-response' => $recaptcha,
+                ]);
+
+            if (! $resp->successful()) {
+                return ['ok' => false, 'motivo' => 'error', 'mensaje' => 'La DGI respondió '.$resp->status().'.'];
+            }
+
+            $json = $resp->json();
+
+            // reCAPTCHA rechazado por la DGI.
+            if (is_array($json) && ! empty($json['Recaptcha']) && empty($json['FacturaHTML'])) {
+                return ['ok' => false, 'motivo' => 'captcha', 'mensaje' => $json['Mensaje'] ?? 'La DGI rechazó el reCAPTCHA.'];
+            }
+
+            $html = is_array($json) ? ($json['FacturaHTML'] ?? null) : null;
+            if (! $html) {
+                $msg = is_array($json) ? ($json['Mensaje'] ?? 'La DGI no devolvió la factura.') : 'Respuesta inesperada de la DGI.';
+                return ['ok' => false, 'motivo' => 'no_encontrada', 'mensaje' => $msg];
+            }
+
+            $factura = $this->parsear($cufe, $html, false);
+            if (! $factura) {
+                return ['ok' => false, 'motivo' => 'no_encontrada', 'mensaje' => 'No se pudo leer el detalle de la factura.'];
+            }
+
+            return ['ok' => true, 'factura' => $factura];
+        } catch (Throwable $e) {
+            return ['ok' => false, 'motivo' => 'error', 'mensaje' => 'Error consultando la DGI: '.$e->getMessage()];
+        }
+    }
+
+    private function parsear(string $cufe, string $html, bool $exigirCufe = true): ?array
+    {
+        if (stripos($html, 'detalle') === false || ($exigirCufe && stripos($html, $cufe) === false)) {
             return null; // CUFE no encontrado o página inesperada
         }
 
