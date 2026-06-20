@@ -788,14 +788,22 @@ class VentaFacturaController extends Controller
                     $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId,
                     $usuario, $tipoCliente, $esFactura, $formaPago
                 ) {
+                    // El receptor de la factura electrónica (quien compró) es
+                    // nuestro cliente. Preferimos los datos que devuelve la DGI
+                    // (nombre legal, DV, dirección, teléfono); si no hubo
+                    // respuesta, caemos al RUC/nombre del Excel.
+                    $receptor = $dgi['receptor'] ?? [];
                     $cliente = Contacto::where('compania_id', $companiaId)->where('codigo', $ruc)->first();
                     if (! $cliente) {
                         $cliente = Contacto::create([
                             'compania_id'    => $companiaId,
                             'codigo'         => $ruc,
-                            'nombre'         => $nombre,
+                            'nombre'         => substr($receptor['nombre'] ?? $nombre, 0, 200),
+                            'tipo_persona'   => 'JURIDICA',
                             'identificacion' => $ruc,
-                            'dv'             => RucDigitoVerificador::calcular($ruc),
+                            'dv'             => $receptor['dv'] ?? RucDigitoVerificador::calcular($ruc),
+                            'direccion'      => $receptor['direccion'] ?? null,
+                            'telefono'       => isset($receptor['telefono']) ? substr($receptor['telefono'], 0, 50) : null,
                             'forma_pago'     => $formaPago,
                             'activo'         => true,
                             'created_by'     => $usuario->email,

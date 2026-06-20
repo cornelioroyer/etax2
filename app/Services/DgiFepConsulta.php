@@ -24,7 +24,7 @@ class DgiFepConsulta
     /**
      * Devuelve la factura parseada, o null si no se pudo consultar/parsear.
      *
-     * @return array{cufe:string,numero:?string,tipo:string,fecha:?string,emisor:array{ruc:?string,dv:?string,nombre:?string,direccion:?string,telefono:?string},subtotal:float,itbms:float,total:float,lineas:array<int,array{codigo:string,descripcion:string,cantidad:float,precio_unitario:float,descuento:float,monto:float,itbms:float,total:float}>}|null
+     * @return array{cufe:string,numero:?string,tipo:string,fecha:?string,emisor:array{ruc:?string,dv:?string,nombre:?string,direccion:?string,telefono:?string},receptor:array{ruc:?string,dv:?string,nombre:?string,direccion:?string,telefono:?string},subtotal:float,itbms:float,total:float,lineas:array<int,array{codigo:string,descripcion:string,cantidad:float,precio_unitario:float,descuento:float,monto:float,itbms:float,total:float}>}|null
      */
     public function porCufe(string $cufe): ?array
     {
@@ -68,7 +68,8 @@ class DgiFepConsulta
             return null; // sin detalle utilizable
         }
 
-        $emisor = $this->emisor($xp);
+        $emisor   = $this->emisor($xp);
+        $receptor = $this->receptor($xp);
 
         $subtotalLineas = round(array_sum(array_column($lineas, 'monto')), 2);
         $itbmsLineas = round(array_sum(array_column($lineas, 'itbms')), 2);
@@ -86,6 +87,7 @@ class DgiFepConsulta
             'tipo'     => $this->tipoDocumento($xp),
             'fecha'    => $this->fechaDocumento($xp),
             'emisor'   => $emisor,
+            'receptor' => $receptor,
             'subtotal' => $subtotal,
             'itbms'    => $itbms,
             'total'    => $total,
@@ -138,6 +140,21 @@ class DgiFepConsulta
     private function emisor(DOMXPath $xp): array
     {
         $paneles = $xp->query("//div[contains(@class,'panel')][.//div[contains(@class,'panel-heading')][contains(normalize-space(.),'EMISOR')]]");
+        $panel = $paneles && $paneles->length ? $paneles->item(0) : null;
+
+        return [
+            'ruc'       => $this->ddPorDt($xp, 'RUC', $panel),
+            'dv'        => $this->ddPorDt($xp, 'DV', $panel),
+            'nombre'    => $this->ddPorDt($xp, 'NOMBRE', $panel),
+            'direccion' => $this->ddPorDt($xp, 'DIRECCI', $panel),
+            'telefono'  => $this->ddPorDt($xp, 'FONO', $panel),
+        ];
+    }
+
+    /** @return array{ruc:?string,dv:?string,nombre:?string,direccion:?string,telefono:?string} */
+    private function receptor(DOMXPath $xp): array
+    {
+        $paneles = $xp->query("//div[contains(@class,'panel')][.//div[contains(@class,'panel-heading')][contains(normalize-space(.),'RECEPTOR')]]");
         $panel = $paneles && $paneles->length ? $paneles->item(0) : null;
 
         return [
