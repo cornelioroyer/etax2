@@ -126,15 +126,19 @@ class ImportadorCxpFel
                 $codigo = null;
             }
 
+            $emisor = $dgi['emisor'] ?? [];
             $proveedor = Contacto::create([
-                'compania_id' => $companiaId,
-                'codigo' => $codigo,
-                'nombre' => substr($fila['nombre'] ?: $fila['ruc'], 0, 200),
-                'tipo_persona' => 'JURIDICA',
-                'identificacion' => $fila['ruc'],
-                'activo' => true,
+                'compania_id'     => $companiaId,
+                'codigo'          => $codigo,
+                'nombre'          => substr($emisor['nombre'] ?? $fila['nombre'] ?? $fila['ruc'], 0, 200),
+                'tipo_persona'    => 'JURIDICA',
+                'identificacion'  => $fila['ruc'],
+                'dv'              => isset($emisor['dv']) ? substr($emisor['dv'], 0, 5) : null,
+                'direccion'       => $emisor['direccion'] ?? null,
+                'telefono'        => isset($emisor['telefono']) ? substr($emisor['telefono'], 0, 50) : null,
+                'activo'          => true,
                 'cuenta_gasto_id' => $cuentaGastoDefault,
-                'created_by' => $usuarioEmail,
+                'created_by'      => $usuarioEmail,
             ]);
 
             if ($tipoProveedor) {
