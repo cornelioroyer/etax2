@@ -171,7 +171,13 @@
             return;
         }
 
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } })
+        navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: { ideal: 'environment' },
+                width:  { ideal: 1920 },
+                height: { ideal: 1080 }
+            }
+        })
             .then(function (s) {
                 _stream   = s;
                 _scanning = true;
@@ -243,18 +249,16 @@
             if (!_scanning) return;
             frames++;
             if (frames % 4 === 0) {
-                setCamMsg('Buscando QR… (' + frames + ') · ' + (tieneBD ? 'nativo' : 'jsQR'), '#6b7280');
+                var res = video.videoWidth ? (video.videoWidth + '×' + video.videoHeight) : '?';
+                setCamMsg('Buscando QR… (' + frames + ') · ' + res, '#6b7280');
             }
+            // Detector nativo (rápido) Y jsQR con rotaciones (robusto) en paralelo
             if (tieneBD) {
                 detector.detect(video).then(function (codes) {
                     if (codes && codes.length > 0) { exito(codes[0].rawValue); }
-                }).catch(function (e) {
-                    // Si el detector nativo falla, caemos a jsQR
-                    if (tieneJsqr) intentarJsqr();
-                });
-            } else {
-                intentarJsqr();
+                }).catch(function () {});
             }
+            if (tieneJsqr) { intentarJsqr(); }
         }, 250);
     }
 
