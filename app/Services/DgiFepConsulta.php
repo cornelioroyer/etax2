@@ -63,9 +63,20 @@ class DgiFepConsulta
         $qr   = trim($qr);
         $cufe = $this->extraerCufe($qr);
 
-        // Si no es una URL de la DGI (solo el CUFE pelado), no hay JWT que enviar.
-        if (stripos($qr, 'FacturasPorCUFE') === false) {
-            return ['ok' => false, 'motivo' => 'sin_jwt', 'mensaje' => 'El QR no trae la firma de la DGI.', 'cufe' => $cufe];
+        // Debe ser una URL de la DGI (FacturasPorQR / FacturasPorCUFE, con chFE y JWT).
+        $esUrlDgi = stripos($qr, 'dgi-fep') !== false
+            || stripos($qr, 'FacturasPor') !== false
+            || stripos($qr, 'chFE=') !== false;
+
+        if (! $esUrlDgi) {
+            $muestra = mb_strlen($qr) > 140 ? mb_substr($qr, 0, 140).'…' : $qr;
+            return [
+                'ok'       => false,
+                'motivo'   => 'sin_jwt',
+                'mensaje'  => 'El QR no trae la firma de la DGI. Contenido leído: '.$muestra,
+                'cufe'     => $cufe,
+                'recibido' => $muestra,
+            ];
         }
 
         $digest = $this->paramUrl($qr, 'digestValue');
@@ -75,17 +86,39 @@ class DgiFepConsulta
             $jar = new \GuzzleHttp\Cookie\CookieJar;
             $ua  = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
-            // 1) GET de la URL completa del QR: siembra cookies y, en algunos casos,
-            //    ya devuelve el detalle directamente.
+            // 1) GET de la URL completa del QR. La DGI valida el JWT contra el chFE;
+            //    si es válido, renderiza el detalle y/o marca la sesión como verificada.
             $get = Http::withOptions(['cookies' => $jar])
                 ->timeout(25)
                 ->withHeaders(['User-Agent' => $ua])
                 ->get($qr);
 
-            if ($get->successful()) {
-                $factura = $this->parsear($cufe ?? '', $get->body(), false);
-                if ($factura) {
-                    return ['ok' => true, 'factura' => $factura, 'cufe' => $cufe];
+            $cuerpoQr = $get->successful() ? $get->body() : '';
+
+            // Firma del QR inválida o vencida.
+            if (stripos($cuerpoQr, 'Error en c') !== false && stripos($cuerpoQr, 'QR') !== false) {
+                return ['ok' => false, 'motivo' => 'qr_invalido', 'mensaje' => 'La DGI rechazó la firma del QR (código QR vs código de seguridad del emisor). Reescanea el QR original de la factura.', 'cufe' => $cufe];
+            }
+
+            // ¿El propio FacturasPorQR ya trae el detalle?
+            $factura = $this->parsear($cufe ?? '', $cuerpoQr, false);
+            if ($factura) {
+                return ['ok' => true, 'factura' => $factura, 'cufe' => $cufe];
+            }
+
+            // 1b) Con la sesión ya verificada por el QR, FacturasPorCUFE/{cufe}
+            //     suele renderizar el detalle sin reCAPTCHA.
+            if ($cufe) {
+                $get2 = Http::withOptions(['cookies' => $jar])
+                    ->timeout(25)
+                    ->withHeaders(['User-Agent' => $ua, 'Referer' => $qr])
+                    ->get(self::BASE.rawurlencode($cufe));
+
+                if ($get2->successful()) {
+                    $factura = $this->parsear($cufe, $get2->body(), false);
+                    if ($factura) {
+                        return ['ok' => true, 'factura' => $factura, 'cufe' => $cufe];
+                    }
                 }
             }
 
