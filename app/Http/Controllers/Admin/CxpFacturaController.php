@@ -666,9 +666,20 @@ class CxpFacturaController extends Controller
             throw ValidationException::withMessages(['cufe_input' => 'El valor ingresado no parece un CUFE válido.']);
         }
 
+        $seguir = $request->boolean('seguir');
+
         // Si ya existe, redirigir a la factura existente
         $existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $cufe)->first();
         if ($existente) {
+            if ($seguir) {
+                return redirect()->route('admin.cxp.facturas.desde-cufe.form')
+                    ->with('ok_factura', [
+                        'numero' => $existente->numero,
+                        'url'    => route('admin.cxp.facturas.show', $existente),
+                        'aviso'  => 'ya estaba registrada',
+                    ]);
+            }
+
             return redirect()->route('admin.cxp.facturas.show', $existente)
                 ->with('status', 'Esta factura ya estaba registrada.');
         }
@@ -757,6 +768,16 @@ class CxpFacturaController extends Controller
 
             return $factura;
         });
+
+        // Modo "seguir escaneando": vuelve al scanner con aviso de éxito.
+        if ($seguir) {
+            return redirect()->route('admin.cxp.facturas.desde-cufe.form')
+                ->with('ok_factura', [
+                    'numero' => $factura->numero,
+                    'url'    => route('admin.cxp.facturas.show', $factura),
+                    'aviso'  => 'registrada',
+                ]);
+        }
 
         return redirect()->route('admin.cxp.facturas.show', $factura)
             ->with('status', "Factura {$factura->numero} registrada desde QR/CUFE. Revisa las cuentas contables y contabiliza.");

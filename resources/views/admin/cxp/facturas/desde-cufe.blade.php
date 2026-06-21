@@ -15,6 +15,14 @@
                 </div>
             @endif
 
+            @if (session('ok_factura'))
+                @php $ok = session('ok_factura'); @endphp
+                <div class="rounded-md bg-green-50 p-4 text-sm text-green-800 flex items-center justify-between gap-3">
+                    <span>✓ Factura <strong>{{ $ok['numero'] }}</strong> {{ $ok['aviso'] ?? 'registrada' }}. Escanea la siguiente.</span>
+                    <a href="{{ $ok['url'] }}" class="shrink-0 font-semibold text-green-700 underline">Ver factura →</a>
+                </div>
+            @endif
+
             {{-- Botón principal --}}
             <div id="panel-inicio" class="bg-white p-6 shadow-sm sm:rounded-lg text-center">
                 <p class="mb-5 text-sm text-gray-600">
@@ -100,13 +108,18 @@
                         <form method="POST" action="{{ route('admin.cxp.facturas.desde-cufe') }}">
                             @csrf
                             <input type="hidden" name="cufe_input" id="cufe_hidden">
+                            {{-- Registrar y volver al scanner para seguir agregando --}}
+                            <button type="submit" name="seguir" value="1"
+                                    style="width:100%;background:#16a34a;color:#fff;border:none;border-radius:0.375rem;padding:0.7rem;font-size:0.95rem;font-weight:700;cursor:pointer;">
+                                ✓ Registrar y escanear otra
+                            </button>
                             <div class="flex gap-3 mt-2">
                                 <button type="submit"
-                                        style="flex:1;background:#16a34a;color:#fff;border:none;border-radius:0.375rem;padding:0.65rem;font-size:0.9rem;font-weight:700;cursor:pointer;">
-                                    ✓ Registrar factura
+                                        style="flex:1;background:#e0e7ff;color:#3730a3;border:none;border-radius:0.375rem;padding:0.55rem;font-size:0.85rem;font-weight:600;cursor:pointer;">
+                                    Registrar y ver factura
                                 </button>
                                 <button type="button" onclick="resetear()"
-                                        style="flex:0;background:#f3f4f6;color:#374151;border:none;border-radius:0.375rem;padding:0.65rem 1rem;font-size:0.9rem;font-weight:600;cursor:pointer;">
+                                        style="flex:0;background:#f3f4f6;color:#374151;border:none;border-radius:0.375rem;padding:0.55rem 1rem;font-size:0.85rem;font-weight:600;cursor:pointer;">
                                     Cancelar
                                 </button>
                             </div>
@@ -277,6 +290,11 @@
     document.getElementById('cufe-manual').addEventListener('keydown', function (e) {
         if (e.key === 'Enter') { e.preventDefault(); procesarCufeManual(); }
     });
+
+    // Tras registrar y volver, reabrir la cámara para seguir escaneando.
+    @if (session('ok_factura'))
+    window.addEventListener('load', function () { setTimeout(abrirScanner, 350); });
+    @endif
 
     // ── CONSULTA DGI usando el QR completo (chFE + digestValue + JWT) ─
     function consultarDGI(raw) {
