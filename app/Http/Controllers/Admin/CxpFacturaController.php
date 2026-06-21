@@ -30,6 +30,7 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 class CxpFacturaController extends Controller
 {
@@ -647,8 +648,9 @@ class CxpFacturaController extends Controller
     }
 
     /**
-     * Respaldo cuando el QR no se puede leer: la IA (visión de Claude) extrae el
-     * CUFE de una foto de la factura y luego se consulta la DGI (datos oficiales).
+     * Respaldo cuando el QR no se puede leer: la IA (visión de Claude) lee la foto
+     * de la factura. Primero intenta el CUFE → DGI (datos oficiales); si la DGI no
+     * la encuentra (o no hay CUFE legible), la IA extrae los datos de la factura.
      */
     public function cufeDesdeFoto(Request $request): JsonResponse
     {
@@ -666,81 +668,125 @@ class CxpFacturaController extends Controller
         $b64   = base64_encode((string) file_get_contents($foto->getRealPath()));
         $media = $foto->getMimeType() ?: 'image/jpeg';
 
-        $prompt = 'Esta es una factura electrónica de Panamá (DGI/FEP). '
-            ."Busca el CUFE, también llamado \"Código Único de Factura Electrónica\". "
-            .'Es un código de 66 caracteres alfanuméricos con guiones que empieza con "FE". '
-            .'Devuelve ÚNICAMENTE el CUFE, sin texto adicional, sin espacios ni saltos de línea. '
-            .'Si no lo encuentras con claridad, responde exactamente: NONE';
-
+        // 1) Intentar leer el CUFE y consultar la DGI (datos oficiales).
         try {
-            $resp = Http::withHeaders([
-                'x-api-key'         => $apiKey,
-                'anthropic-version' => '2023-06-01',
-                'content-type'      => 'application/json',
-            ])->timeout(60)->post('https://api.anthropic.com/v1/messages', [
-                'model'      => config('services.anthropic.model', 'claude-opus-4-8'),
-                'max_tokens' => 200,
-                'messages'   => [[
-                    'role'    => 'user',
-                    'content' => [
-                        ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $media, 'data' => $b64]],
-                        ['type' => 'text', 'text' => $prompt],
-                    ],
-                ]],
-            ]);
+            $promptCufe = 'Esta es una factura electrónica de Panamá (DGI/FEP). '
+                ."Busca el CUFE, también llamado \"Código Único de Factura Electrónica\". "
+                .'Es un código de 66 caracteres alfanuméricos con guiones que empieza con "FE". '
+                .'Devuelve ÚNICAMENTE el CUFE, sin texto adicional, sin espacios ni saltos de línea. '
+                .'Si no lo encuentras con claridad, responde exactamente: NONE';
 
-            if (! $resp->successful()) {
-                Log::error('CUFE-IA: Anthropic respondió error', ['status' => $resp->status(), 'body' => $resp->body()]);
+            $texto = $this->visionClaude($apiKey, $b64, $media, $promptCufe, 200);
+            $cufe  = preg_replace('/[^A-Za-z0-9\-]/', '', trim($texto));
 
-                return response()->json(['error' => 'La IA no pudo procesar la imagen (HTTP '.$resp->status().').'], 422);
-            }
-
-            // Extrae el texto de la respuesta del modelo.
-            $texto = '';
-            foreach ($resp->json('content', []) as $bloque) {
-                if (($bloque['type'] ?? null) === 'text') {
-                    $texto .= $bloque['text'];
+            if ($cufe !== '' && stripos($texto, 'NONE') !== 0 && strlen($cufe) >= 40) {
+                $existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $cufe)->first();
+                if ($existente) {
+                    return response()->json([
+                        'ya_registrada' => true,
+                        'numero'        => $existente->numero,
+                        'id'            => $existente->id,
+                        'url'           => route('admin.cxp.facturas.show', $existente),
+                    ]);
                 }
+
+                $r = app(DgiFepConsulta::class)->porQr($cufe);
+                if ($r['ok']) {
+                    return response()->json(array_merge($r['factura'], ['cufe' => $r['cufe'] ?? $cufe, 'via' => 'dgi']));
+                }
+                // CUFE leído pero la DGI no la trajo → caer al respaldo de datos por IA.
             }
 
-            // Limpia: deja solo caracteres válidos de un CUFE.
-            $cufe = preg_replace('/[^A-Za-z0-9\-]/', '', trim($texto));
-
-            if (stripos($texto, 'NONE') === 0 || strlen($cufe) < 40) {
+            // 2) Respaldo: la IA extrae todos los datos de la factura desde la foto.
+            $datos = $this->datosFacturaIa($apiKey, $b64, $media);
+            if (! $datos || empty($datos['lineas'])) {
                 return response()->json([
-                    'error'  => 'La IA no encontró un CUFE legible en la foto. Acerca la cámara al área del CUFE o ingrésalo manualmente.',
-                    'motivo' => 'sin_cufe',
+                    'error'  => 'La IA no pudo leer los datos de la factura. Toma una foto más nítida y completa, o ingrésala manualmente.',
+                    'motivo' => 'sin_datos',
                 ], 422);
             }
+
+            $dgi = $this->normalizarDatosIa($datos);
+
+            // Dedup por CUFE si la IA lo logró leer.
+            if ($dgi['cufe'] && $existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $dgi['cufe'])->first()) {
+                return response()->json([
+                    'ya_registrada' => true,
+                    'numero'        => $existente->numero,
+                    'id'            => $existente->id,
+                    'url'           => route('admin.cxp.facturas.show', $existente),
+                ]);
+            }
+
+            // Devuelve los datos para previsualizar y registrar (vía datos_ia).
+            return response()->json(array_merge($dgi, [
+                'via'      => 'ia',
+                'datos_ia' => json_encode($dgi),
+            ]));
         } catch (Throwable $e) {
             Log::error('CUFE-IA: excepción', ['error' => $e->getMessage()]);
 
             return response()->json(['error' => 'Error al leer la factura con IA: '.$e->getMessage()], 422);
         }
+    }
 
-        // Deduplicar
-        $existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $cufe)->first();
-        if ($existente) {
-            return response()->json([
-                'ya_registrada' => true,
-                'numero'        => $existente->numero,
-                'id'            => $existente->id,
-                'url'           => route('admin.cxp.facturas.show', $existente),
-            ]);
+    /** Llama a la API de Anthropic con una imagen y devuelve el texto de la respuesta. */
+    private function visionClaude(string $apiKey, string $b64, string $media, string $prompt, int $maxTokens): string
+    {
+        $resp = Http::withHeaders([
+            'x-api-key'         => $apiKey,
+            'anthropic-version' => '2023-06-01',
+            'content-type'      => 'application/json',
+        ])->timeout(90)->post('https://api.anthropic.com/v1/messages', [
+            'model'      => config('services.anthropic.model', 'claude-opus-4-8'),
+            'max_tokens' => $maxTokens,
+            'messages'   => [[
+                'role'    => 'user',
+                'content' => [
+                    ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $media, 'data' => $b64]],
+                    ['type' => 'text', 'text' => $prompt],
+                ],
+            ]],
+        ]);
+
+        if (! $resp->successful()) {
+            Log::error('Vision-IA: Anthropic error', ['status' => $resp->status(), 'body' => $resp->body()]);
+            throw new \RuntimeException('La IA respondió HTTP '.$resp->status().'.');
         }
 
-        // Consultar la DGI con el CUFE leído por la IA (datos oficiales).
-        $r = app(DgiFepConsulta::class)->porQr($cufe);
-
-        if (! $r['ok']) {
-            return response()->json([
-                'error'  => 'La IA leyó el CUFE ('.$cufe.') pero la DGI no devolvió la factura: '.($r['mensaje'] ?? '').' Verifica que la foto del CUFE esté nítida.',
-                'motivo' => $r['motivo'] ?? 'error',
-                'cufe'   => $cufe,
-            ], 422);
+        $texto = '';
+        foreach ($resp->json('content', []) as $bloque) {
+            if (($bloque['type'] ?? null) === 'text') {
+                $texto .= $bloque['text'];
+            }
         }
 
-        return response()->json(array_merge($r['factura'], ['cufe' => $r['cufe'] ?? $cufe, 'via' => 'ia']));
+        return $texto;
+    }
+
+    /** Pide a la IA los datos completos de la factura como JSON estructurado. */
+    private function datosFacturaIa(string $apiKey, string $b64, string $media): ?array
+    {
+        $prompt = 'Extrae los datos de esta factura (Panamá) y devuélvelos SOLO como JSON válido, '
+            ."sin texto antes ni después, sin ```. Esquema exacto:\n"
+            .'{"tipo":"FACTURA|NOTA_CREDITO|NOTA_DEBITO","numero":"","fecha":"YYYY-MM-DD","cufe":"o null",'
+            .'"emisor":{"ruc":"","dv":"","nombre":"","direccion":"","telefono":""},'
+            .'"subtotal":0,"itbms":0,"total":0,'
+            .'"lineas":[{"descripcion":"","cantidad":1,"precio_unitario":0,"descuento":0,"itbms":0,"total":0}]}'
+            ."\nUsa números (no texto) en los montos. Si un dato no aparece, usa null o 0. "
+            .'El emisor es quien EMITE la factura (el proveedor), no el receptor.';
+
+        $texto = trim($this->visionClaude($apiKey, $b64, $media, $prompt, 2000));
+
+        // Quita posibles cercas de código y recorta al objeto JSON.
+        $texto = preg_replace('/^```(?:json)?|```$/m', '', $texto);
+        if (preg_match('/\{.*\}/s', $texto, $m)) {
+            $texto = $m[0];
+        }
+
+        $datos = json_decode(trim($texto), true);
+
+        return is_array($datos) ? $datos : null;
     }
 
     public function desdeCufe(Request $request): RedirectResponse
@@ -750,12 +796,44 @@ class CxpFacturaController extends Controller
         $usuario    = $request->user();
 
         $data = $request->validate([
-            'cufe_input' => ['required', 'string', 'max:500'],
+            'cufe_input' => ['nullable', 'string', 'max:500'],
+            'datos_ia'   => ['nullable', 'string', 'max:20000'],
         ]);
 
-        // Extrae el CUFE de una URL de QR o del CUFE puro
-        $raw = trim($data['cufe_input']);
-        if (preg_match('#/FacturasPorCUFE/([A-Za-z0-9]+)#i', $raw, $m)) {
+        $seguir = $request->boolean('seguir');
+
+        // ── Camino B: datos extraídos por IA de la foto (sin DGI) ──────────
+        if (! empty($data['datos_ia'])) {
+            $ia = json_decode($data['datos_ia'], true);
+            if (! is_array($ia) || empty($ia['lineas']) || ! is_array($ia['lineas'])) {
+                throw ValidationException::withMessages(['cufe_input' => 'Los datos leídos por la IA no son válidos. Reintenta la foto.']);
+            }
+
+            $dgi  = $this->normalizarDatosIa($ia);
+            $cufe = $dgi['cufe'] ?: null;
+
+            if (! ($dgi['emisor']['ruc'] ?? null) && ! ($dgi['emisor']['nombre'] ?? null)) {
+                throw ValidationException::withMessages(['cufe_input' => 'La IA no identificó al proveedor. Toma una foto más clara o regístrala manualmente.']);
+            }
+
+            if ($cufe && $existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $cufe)->first()) {
+                return $this->respuestaCxpExistente($existente, $seguir);
+            }
+
+            $factura = $this->crearBorradorCxp($dgi, $companiaId, $usuario);
+
+            return $this->respuestaCxpCreada($factura, $seguir, 'registrada (datos leídos por IA — verifica antes de contabilizar)');
+        }
+
+        // ── Camino A: CUFE / QR → DGI (datos oficiales) ───────────────────
+        $raw = trim((string) ($data['cufe_input'] ?? ''));
+        if ($raw === '') {
+            throw ValidationException::withMessages(['cufe_input' => 'Ingresa el CUFE o usa el escáner.']);
+        }
+
+        if (preg_match('/[?&]chFE=([^&\s]+)/i', $raw, $m)) {
+            $cufe = rawurldecode($m[1]);
+        } elseif (preg_match('#/FacturasPorCUFE/([A-Za-z0-9\-]+)#i', $raw, $m)) {
             $cufe = $m[1];
         } else {
             $cufe = $raw;
@@ -765,58 +843,62 @@ class CxpFacturaController extends Controller
             throw ValidationException::withMessages(['cufe_input' => 'El valor ingresado no parece un CUFE válido.']);
         }
 
-        $seguir = $request->boolean('seguir');
-
-        // Si ya existe, redirigir a la factura existente
-        $existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $cufe)->first();
-        if ($existente) {
-            if ($seguir) {
-                return redirect()->route('admin.cxp.facturas.desde-cufe.form')
-                    ->with('ok_factura', [
-                        'numero' => $existente->numero,
-                        'url'    => route('admin.cxp.facturas.show', $existente),
-                        'aviso'  => 'ya estaba registrada',
-                    ]);
-            }
-
-            return redirect()->route('admin.cxp.facturas.show', $existente)
-                ->with('status', 'Esta factura ya estaba registrada.');
+        if ($existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $cufe)->first()) {
+            return $this->respuestaCxpExistente($existente, $seguir);
         }
 
-        // Consultar la DGI
         $dgi = app(DgiFepConsulta::class)->porCufe($cufe);
 
         if (! $dgi) {
             throw ValidationException::withMessages(['cufe_input' => 'No se pudo obtener la factura de la DGI. Verifica el CUFE/QR e intenta nuevamente.']);
         }
 
-        $emisor = $dgi['emisor'];
-        $ruc    = $emisor['ruc'] ?? null;
-
-        if (! $ruc) {
+        if (! ($dgi['emisor']['ruc'] ?? null)) {
             throw ValidationException::withMessages(['cufe_input' => 'La DGI no devolvió el RUC del emisor. Registra la factura manualmente.']);
         }
+
+        $dgi['cufe'] = $cufe;
+        $factura = $this->crearBorradorCxp($dgi, $companiaId, $usuario);
+
+        return $this->respuestaCxpCreada($factura, $seguir, 'registrada desde QR/CUFE. Revisa las cuentas contables y contabiliza.');
+    }
+
+    /**
+     * Crea la CxP en BORRADOR (proveedor + documento + líneas) a partir de la
+     * estructura de DgiFepConsulta o de los datos extraídos por IA.
+     */
+    private function crearBorradorCxp(array $dgi, int $companiaId, $usuario): CxpDocumento
+    {
+        $emisor = $dgi['emisor'] ?? [];
+        $ruc    = $emisor['ruc'] ?? null;
+        $cufe   = $dgi['cufe'] ?? null;
 
         $cuentaGastoDefault = CuentaDefault::idPara($companiaId, 'GASTO_DEFAULT');
         $tipoProveedor      = TipoContacto::where('codigo', 'PROVEEDOR')->first();
 
-        $proveedor = Contacto::where('compania_id', $companiaId)->where('identificacion', $ruc)->first();
+        // Buscar proveedor por RUC; si no hay RUC, por nombre.
+        $proveedor = null;
+        if ($ruc) {
+            $proveedor = Contacto::where('compania_id', $companiaId)->where('identificacion', $ruc)->first();
+        } elseif (! empty($emisor['nombre'])) {
+            $proveedor = Contacto::where('compania_id', $companiaId)->where('nombre', $emisor['nombre'])->first();
+        }
 
         if (! $proveedor) {
-            $codigo = substr($ruc, 0, 50);
-            if (Contacto::where('compania_id', $companiaId)->where('codigo', $codigo)->exists()) {
+            $codigo = $ruc ? substr($ruc, 0, 50) : null;
+            if ($codigo && Contacto::where('compania_id', $companiaId)->where('codigo', $codigo)->exists()) {
                 $codigo = null;
             }
 
             $proveedor = Contacto::create([
                 'compania_id'     => $companiaId,
                 'codigo'          => $codigo,
-                'nombre'          => substr($emisor['nombre'] ?? $ruc, 0, 200),
+                'nombre'          => substr($emisor['nombre'] ?? $ruc ?? 'Proveedor', 0, 200),
                 'tipo_persona'    => 'JURIDICA',
                 'identificacion'  => $ruc,
-                'dv'              => isset($emisor['dv']) ? substr($emisor['dv'], 0, 5) : null,
+                'dv'              => isset($emisor['dv']) ? substr((string) $emisor['dv'], 0, 5) : null,
                 'direccion'       => $emisor['direccion'] ?? null,
-                'telefono'        => isset($emisor['telefono']) ? substr($emisor['telefono'], 0, 50) : null,
+                'telefono'        => isset($emisor['telefono']) ? substr((string) $emisor['telefono'], 0, 50) : null,
                 'activo'          => true,
                 'cuenta_gasto_id' => $cuentaGastoDefault,
                 'created_by'      => $usuario->email,
@@ -828,12 +910,12 @@ class CxpFacturaController extends Controller
         }
 
         $cuentaId = $proveedor->cuenta_gasto_id ?? $cuentaGastoDefault;
-        $numero   = $dgi['numero'] ?? substr($cufe, 0, 50);
-        $tipoDoc  = in_array($dgi['tipo'], [CxpDocumento::TIPO_NOTA_CREDITO, CxpDocumento::TIPO_NOTA_DEBITO], true)
+        $numero   = $dgi['numero'] ?? ($cufe ? substr($cufe, 0, 50) : 'IA-'.now()->format('YmdHis'));
+        $tipoDoc  = in_array($dgi['tipo'] ?? null, [CxpDocumento::TIPO_NOTA_CREDITO, CxpDocumento::TIPO_NOTA_DEBITO], true)
             ? $dgi['tipo']
             : CxpDocumento::TIPO_FACTURA;
 
-        $factura = DB::transaction(function () use ($companiaId, $proveedor, $dgi, $cufe, $numero, $tipoDoc, $cuentaId, $usuario) {
+        return DB::transaction(function () use ($companiaId, $proveedor, $dgi, $cufe, $numero, $tipoDoc, $cuentaId, $usuario) {
             $factura = CxpDocumento::create([
                 'compania_id'    => $companiaId,
                 'proveedor_id'   => $proveedor->id,
@@ -841,11 +923,11 @@ class CxpFacturaController extends Controller
                 'numero'         => $numero,
                 'cufe'           => $cufe,
                 'fecha'          => $dgi['fecha'] ?? now()->toDateString(),
-                'subtotal'       => $dgi['subtotal'],
+                'subtotal'       => $dgi['subtotal'] ?? 0,
                 'descuento'      => 0,
-                'impuesto'       => $dgi['itbms'],
-                'total'          => $dgi['total'],
-                'saldo'          => $dgi['total'],
+                'impuesto'       => $dgi['itbms'] ?? 0,
+                'total'          => $dgi['total'] ?? 0,
+                'saldo'          => $dgi['total'] ?? 0,
                 'estado'         => CxpDocumento::ESTADO_BORRADOR,
                 'created_by'     => $usuario->email,
             ]);
@@ -854,12 +936,12 @@ class CxpFacturaController extends Controller
                 CxpDocumentoDetalle::create([
                     'documento_id'    => $factura->id,
                     'linea'           => $n + 1,
-                    'descripcion'     => substr($linea['descripcion'], 0, 500),
-                    'cantidad'        => $linea['cantidad'],
-                    'precio_unitario' => $linea['precio_unitario'],
-                    'descuento'       => $linea['descuento'],
-                    'impuesto_monto'  => $linea['itbms'],
-                    'total_linea'     => $linea['total'],
+                    'descripcion'     => substr($linea['descripcion'] ?? 'Sin descripción', 0, 500),
+                    'cantidad'        => $linea['cantidad'] ?? 1,
+                    'precio_unitario' => $linea['precio_unitario'] ?? 0,
+                    'descuento'       => $linea['descuento'] ?? 0,
+                    'impuesto_monto'  => $linea['itbms'] ?? 0,
+                    'total_linea'     => $linea['total'] ?? 0,
                     'cuenta_id'       => $cuentaId,
                     'created_by'      => $usuario->email,
                 ]);
@@ -867,19 +949,96 @@ class CxpFacturaController extends Controller
 
             return $factura;
         });
+    }
 
-        // Modo "seguir escaneando": vuelve al scanner con aviso de éxito.
+    /** Limpia/castea la estructura de factura que devolvió la IA. */
+    private function normalizarDatosIa(array $ia): array
+    {
+        $num = fn ($v) => is_numeric($v) ? round((float) $v, 2) : 0.0;
+
+        $tipo = strtoupper((string) ($ia['tipo'] ?? 'FACTURA'));
+        if (! in_array($tipo, ['FACTURA', 'NOTA_CREDITO', 'NOTA_DEBITO'], true)) {
+            $tipo = 'FACTURA';
+        }
+
+        $emisor = is_array($ia['emisor'] ?? null) ? $ia['emisor'] : [];
+
+        $lineas = [];
+        foreach ($ia['lineas'] as $l) {
+            if (! is_array($l)) {
+                continue;
+            }
+            $lineas[] = [
+                'descripcion'     => substr(trim((string) ($l['descripcion'] ?? '')) ?: 'Sin descripción', 0, 500),
+                'cantidad'        => $num($l['cantidad'] ?? 1) ?: 1.0,
+                'precio_unitario' => $num($l['precio_unitario'] ?? 0),
+                'descuento'       => $num($l['descuento'] ?? 0),
+                'itbms'           => $num($l['itbms'] ?? 0),
+                'total'           => $num($l['total'] ?? 0),
+            ];
+        }
+
+        $cufe = preg_replace('/[^A-Za-z0-9\-]/', '', (string) ($ia['cufe'] ?? ''));
+
+        return [
+            'cufe'     => $cufe !== '' ? $cufe : null,
+            'numero'   => isset($ia['numero']) ? substr((string) $ia['numero'], 0, 50) : null,
+            'tipo'     => $tipo,
+            'fecha'    => $this->fechaIa($ia['fecha'] ?? null),
+            'emisor'   => [
+                'ruc'       => isset($emisor['ruc']) ? substr(trim((string) $emisor['ruc']), 0, 50) ?: null : null,
+                'dv'        => isset($emisor['dv']) ? substr(trim((string) $emisor['dv']), 0, 5) ?: null : null,
+                'nombre'    => isset($emisor['nombre']) ? substr(trim((string) $emisor['nombre']), 0, 200) ?: null : null,
+                'direccion' => $emisor['direccion'] ?? null,
+                'telefono'  => isset($emisor['telefono']) ? substr(trim((string) $emisor['telefono']), 0, 50) ?: null : null,
+            ],
+            'subtotal' => $num($ia['subtotal'] ?? 0),
+            'itbms'    => $num($ia['itbms'] ?? 0),
+            'total'    => $num($ia['total'] ?? 0),
+            'lineas'   => $lineas,
+        ];
+    }
+
+    private function fechaIa($valor): ?string
+    {
+        if (! is_string($valor) || trim($valor) === '') {
+            return null;
+        }
+        try {
+            return \Carbon\Carbon::parse($valor)->toDateString();
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    private function respuestaCxpExistente(CxpDocumento $existente, bool $seguir): RedirectResponse
+    {
+        if ($seguir) {
+            return redirect()->route('admin.cxp.facturas.desde-cufe.form')
+                ->with('ok_factura', [
+                    'numero' => $existente->numero,
+                    'url'    => route('admin.cxp.facturas.show', $existente),
+                    'aviso'  => 'ya estaba registrada',
+                ]);
+        }
+
+        return redirect()->route('admin.cxp.facturas.show', $existente)
+            ->with('status', 'Esta factura ya estaba registrada.');
+    }
+
+    private function respuestaCxpCreada(CxpDocumento $factura, bool $seguir, string $aviso): RedirectResponse
+    {
         if ($seguir) {
             return redirect()->route('admin.cxp.facturas.desde-cufe.form')
                 ->with('ok_factura', [
                     'numero' => $factura->numero,
                     'url'    => route('admin.cxp.facturas.show', $factura),
-                    'aviso'  => 'registrada',
+                    'aviso'  => $aviso,
                 ]);
         }
 
         return redirect()->route('admin.cxp.facturas.show', $factura)
-            ->with('status', "Factura {$factura->numero} registrada desde QR/CUFE. Revisa las cuentas contables y contabiliza.");
+            ->with('status', "Factura {$factura->numero} {$aviso}");
     }
 
     public function importar(Request $request): RedirectResponse

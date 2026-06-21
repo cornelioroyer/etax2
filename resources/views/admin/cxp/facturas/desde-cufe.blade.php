@@ -72,6 +72,9 @@
 
             {{-- Preview de la factura --}}
             <div id="panel-preview" style="display:none;" class="bg-white shadow-sm sm:rounded-lg overflow-hidden">
+                <div id="prev-aviso-ia" style="display:none;background:#fef3c7;color:#92400e;font-size:0.8rem;font-weight:600;padding:0.6rem 1rem;text-align:center;">
+                    ⚠ Datos leídos por IA (sin verificar con la DGI) — revisa montos y líneas antes de contabilizar.
+                </div>
                 <div style="background:#4f46e5;padding:1rem 1.5rem;">
                     <div class="flex justify-between items-start">
                         <div>
@@ -121,6 +124,7 @@
                         <form method="POST" action="{{ route('admin.cxp.facturas.desde-cufe') }}">
                             @csrf
                             <input type="hidden" name="cufe_input" id="cufe_hidden">
+                            <input type="hidden" name="datos_ia" id="datos_ia_hidden">
                             {{-- Registrar y volver al scanner para seguir agregando --}}
                             <button type="submit" name="seguir" value="1"
                                     style="width:100%;background:#16a34a;color:#fff;border:none;border-radius:0.375rem;padding:0.7rem;font-size:0.95rem;font-weight:700;cursor:pointer;">
@@ -355,11 +359,21 @@
     // ── PREVIEW ─────────────────────────────────────────────────────
     function mostrarPreview(cufe, d) {
         ocultarTodo();
-        document.getElementById('cufe_hidden').value = cufe;
+
+        // Origen de los datos: DGI (oficial) o IA (de la foto, sin verificar).
+        var esIA = (d.via === 'ia');
+        document.getElementById('prev-aviso-ia').style.display = esIA ? 'block' : 'none';
+        if (esIA) {
+            document.getElementById('datos_ia_hidden').value = d.datos_ia || JSON.stringify(d);
+            document.getElementById('cufe_hidden').value = '';
+        } else {
+            document.getElementById('datos_ia_hidden').value = '';
+            document.getElementById('cufe_hidden').value = cufe || '';
+        }
 
         var tipo = d.tipo === 'NOTA_CREDITO' ? 'Nota de Crédito' : d.tipo === 'NOTA_DEBITO' ? 'Nota de Débito' : 'Factura';
-        setText('prev-tipo',   tipo);
-        setText('prev-numero', 'N° ' + (d.numero || cufe.slice(0, 15) + '…'));
+        setText('prev-tipo',   esIA ? tipo + ' · IA' : tipo);
+        setText('prev-numero', 'N° ' + (d.numero || (cufe ? cufe.slice(0, 15) + '…' : '—')));
         setText('prev-fecha',  d.fecha || '');
         setText('prev-total',  'B/. ' + fmt(d.total));
         setText('prev-total2', 'B/. ' + fmt(d.total));
