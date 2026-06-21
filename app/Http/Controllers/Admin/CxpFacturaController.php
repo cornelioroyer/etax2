@@ -766,16 +766,36 @@ class CxpFacturaController extends Controller
         };
     }
 
-    /** Sirve el archivo adjunto (foto/PDF) de un documento de CxP. */
+    /** Sirve la factura física: archivo guardado (foto/PDF) o el PDF oficial de la DGI al vuelo. */
     public function archivo(Request $request, CxpDocumento $factura): Response|StreamedResponse
     {
         abort_unless($factura->compania_id === $this->companiaActivaId($request), 404);
-        abort_unless((bool) $factura->archivo_path, 404, 'Sin archivo adjunto.');
 
-        $disk = $factura->archivo_disk ?: config('filesystems.adjuntos', 's3');
-        abort_unless(Storage::disk($disk)->exists($factura->archivo_path), 404, 'Archivo no encontrado.');
+        // 1) Archivo ya guardado (foto subida por IA o PDF cacheado).
+        if ($factura->archivo_path) {
+            $disk = $factura->archivo_disk ?: config('filesystems.adjuntos', 's3');
+            if (Storage::disk($disk)->exists($factura->archivo_path)) {
+                return Storage::disk($disk)->response($factura->archivo_path);
+            }
+        }
 
-        return Storage::disk($disk)->response($factura->archivo_path);
+        // 2) Sin archivo pero con CUFE: descargar el PDF oficial de la DGI al vuelo
+        //    y cachearlo en S3 para la próxima vez (best-effort).
+        if ($factura->cufe && strlen($factura->cufe) === 66) {
+            $pdf = app(DgiFepConsulta::class)->pdfPorCufe($factura->cufe);
+            if ($pdf) {
+                if ($adj = $this->guardarAdjuntoCxp($pdf, 'pdf', $factura->compania_id)) {
+                    $factura->update(['archivo_path' => $adj['path'], 'archivo_disk' => $adj['disk']]);
+                }
+
+                return response($pdf, 200, [
+                    'Content-Type'        => 'application/pdf',
+                    'Content-Disposition' => 'inline; filename="factura-'.$factura->numero.'.pdf"',
+                ]);
+            }
+        }
+
+        abort(404, 'No hay factura física disponible para este documento.');
     }
 
     /** Llama a la API de Anthropic con una imagen y devuelve el texto de la respuesta. */

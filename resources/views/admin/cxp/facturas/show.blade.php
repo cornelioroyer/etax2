@@ -64,12 +64,12 @@
                                 </dd>
                             </div>
                         @endif
-                        @if ($factura->archivo_path)
+                        @if ($factura->archivo_path || ($factura->cufe && strlen($factura->cufe) === 66))
                             <div>
-                                <dt class="text-gray-500">Documento</dt>
+                                <dt class="text-gray-500">Factura física</dt>
                                 <dd class="font-medium">
                                     <a href="{{ route('admin.cxp.facturas.archivo', $factura) }}" target="_blank" rel="noopener" class="text-blue-700 hover:underline">
-                                        @if (str_ends_with($factura->archivo_path, '.pdf')) Ver PDF (DGI) @else Ver foto @endif →
+                                        @if ($factura->archivo_path && ! str_ends_with($factura->archivo_path, '.pdf')) Ver foto @else Ver PDF (DGI) @endif →
                                     </a>
                                 </dd>
                             </div>
@@ -77,6 +77,15 @@
                     </dl>
 
                     <div class="flex flex-wrap items-center gap-2">
+                        @if ($factura->archivo_path || ($factura->cufe && strlen($factura->cufe) === 66))
+                            <a href="{{ route('admin.cxp.facturas.archivo', $factura) }}" target="_blank" rel="noopener"
+                               class="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 4H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z" />
+                                </svg>
+                                Ver factura física
+                            </a>
+                        @endif
                         @if ($factura->asiento)
                             <a href="{{ route('admin.asientos.show', $factura->asiento) }}"
                                class="rounded-md border border-blue-300 bg-white px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">
