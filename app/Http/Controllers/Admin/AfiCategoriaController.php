@@ -25,7 +25,7 @@ class AfiCategoriaController extends Controller
             ->get();
 
         $cuentas = CuentaContable::where('compania_id', $companiaId)
-            ->where('acepta_movimientos', true)
+            ->where('permite_movimiento', true)
             ->orderBy('codigo')
             ->get();
 

@@ -53,6 +53,8 @@ class CxpDocumento extends Model
         'tipo_documento',
         'numero',
         'cufe',
+        'archivo_path',
+        'archivo_disk',
         'fecha',
         'fecha_vencimiento',
         'moneda_id',

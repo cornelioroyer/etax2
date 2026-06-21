@@ -15,6 +15,10 @@ return [
 
     'default' => env('FILESYSTEM_DISK', 'local'),
 
+    // Disco donde se guardan los adjuntos de compras (foto IA / PDF DGI).
+    // Por defecto S3; se puede forzar a 'public' para pruebas con ADJUNTOS_DISK.
+    'adjuntos' => env('ADJUNTOS_DISK', 's3'),
+
     /*
     |--------------------------------------------------------------------------
     | Filesystem Disks

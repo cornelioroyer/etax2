@@ -64,6 +64,16 @@
                                 </dd>
                             </div>
                         @endif
+                        @if ($factura->archivo_path)
+                            <div>
+                                <dt class="text-gray-500">Documento</dt>
+                                <dd class="font-medium">
+                                    <a href="{{ route('admin.cxp.facturas.archivo', $factura) }}" target="_blank" rel="noopener" class="text-blue-700 hover:underline">
+                                        @if (str_ends_with($factura->archivo_path, '.pdf')) Ver PDF (DGI) @else Ver foto @endif →
+                                    </a>
+                                </dd>
+                            </div>
+                        @endif
                     </dl>
 
                     <div class="flex flex-wrap items-center gap-2">

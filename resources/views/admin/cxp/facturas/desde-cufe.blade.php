@@ -125,6 +125,8 @@
                             @csrf
                             <input type="hidden" name="cufe_input" id="cufe_hidden">
                             <input type="hidden" name="datos_ia" id="datos_ia_hidden">
+                            <input type="hidden" name="archivo_path" id="archivo_path_hidden">
+                            <input type="hidden" name="archivo_disk" id="archivo_disk_hidden">
                             {{-- Registrar y volver al scanner para seguir agregando --}}
                             <button type="submit" name="seguir" value="1"
                                     style="width:100%;background:#16a34a;color:#fff;border:none;border-radius:0.375rem;padding:0.7rem;font-size:0.95rem;font-weight:700;cursor:pointer;">
@@ -359,6 +361,10 @@
     // ── PREVIEW ─────────────────────────────────────────────────────
     function mostrarPreview(cufe, d) {
         ocultarTodo();
+
+        // Archivo de respaldo (foto subida a S3 en el paso de IA), si lo hay.
+        document.getElementById('archivo_path_hidden').value = d.archivo_path || '';
+        document.getElementById('archivo_disk_hidden').value = d.archivo_disk || '';
 
         // Origen de los datos: DGI (oficial) o IA (de la foto, sin verificar).
         var esIA = (d.via === 'ia');

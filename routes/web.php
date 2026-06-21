@@ -245,6 +245,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('cxp/facturas/desde-cufe', [CxpFacturaController::class, 'desdeCufe'])->name('cxp.facturas.desde-cufe');
         Route::post('cxp/facturas/consultar-cufe', [CxpFacturaController::class, 'consultarCufe'])->name('cxp.facturas.consultar-cufe');
         Route::post('cxp/facturas/cufe-desde-foto', [CxpFacturaController::class, 'cufeDesdeFoto'])->name('cxp.facturas.cufe-desde-foto');
+        Route::get('cxp/facturas/{factura}/archivo', [CxpFacturaController::class, 'archivo'])->whereNumber('factura')->name('cxp.facturas.archivo');
         Route::post('cxp/facturas/importar', [CxpFacturaController::class, 'importar'])->name('cxp.facturas.importar');
         Route::get('cxp/facturas/importar/{importacion}/progreso', [CxpFacturaController::class, 'importarProgreso'])->whereNumber('importacion')->name('cxp.facturas.importar.progreso');
         Route::get('cxp/facturas/importar/{importacion}/estado', [CxpFacturaController::class, 'importarEstado'])->whereNumber('importacion')->name('cxp.facturas.importar.estado');

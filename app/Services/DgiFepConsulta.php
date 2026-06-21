@@ -91,6 +91,55 @@ class DgiFepConsulta
         return ['ok' => true, 'factura' => $factura, 'cufe' => $cufe];
     }
 
+    /**
+     * Descarga el PDF oficial de la factura desde la DGI.
+     *
+     * La página FacturasPorCUFE/{cufe} trae un campo oculto `facturaXML` (blob
+     * cifrado); al hacer POST de ese campo a DescargarFacturaPDF la DGI devuelve
+     * el PDF. Devuelve el binario del PDF, o null si no se pudo.
+     */
+    public function pdfPorCufe(string $cufe): ?string
+    {
+        $cufe = trim($cufe);
+        if ($cufe === '') {
+            return null;
+        }
+
+        try {
+            $jar = new \GuzzleHttp\Cookie\CookieJar;
+            $ua  = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+
+            $pagina = Http::withOptions(['cookies' => $jar])
+                ->timeout(25)
+                ->withHeaders(['User-Agent' => $ua])
+                ->get(self::BASE.rawurlencode($cufe));
+
+            if (! $pagina->successful()
+                || ! preg_match('/name="facturaXML"[^>]*value="([^"]*)"/i', $pagina->body(), $m)) {
+                return null;
+            }
+
+            $facturaXML = html_entity_decode($m[1]);
+
+            $pdf = Http::withOptions(['cookies' => $jar])
+                ->timeout(40)
+                ->asForm()
+                ->withHeaders([
+                    'User-Agent' => $ua,
+                    'Referer'    => self::BASE.rawurlencode($cufe),
+                ])
+                ->post('https://dgi-fep.mef.gob.pa/Consultas/DescargarFacturaPDF', [
+                    'facturaXML' => $facturaXML,
+                ]);
+
+            $cuerpo = $pdf->body();
+
+            return ($pdf->successful() && str_starts_with($cuerpo, '%PDF')) ? $cuerpo : null;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
     /** Extrae el CUFE de una URL de QR (chFE=), de una ruta /FacturasPorCUFE/, o del valor pelado. */
     private function extraerCufe(string $s): ?string
     {

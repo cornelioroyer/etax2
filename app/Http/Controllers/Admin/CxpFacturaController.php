@@ -25,11 +25,14 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 class CxpFacturaController extends Controller
@@ -665,8 +668,13 @@ class CxpFacturaController extends Controller
 
         $companiaId = $this->companiaActivaId($request);
         $foto  = $request->file('foto');
-        $b64   = base64_encode((string) file_get_contents($foto->getRealPath()));
+        $bytes = (string) file_get_contents($foto->getRealPath());
+        $b64   = base64_encode($bytes);
         $media = $foto->getMimeType() ?: 'image/jpeg';
+
+        // Guarda la foto (best-effort) y pasa la referencia para el registro.
+        $adj     = $this->guardarAdjuntoCxp($bytes, $this->extDeMime($media), $companiaId);
+        $adjResp = $adj ? ['archivo_path' => $adj['path'], 'archivo_disk' => $adj['disk']] : [];
 
         // 1) Intentar leer el CUFE y consultar la DGI (datos oficiales).
         try {
@@ -692,7 +700,7 @@ class CxpFacturaController extends Controller
 
                 $r = app(DgiFepConsulta::class)->porQr($cufe);
                 if ($r['ok']) {
-                    return response()->json(array_merge($r['factura'], ['cufe' => $r['cufe'] ?? $cufe, 'via' => 'dgi']));
+                    return response()->json(array_merge($r['factura'], ['cufe' => $r['cufe'] ?? $cufe, 'via' => 'dgi'], $adjResp));
                 }
                 // CUFE leído pero la DGI no la trajo → caer al respaldo de datos por IA.
             }
@@ -722,12 +730,52 @@ class CxpFacturaController extends Controller
             return response()->json(array_merge($dgi, [
                 'via'      => 'ia',
                 'datos_ia' => json_encode($dgi),
-            ]));
+            ], $adjResp));
         } catch (Throwable $e) {
             Log::error('CUFE-IA: excepción', ['error' => $e->getMessage()]);
 
             return response()->json(['error' => 'Error al leer la factura con IA: '.$e->getMessage()], 422);
         }
+    }
+
+    /** Guarda bytes en el disco de adjuntos (S3). Best-effort: null si falla. */
+    private function guardarAdjuntoCxp(string $bytes, string $ext, int $companiaId): ?array
+    {
+        try {
+            $disk = config('filesystems.adjuntos', 's3');
+            $path = 'cxp/'.$companiaId.'/'.Str::uuid().'.'.$ext;
+
+            if (Storage::disk($disk)->put($path, $bytes)) {
+                return ['path' => $path, 'disk' => $disk];
+            }
+        } catch (Throwable $e) {
+            Log::warning('Adjunto CxP no se pudo guardar', ['error' => $e->getMessage()]);
+        }
+
+        return null;
+    }
+
+    private function extDeMime(string $mime): string
+    {
+        return match ($mime) {
+            'image/png'  => 'png',
+            'image/webp' => 'webp',
+            'image/heic' => 'heic',
+            'application/pdf' => 'pdf',
+            default      => 'jpg',
+        };
+    }
+
+    /** Sirve el archivo adjunto (foto/PDF) de un documento de CxP. */
+    public function archivo(Request $request, CxpDocumento $factura): Response|StreamedResponse
+    {
+        abort_unless($factura->compania_id === $this->companiaActivaId($request), 404);
+        abort_unless((bool) $factura->archivo_path, 404, 'Sin archivo adjunto.');
+
+        $disk = $factura->archivo_disk ?: config('filesystems.adjuntos', 's3');
+        abort_unless(Storage::disk($disk)->exists($factura->archivo_path), 404, 'Archivo no encontrado.');
+
+        return Storage::disk($disk)->response($factura->archivo_path);
     }
 
     /** Llama a la API de Anthropic con una imagen y devuelve el texto de la respuesta. */
@@ -796,11 +844,21 @@ class CxpFacturaController extends Controller
         $usuario    = $request->user();
 
         $data = $request->validate([
-            'cufe_input' => ['nullable', 'string', 'max:500'],
-            'datos_ia'   => ['nullable', 'string', 'max:20000'],
+            'cufe_input'   => ['nullable', 'string', 'max:500'],
+            'datos_ia'     => ['nullable', 'string', 'max:20000'],
+            'archivo_path' => ['nullable', 'string', 'max:1024'],
+            'archivo_disk' => ['nullable', 'string', 'max:30'],
         ]);
 
         $seguir = $request->boolean('seguir');
+
+        // Foto ya subida a S3 en el paso de IA (si vino). Validar que sea de esta compañía.
+        $fotoPath = null;
+        $fotoDisk = null;
+        if (! empty($data['archivo_path']) && str_starts_with($data['archivo_path'], 'cxp/'.$companiaId.'/')) {
+            $fotoPath = $data['archivo_path'];
+            $fotoDisk = $data['archivo_disk'] ?: config('filesystems.adjuntos', 's3');
+        }
 
         // ── Camino B: datos extraídos por IA de la foto (sin DGI) ──────────
         if (! empty($data['datos_ia'])) {
@@ -821,6 +879,7 @@ class CxpFacturaController extends Controller
             }
 
             $factura = $this->crearBorradorCxp($dgi, $companiaId, $usuario);
+            $this->adjuntarArchivoCxp($factura, $fotoPath, $fotoDisk, $cufe, $companiaId);
 
             return $this->respuestaCxpCreada($factura, $seguir, 'registrada (datos leídos por IA — verifica antes de contabilizar)');
         }
@@ -859,8 +918,29 @@ class CxpFacturaController extends Controller
 
         $dgi['cufe'] = $cufe;
         $factura = $this->crearBorradorCxp($dgi, $companiaId, $usuario);
+        $this->adjuntarArchivoCxp($factura, $fotoPath, $fotoDisk, $cufe, $companiaId);
 
         return $this->respuestaCxpCreada($factura, $seguir, 'registrada desde QR/CUFE. Revisa las cuentas contables y contabiliza.');
+    }
+
+    /**
+     * Asocia el archivo de respaldo al documento: si vino una foto (subida por
+     * IA) la usa; si no, descarga el PDF oficial de la DGI por CUFE (best-effort).
+     */
+    private function adjuntarArchivoCxp(CxpDocumento $factura, ?string $fotoPath, ?string $fotoDisk, ?string $cufe, int $companiaId): void
+    {
+        if ($fotoPath) {
+            $factura->update(['archivo_path' => $fotoPath, 'archivo_disk' => $fotoDisk]);
+
+            return;
+        }
+
+        if ($cufe && strlen($cufe) === 66) {
+            $pdf = app(DgiFepConsulta::class)->pdfPorCufe($cufe);
+            if ($pdf && $adj = $this->guardarAdjuntoCxp($pdf, 'pdf', $companiaId)) {
+                $factura->update(['archivo_path' => $adj['path'], 'archivo_disk' => $adj['disk']]);
+            }
+        }
     }
 
     /**
