@@ -92,6 +92,12 @@
                                 Ver asiento
                             </a>
                         @endif
+                        @if ($factura->proveedor_id)
+                            <a href="{{ route('admin.contactos.edit', $factura->proveedor_id) }}"
+                               class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                                Editar proveedor
+                            </a>
+                        @endif
                         @can('cxp.gestionar')
                             @if ($factura->esBorrador())
                                 <a href="{{ route('admin.cxp.facturas.edit', $factura) }}"

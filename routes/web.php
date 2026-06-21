@@ -255,6 +255,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('cxp/facturas/{documento}/contabilizar', [CxpFacturaController::class, 'contabilizar'])->whereNumber('documento')->name('cxp.facturas.contabilizar');
         Route::delete('cxp/facturas/{documento}', [CxpFacturaController::class, 'destroy'])->whereNumber('documento')->name('cxp.facturas.destroy');
         Route::post('cxp/facturas/{documento}/anular', [CxpFacturaController::class, 'anular'])->whereNumber('documento')->name('cxp.facturas.anular');
+        Route::post('cxp/facturas/bulk', [CxpFacturaController::class, 'bulk'])->name('cxp.facturas.bulk');
         Route::get('cxp/pagos/nuevo', [CxpPagoController::class, 'create'])->name('cxp.pagos.create');
         Route::post('cxp/pagos', [CxpPagoController::class, 'store'])->name('cxp.pagos.store');
         Route::post('cxp/pagos/{documento}/anular', [CxpPagoController::class, 'anular'])->whereNumber('documento')->name('cxp.pagos.anular');

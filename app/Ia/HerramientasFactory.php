@@ -93,6 +93,16 @@ class HerramientasFactory
             $tools[] = self::felDocumentos($companiaId);
         }
 
+        // Marca el último tool con cache_control para que Claude cachee el bloque completo.
+        if (! empty($tools)) {
+            $last = $tools[count($tools) - 1];
+            $def  = $last->definition;
+            $def['cache_control'] = ['type' => 'ephemeral'];
+            $ref  = new \ReflectionProperty(BetaRunnableTool::class, 'run');
+            $ref->setAccessible(true);
+            $tools[count($tools) - 1] = new BetaRunnableTool(definition: $def, run: $ref->getValue($last));
+        }
+
         return $tools;
     }
 

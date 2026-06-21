@@ -38,7 +38,7 @@ class ChatController extends Controller
 
         $data = $request->validate([
             'mensaje' => ['required', 'string', 'max:2000'],
-            'historial' => ['array', 'max:40'],
+            'historial' => ['array', 'max:10'],
             'historial.*.role' => ['required', 'string', 'in:user,assistant'],
             'historial.*.content' => ['required', 'string'],
         ]);
@@ -63,13 +63,18 @@ class ChatController extends Controller
             $client = new Client(apiKey: $apiKey);
 
             $runner = $client->beta->messages->toolRunner(
-                model: config('services.anthropic.model', 'claude-opus-4-8'),
-                maxTokens: 4000,
+                model: 'claude-sonnet-4-6',
+                maxTokens: 2000,
                 messages: $mensajes,
                 tools: $herramientas,
-                // El toolRunner no expone `system` como parámetro propio; va por
-                // extraParams, que se fusiona en el cuerpo de la petición.
-                extraParams: ['system' => $this->instrucciones($usuario, $compania)],
+                extraParams: [
+                    'system' => [[
+                        'type'          => 'text',
+                        'text'          => $this->instrucciones($usuario, $compania),
+                        'cache_control' => ['type' => 'ephemeral'],
+                    ]],
+                    'betas' => ['prompt-caching-2024-07-31'],
+                ],
             );
 
             // El tool runner itera: cada vuelta es un mensaje del asistente. La

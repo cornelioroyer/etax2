@@ -23,45 +23,21 @@
                 </div>
             @endif
 
-            {{-- Botón principal --}}
+            {{-- Botón principal: leer factura con IA --}}
             <div id="panel-inicio" class="bg-white p-6 shadow-sm sm:rounded-lg text-center">
                 <p class="mb-5 text-sm text-gray-600">
-                    Apunta la cámara al <strong>código QR</strong> de la factura electrónica.<br>
-                    Verificas el reCAPTCHA y el sistema trae los datos de la DGI para que confirmes.
+                    Toma una <strong>foto de la factura</strong> donde se vea el código QR o el CUFE.<br>
+                    La IA lee los datos y consulta la DGI para que los confirmes.
                 </p>
-                <button type="button" onclick="abrirScanner()"
+                <input type="file" id="foto-ia" accept="image/*" capture="environment" style="display:none;" onchange="enviarFoto(this)">
+                <button type="button" onclick="document.getElementById('foto-ia').click()"
                         style="display:inline-flex;align-items:center;gap:0.6rem;background:#4f46e5;color:#fff;border:none;border-radius:0.5rem;padding:0.75rem 1.75rem;font-size:1rem;font-weight:700;cursor:pointer;">
                     <svg xmlns="http://www.w3.org/2000/svg" style="width:1.4rem;height:1.4rem;" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 3.75H6.912a2.25 2.25 0 0 0-2.15 1.588L3.32 8.91a2.25 2.25 0 0 0-.1.661V18a2.25 2.25 0 0 0 2.25 2.25h13.5A2.25 2.25 0 0 0 21 18V9.572a2.25 2.25 0 0 0-.1-.661L19.24 5.338A2.25 2.25 0 0 0 17.088 3.75H15M9 3.75h6M9 3.75 8.25 6m6.75-2.25L15.75 6m-3 3.75a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z" />
                     </svg>
-                    Escanear QR
+                    Leer factura con IA
                 </button>
-                {{-- Respaldo con IA: si el QR no se lee, foto de la factura --}}
-                <div class="mt-4">
-                    <input type="file" id="foto-ia" accept="image/*" capture="environment" style="display:none;" onchange="enviarFoto(this)">
-                    <button type="button" onclick="document.getElementById('foto-ia').click()"
-                            style="display:inline-flex;align-items:center;gap:0.5rem;background:#fff;color:#4f46e5;border:1.5px solid #c7d2fe;border-radius:0.5rem;padding:0.6rem 1.25rem;font-size:0.9rem;font-weight:600;cursor:pointer;">
-                        <svg xmlns="http://www.w3.org/2000/svg" style="width:1.2rem;height:1.2rem;" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 3.75H6.912a2.25 2.25 0 0 0-2.15 1.588L3.32 8.91a2.25 2.25 0 0 0-.1.661V18a2.25 2.25 0 0 0 2.25 2.25h13.5A2.25 2.25 0 0 0 21 18V9.572a2.25 2.25 0 0 0-.1-.661L19.24 5.338A2.25 2.25 0 0 0 17.088 3.75H15M9 3.75h6M9 3.75 8.25 6m6.75-2.25L15.75 6m-3 3.75a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z" />
-                        </svg>
-                        ¿No se lee el QR? Leer factura con IA
-                    </button>
-                    <p class="text-xs text-gray-400 mt-1">Toma una foto donde se vea el CUFE; la IA lo lee y consulta la DGI.</p>
-                </div>
-
-                <div class="mt-5 border-t pt-4">
-                    <p class="text-xs text-gray-500 mb-2">¿Ya tienes el CUFE o la URL? Pégalo aquí:</p>
-                    <div class="flex gap-2">
-                        <input type="text" id="cufe-manual"
-                               placeholder="FE01200001... o URL dgi-fep..."
-                               class="block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                        <button type="button" onclick="procesarCufeManual()"
-                                style="background:#2563eb;color:#fff;border:none;border-radius:0.375rem;padding:0.5rem 1rem;font-size:0.875rem;font-weight:600;white-space:nowrap;cursor:pointer;">
-                            Buscar
-                        </button>
-                    </div>
-                </div>
+                <p class="text-xs text-gray-400 mt-2">Toma una foto donde se vea el CUFE; la IA lo lee y consulta la DGI.</p>
             </div>
 
             {{-- Estado / spinner --}}
@@ -127,10 +103,10 @@
                             <input type="hidden" name="datos_ia" id="datos_ia_hidden">
                             <input type="hidden" name="archivo_path" id="archivo_path_hidden">
                             <input type="hidden" name="archivo_disk" id="archivo_disk_hidden">
-                            {{-- Registrar y volver al scanner para seguir agregando --}}
+                            {{-- Registrar y volver para seguir agregando --}}
                             <button type="submit" name="seguir" value="1"
                                     style="width:100%;background:#16a34a;color:#fff;border:none;border-radius:0.375rem;padding:0.7rem;font-size:0.95rem;font-weight:700;cursor:pointer;">
-                                ✓ Registrar y escanear otra
+                                ✓ Registrar y leer otra
                             </button>
                             <div class="flex gap-3 mt-2">
                                 <button type="submit"
@@ -156,206 +132,116 @@
         </div>
     </div>
 
-    {{-- Modal cámara --}}
-    <div id="qr-modal"
-         style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:rgba(0,0,0,0.9);align-items:center;justify-content:center;"
-         onclick="if(event.target===this)cerrarCamara()">
-        <div style="background:#fff;border-radius:0.75rem;padding:1rem;width:min(380px,94vw);">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
-                <span style="font-weight:700;">Apunta al código QR</span>
-                <button type="button" onclick="cerrarCamara()"
-                        style="font-size:1.5rem;line-height:1;border:none;background:none;cursor:pointer;color:#9ca3af;">&times;</button>
-            </div>
-            <div style="position:relative;border-radius:0.375rem;overflow:hidden;background:#000;">
-                <video id="qr-video" style="width:100%;display:block;max-height:50vh;object-fit:cover;" playsinline autoplay muted></video>
-                <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
-                    <div style="width:60%;aspect-ratio:1;border:3px solid #4f46e5;border-radius:8px;box-shadow:0 0 0 9999px rgba(0,0,0,0.35);"></div>
-                </div>
-            </div>
-            <canvas id="qr-canvas" style="display:none;"></canvas>
-            <p id="cam-msg" style="margin-top:0.75rem;text-align:center;font-size:0.8rem;color:#6b7280;">
-                Apunta al código QR de la factura…
-            </p>
-        </div>
-    </div>
-
-    <script src="/js/jsqr.min.js"></script>
     <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+    <script src="/js/jsqr.min.js"></script>
     <script>
-    var _stream   = null;
-    var _scanning = false;
-    var _timer    = null;
-    var _cufeUrl  = '{{ route('admin.cxp.facturas.consultar-cufe') }}';
-    var _csrf     = document.querySelector('meta[name="csrf-token"]').content;
+    var _csrf = document.querySelector('meta[name="csrf-token"]').content;
 
-    window.addEventListener('error', function (ev) {
-        var el = document.getElementById('cam-msg');
-        if (el) { el.textContent = 'JS: ' + ev.message; el.style.color = '#dc2626'; }
-    });
-
-    // ── CÁMARA ──────────────────────────────────────────────────────
-    function abrirScanner() {
-        document.getElementById('qr-modal').style.display = 'flex';
-        setCamMsg('Iniciando cámara…', '#6b7280');
-
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            setCamMsg('Tu navegador no soporta la cámara. Usa el campo de texto.', '#dc2626');
-            return;
-        }
-
-        navigator.mediaDevices.getUserMedia({
-            video: {
-                facingMode: { ideal: 'environment' },
-                width:  { ideal: 1920 },
-                height: { ideal: 1080 }
-            }
-        })
-            .then(function (s) {
-                _stream   = s;
-                _scanning = true;
-                var v = document.getElementById('qr-video');
-                v.srcObject = s;
-                v.play();
-                setCamMsg('Apunta al código QR de la factura…', '#6b7280');
-                iniciarDeteccion(v);
-            })
-            .catch(function (e) {
-                setCamMsg('Sin acceso a la cámara: ' + e.message, '#dc2626');
-            });
-    }
-
-    function cerrarCamara() {
-        _scanning = false;
-        if (_timer) { clearInterval(_timer); _timer = null; }
-        if (_stream) { _stream.getTracks().forEach(function (t) { t.stop(); }); _stream = null; }
-        var v = document.getElementById('qr-video');
-        v.srcObject = null;
-        document.getElementById('qr-modal').style.display = 'none';
-    }
-
-    function iniciarDeteccion(video) {
-        var tieneBD   = ('BarcodeDetector' in window);
-        var tieneJsqr = (typeof jsQR === 'function');
-        var frames    = 0;
-        var detector  = tieneBD ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
-        var c  = document.getElementById('qr-canvas');
-        var cx = c.getContext('2d', { willReadFrequently: true });
-
-        setCamMsg('Detector: ' + (tieneBD ? 'nativo' : (tieneJsqr ? 'jsQR' : 'NINGUNO ❌')) + ' — iniciando…', '#6b7280');
-
-        if (!tieneBD && !tieneJsqr) {
-            setCamMsg('Este navegador no puede leer QR. Pega el CUFE/URL en el campo de texto.', '#dc2626');
-            return;
-        }
-
-        function exito(valor) {
-            if (!_scanning) return;
-            _scanning = false;
-            clearInterval(_timer);
-            setCamMsg('✓ QR detectado', '#16a34a');
-            cerrarCamara();
-            consultarDGI(valor);
-        }
-
-        // jsQR sobre el frame actual, probando 4 rotaciones (vence rotación Android)
-        function intentarJsqr() {
-            if (video.videoWidth === 0) return;
-            var w = video.videoWidth, h = video.videoHeight;
-            for (var rot = 0; rot < 4; rot++) {
-                if (rot === 0 || rot === 2) { c.width = w; c.height = h; }
-                else                        { c.width = h; c.height = w; }
-                cx.save();
-                cx.translate(c.width / 2, c.height / 2);
-                cx.rotate(rot * Math.PI / 2);
-                cx.drawImage(video, -w / 2, -h / 2, w, h);
-                cx.restore();
-                try {
-                    var img  = cx.getImageData(0, 0, c.width, c.height);
-                    var code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
-                    if (code && code.data) { exito(code.data); return; }
-                } catch (e) {}
-            }
-        }
-
-        _timer = setInterval(function () {
-            if (!_scanning) return;
-            frames++;
-            if (frames % 4 === 0) {
-                var res = video.videoWidth ? (video.videoWidth + '×' + video.videoHeight) : '?';
-                setCamMsg('Buscando QR… (' + frames + ') · ' + res, '#6b7280');
-            }
-            // Detector nativo (rápido) Y jsQR con rotaciones (robusto) en paralelo
-            if (tieneBD) {
-                detector.detect(video).then(function (codes) {
-                    if (codes && codes.length > 0) { exito(codes[0].rawValue); }
-                }).catch(function () {});
-            }
-            if (tieneJsqr) { intentarJsqr(); }
-        }, 250);
-    }
-
-    function setCamMsg(t, c) {
-        var el = document.getElementById('cam-msg');
-        el.textContent = t; el.style.color = c;
-    }
-
-    // ── CAMPO MANUAL ────────────────────────────────────────────────
-    function procesarCufeManual() {
-        var val = document.getElementById('cufe-manual').value.trim();
-        if (!val) return;
-        consultarDGI(val);
-    }
-
-    document.getElementById('cufe-manual').addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); procesarCufeManual(); }
-    });
-
-    // Tras registrar y volver, reabrir la cámara para seguir escaneando.
-    @if (session('ok_factura'))
-    window.addEventListener('load', function () { setTimeout(abrirScanner, 350); });
-    @endif
-
-    // ── RESPALDO IA: foto de la factura → Claude extrae el CUFE → DGI ─
+    // ── PASO 1: intenta leer QR en el cliente (gratis) ───────────────
     function enviarFoto(input) {
         var file = input.files && input.files[0];
         if (!file) return;
 
-        mostrarCargando('Leyendo la factura con IA…');
+        mostrarCargando('Leyendo código QR…');
 
+        leerQrDeImagen(file)
+            .then(function (qrUrl) {
+                if (qrUrl) {
+                    mostrarCargando('Buscando factura en la DGI…');
+                    return fetch('{{ route('admin.cxp.facturas.consultar-cufe') }}', {
+                        method : 'POST',
+                        headers: { 'X-CSRF-TOKEN': _csrf, 'Accept': 'application/json', 'Content-Type': 'application/json' },
+                        body   : JSON.stringify({ qr: qrUrl }),
+                    })
+                    .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+                    .then(function (r) {
+                        if (r.ok && !r.data.error) return r;
+                        // QR leído pero DGI no la encontró → fallback a IA
+                        return enviarFotoAIa(file);
+                    });
+                }
+                // Sin QR legible → IA directa
+                return enviarFotoAIa(file);
+            })
+            .then(function (r) {
+                if (!r) return;
+                if (!r.ok) { mostrarError(r.data.error || 'No se pudo leer la factura.'); return; }
+                if (r.data.ya_registrada) { mostrarYaRegistrada(r.data); return; }
+                mostrarPreview(r.data.cufe, r.data);
+            })
+            .catch(function () { mostrarError('No se pudo conectar al servidor.'); })
+            .finally(function () { input.value = ''; });
+    }
+
+    // ── PASO 2 (fallback): enviar foto a la IA ────────────────────────
+    function enviarFotoAIa(file) {
+        mostrarCargando('Leyendo la factura con IA…');
         var fd = new FormData();
         fd.append('foto', file);
-
-        fetch('{{ route('admin.cxp.facturas.cufe-desde-foto') }}', {
+        return fetch('{{ route('admin.cxp.facturas.cufe-desde-foto') }}', {
             method : 'POST',
             headers: { 'X-CSRF-TOKEN': _csrf, 'Accept': 'application/json' },
             body   : fd,
         })
-        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
-        .then(function (r) {
-            if (!r.ok) { mostrarError(r.data.error || 'La IA no pudo leer la factura.'); return; }
-            if (r.data.ya_registrada) { mostrarYaRegistrada(r.data); return; }
-            mostrarPreview(r.data.cufe, r.data);
-        })
-        .catch(function () { mostrarError('No se pudo conectar al servidor.'); })
-        .finally(function () { input.value = ''; });
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); });
     }
 
-    // ── CONSULTA DGI usando el QR completo (chFE + digestValue + JWT) ─
-    function consultarDGI(raw) {
-        mostrarCargando('Consultando la DGI…');
+    // ── Decodifica el QR de una imagen en el cliente ──────────────────
+    // Devuelve Promise<string|null> con la URL del QR o null si no lo encuentra.
+    function leerQrDeImagen(file) {
+        return new Promise(function (resolve) {
+            var img = new Image();
+            img.onload = function () {
+                // Escalar a máx 2 000 px: fotos de celular (4 000×3 000+) superan
+                // el límite de canvas en móvil y jsQR falla silenciosamente.
+                var MAX   = 2000;
+                var sw    = img.naturalWidth  || img.width;
+                var sh    = img.naturalHeight || img.height;
+                var scale = Math.min(1, MAX / Math.max(sw, sh));
+                var w     = Math.round(sw * scale);
+                var h     = Math.round(sh * scale);
 
-        fetch(_cufeUrl, {
-            method : 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': _csrf, 'Accept': 'application/json' },
-            body   : JSON.stringify({ qr: raw }),
-        })
-        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
-        .then(function (r) {
-            if (!r.ok) { mostrarError(r.data.error || r.data.message || 'Error al consultar la DGI.'); return; }
-            if (r.data.ya_registrada) { mostrarYaRegistrada(r.data); return; }
-            mostrarPreview(r.data.cufe || raw, r.data);
-        })
-        .catch(function () { mostrarError('No se pudo conectar al servidor.'); });
+                var canvas = document.createElement('canvas');
+                var ctx    = canvas.getContext('2d');
+
+                // Intento 1: BarcodeDetector nativo (Chrome Android, más rápido)
+                if (window.BarcodeDetector) {
+                    new BarcodeDetector({ formats: ['qr_code'] }).detect(img)
+                        .then(function (codes) {
+                            if (codes.length > 0) { liberar(); resolve(codes[0].rawValue); }
+                            else tryJsQR();
+                        })
+                        .catch(tryJsQR);
+                } else {
+                    tryJsQR();
+                }
+
+                // Intento 2: jsQR en 4 rotaciones sobre imagen escalada
+                function tryJsQR() {
+                    if (!window.jsQR) { liberar(); resolve(null); return; }
+                    var angulos = [0, 90, 180, 270];
+                    for (var i = 0; i < angulos.length; i++) {
+                        var deg = angulos[i];
+                        var cw  = (deg === 90 || deg === 270) ? h : w;
+                        var ch  = (deg === 90 || deg === 270) ? w : h;
+                        canvas.width = cw; canvas.height = ch;
+                        ctx.save();
+                        ctx.translate(cw / 2, ch / 2);
+                        ctx.rotate(deg * Math.PI / 180);
+                        ctx.drawImage(img, -w / 2, -h / 2, w, h);
+                        ctx.restore();
+                        var data = ctx.getImageData(0, 0, cw, ch);
+                        var code = jsQR(data.data, data.width, data.height, { inversionAttempts: 'dontInvert' });
+                        if (code) { liberar(); resolve(code.data); return; }
+                    }
+                    liberar(); resolve(null);
+                }
+
+                function liberar() { URL.revokeObjectURL(img.src); }
+            };
+            img.onerror = function () { resolve(null); };
+            img.src = URL.createObjectURL(file);
+        });
     }
 
     // ── PREVIEW ─────────────────────────────────────────────────────
@@ -429,7 +315,6 @@
 
     function resetear() {
         ocultarTodo();
-        document.getElementById('cufe-manual').value = '';
     }
 
     function ocultarTodo() {

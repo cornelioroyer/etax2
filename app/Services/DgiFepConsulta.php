@@ -6,6 +6,7 @@ use DOMDocument;
 use DOMNode;
 use DOMXPath;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -246,8 +247,25 @@ class DgiFepConsulta
     /** @return array{ruc:?string,dv:?string,nombre:?string,direccion:?string,telefono:?string} */
     private function emisor(DOMXPath $xp): array
     {
-        $paneles = $xp->query("//div[contains(@class,'panel')][.//div[contains(@class,'panel-heading')][contains(normalize-space(.),'EMISOR')]]");
-        $panel = $paneles && $paneles->length ? $paneles->item(0) : null;
+        $panel = $this->buscarPanel($xp, 'EMISOR');
+
+        $data = [
+            'ruc'       => $this->ddPorDt($xp, 'RUC', $panel),
+            'dv'        => $this->ddPorDt($xp, 'DV', $panel),
+            'nombre'    => $this->ddPorDt($xp, 'NOMBRE', $panel),
+            'direccion' => $this->ddPorDt($xp, 'DIRECCI', $panel),
+            'telefono'  => $this->ddPorDt($xp, 'FONO', $panel),
+        ];
+
+        Log::debug('DGI-FEP emisor', ['panel_encontrado' => $panel !== null, 'ruc' => $data['ruc'], 'nombre' => $data['nombre']]);
+
+        return $data;
+    }
+
+    /** @return array{ruc:?string,dv:?string,nombre:?string,direccion:?string,telefono:?string} */
+    private function receptor(DOMXPath $xp): array
+    {
+        $panel = $this->buscarPanel($xp, 'RECEPTOR');
 
         return [
             'ruc'       => $this->ddPorDt($xp, 'RUC', $panel),
@@ -258,19 +276,40 @@ class DgiFepConsulta
         ];
     }
 
-    /** @return array{ruc:?string,dv:?string,nombre:?string,direccion:?string,telefono:?string} */
-    private function receptor(DOMXPath $xp): array
+    /**
+     * Localiza el panel del EMISOR o RECEPTOR tolerando variaciones del HTML de la DGI:
+     * mayúsculas/minúsculas, "Datos del Emisor", elementos distintos a panel-heading, etc.
+     */
+    private function buscarPanel(DOMXPath $xp, string $rol): ?DOMNode
     {
-        $paneles = $xp->query("//div[contains(@class,'panel')][.//div[contains(@class,'panel-heading')][contains(normalize-space(.),'RECEPTOR')]]");
-        $panel = $paneles && $paneles->length ? $paneles->item(0) : null;
+        // XPath case-insensitive vía translate() — solo las letras que varían entre ROL y minúsculas
+        $upper  = strtoupper($rol);
+        $lower  = strtolower($rol);
+        $chars  = implode('', array_unique(str_split($lower)));
+        $CHARS  = implode('', array_unique(str_split($upper)));
+        $trans  = "translate(normalize-space(.),'$chars','$CHARS')";
 
-        return [
-            'ruc'       => $this->ddPorDt($xp, 'RUC', $panel),
-            'dv'        => $this->ddPorDt($xp, 'DV', $panel),
-            'nombre'    => $this->ddPorDt($xp, 'NOMBRE', $panel),
-            'direccion' => $this->ddPorDt($xp, 'DIRECCI', $panel),
-            'telefono'  => $this->ddPorDt($xp, 'FONO', $panel),
-        ];
+        // 1) Selector original: panel > panel-heading exacto
+        $q = $xp->query("//div[contains(@class,'panel')][.//div[contains(@class,'panel-heading')][contains($trans,'$upper')]]");
+        if ($q && $q->length) {
+            return $q->item(0);
+        }
+
+        // 2) Cualquier elemento hijo del panel con el texto del rol
+        $q = $xp->query("//div[contains(@class,'panel')][.//*[contains($trans,'$upper')]]");
+        if ($q && $q->length) {
+            return $q->item(0);
+        }
+
+        // 3) Buscar sección por encabezado h3/h4/h5 con el texto, y tomar el contenedor más cercano
+        $q = $xp->query("//*[self::h3 or self::h4 or self::h5 or self::b or self::strong][contains($trans,'$upper')]/ancestor::div[1]");
+        if ($q && $q->length) {
+            return $q->item(0);
+        }
+
+        Log::warning("DGI-FEP: no se encontró panel $rol en el HTML de la DGI.");
+
+        return null;
     }
 
     /** Valor del <dd> cuyo <dt> hermano contiene el texto dado, dentro de $ctx. */

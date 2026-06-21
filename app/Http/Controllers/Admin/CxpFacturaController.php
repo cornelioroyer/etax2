@@ -629,7 +629,7 @@ class CxpFacturaController extends Controller
         // Deduplicar por el CUFE extraído del QR (si lo hay).
         $cufe = $r['cufe'] ?? null;
         if ($cufe) {
-            $existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $cufe)->first();
+            $existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $cufe)->where('estado', '!=', CxpDocumento::ESTADO_ANULADO)->first();
             if ($existente) {
                 return response()->json([
                     'ya_registrada' => true,
@@ -668,13 +668,16 @@ class CxpFacturaController extends Controller
 
         $companiaId = $this->companiaActivaId($request);
         $foto  = $request->file('foto');
-        $bytes = (string) file_get_contents($foto->getRealPath());
-        $b64   = base64_encode($bytes);
+        $raw   = (string) file_get_contents($foto->getRealPath());
         $media = $foto->getMimeType() ?: 'image/jpeg';
 
-        // Guarda la foto (best-effort) y pasa la referencia para el registro.
-        $adj     = $this->guardarAdjuntoCxp($bytes, $this->extDeMime($media), $companiaId);
+        // Guarda el original (best-effort) antes de reducir.
+        $adj     = $this->guardarAdjuntoCxp($raw, $this->extDeMime($media), $companiaId);
         $adjResp = $adj ? ['archivo_path' => $adj['path'], 'archivo_disk' => $adj['disk']] : [];
+
+        // Reduce la foto para la IA (↓ tokens, ↓ costo, ↓ latencia).
+        ['bytes' => $bytes, 'media' => $media] = $this->reducirFoto($raw, $media);
+        $b64 = base64_encode($bytes);
 
         // 1) Intentar leer el CUFE y consultar la DGI (datos oficiales).
         try {
@@ -688,7 +691,7 @@ class CxpFacturaController extends Controller
             $cufe  = preg_replace('/[^A-Za-z0-9\-]/', '', trim($texto));
 
             if ($cufe !== '' && stripos($texto, 'NONE') !== 0 && strlen($cufe) >= 40) {
-                $existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $cufe)->first();
+                $existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $cufe)->where('estado', '!=', CxpDocumento::ESTADO_ANULADO)->first();
                 if ($existente) {
                     return response()->json([
                         'ya_registrada' => true,
@@ -717,7 +720,7 @@ class CxpFacturaController extends Controller
             $dgi = $this->normalizarDatosIa($datos);
 
             // Dedup por CUFE si la IA lo logró leer.
-            if ($dgi['cufe'] && $existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $dgi['cufe'])->first()) {
+            if ($dgi['cufe'] && $existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $dgi['cufe'])->where('estado', '!=', CxpDocumento::ESTADO_ANULADO)->first()) {
                 return response()->json([
                     'ya_registrada' => true,
                     'numero'        => $existente->numero,
@@ -798,6 +801,54 @@ class CxpFacturaController extends Controller
         abort(404, 'No hay factura física disponible para este documento.');
     }
 
+    /**
+     * Reduce la imagen a máx 1 600 px y recomprime como JPEG 85 antes de enviarla a la IA.
+     * Mantiene el original sin tocar; si GD no está disponible o la imagen ya es pequeña,
+     * devuelve los bytes originales.
+     *
+     * @return array{bytes: string, media: string}
+     */
+    private function reducirFoto(string $bytes, string $media): array
+    {
+        if (! function_exists('imagecreatefromstring')) {
+            return ['bytes' => $bytes, 'media' => $media];
+        }
+
+        $img = @imagecreatefromstring($bytes);
+        if (! $img) {
+            return ['bytes' => $bytes, 'media' => $media];
+        }
+
+        $w      = imagesx($img);
+        $h      = imagesy($img);
+        $maxDim = 1600;
+
+        if ($w <= $maxDim && $h <= $maxDim) {
+            imagedestroy($img);
+
+            return ['bytes' => $bytes, 'media' => $media];
+        }
+
+        if ($w >= $h) {
+            $nw = $maxDim;
+            $nh = (int) round($h * $maxDim / $w);
+        } else {
+            $nh = $maxDim;
+            $nw = (int) round($w * $maxDim / $h);
+        }
+
+        $canvas = imagecreatetruecolor($nw, $nh);
+        imagecopyresampled($canvas, $img, 0, 0, 0, 0, $nw, $nh, $w, $h);
+        imagedestroy($img);
+
+        ob_start();
+        imagejpeg($canvas, null, 85);
+        $reduced = (string) ob_get_clean();
+        imagedestroy($canvas);
+
+        return ['bytes' => $reduced, 'media' => 'image/jpeg'];
+    }
+
     /** Llama a la API de Anthropic con una imagen y devuelve el texto de la respuesta. */
     private function visionClaude(string $apiKey, string $b64, string $media, string $prompt, int $maxTokens): string
     {
@@ -806,7 +857,7 @@ class CxpFacturaController extends Controller
             'anthropic-version' => '2023-06-01',
             'content-type'      => 'application/json',
         ])->timeout(90)->post('https://api.anthropic.com/v1/messages', [
-            'model'      => config('services.anthropic.model', 'claude-opus-4-8'),
+            'model'      => 'claude-sonnet-4-6',
             'max_tokens' => $maxTokens,
             'messages'   => [[
                 'role'    => 'user',
@@ -894,11 +945,14 @@ class CxpFacturaController extends Controller
                 throw ValidationException::withMessages(['cufe_input' => 'La IA no identificó al proveedor. Toma una foto más clara o regístrala manualmente.']);
             }
 
-            if ($cufe && $existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $cufe)->first()) {
+            if ($cufe && $existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $cufe)->where('estado', '!=', CxpDocumento::ESTADO_ANULADO)->first()) {
                 return $this->respuestaCxpExistente($existente, $seguir);
             }
 
             $factura = $this->crearBorradorCxp($dgi, $companiaId, $usuario);
+            if (! $factura->wasRecentlyCreated) {
+                return $this->respuestaCxpExistente($factura, $seguir);
+            }
             $this->adjuntarArchivoCxp($factura, $fotoPath, $fotoDisk, $cufe, $companiaId);
 
             return $this->respuestaCxpCreada($factura, $seguir, 'registrada (datos leídos por IA — verifica antes de contabilizar)');
@@ -922,7 +976,7 @@ class CxpFacturaController extends Controller
             throw ValidationException::withMessages(['cufe_input' => 'El valor ingresado no parece un CUFE válido.']);
         }
 
-        if ($existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $cufe)->first()) {
+        if ($existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $cufe)->where('estado', '!=', CxpDocumento::ESTADO_ANULADO)->first()) {
             return $this->respuestaCxpExistente($existente, $seguir);
         }
 
@@ -938,6 +992,9 @@ class CxpFacturaController extends Controller
 
         $dgi['cufe'] = $cufe;
         $factura = $this->crearBorradorCxp($dgi, $companiaId, $usuario);
+        if (! $factura->wasRecentlyCreated) {
+            return $this->respuestaCxpExistente($factura, $seguir);
+        }
         $this->adjuntarArchivoCxp($factura, $fotoPath, $fotoDisk, $cufe, $companiaId);
 
         return $this->respuestaCxpCreada($factura, $seguir, 'registrada desde QR/CUFE. Revisa las cuentas contables y contabiliza.');
@@ -1014,6 +1071,21 @@ class CxpFacturaController extends Controller
         $tipoDoc  = in_array($dgi['tipo'] ?? null, [CxpDocumento::TIPO_NOTA_CREDITO, CxpDocumento::TIPO_NOTA_DEBITO], true)
             ? $dgi['tipo']
             : CxpDocumento::TIPO_FACTURA;
+
+        // Evita el choque con el índice único parcial (compania, proveedor, tipo,
+        // numero) WHERE estado <> 'ANULADO': si ya existe un documento VIGENTE con
+        // ese número se devuelve en lugar de provocar un error de BD. Los ANULADO
+        // se ignoran a propósito para permitir volver a registrar la factura.
+        // El llamador distingue creada vs. existente con $factura->wasRecentlyCreated.
+        $existente = CxpDocumento::where('compania_id', $companiaId)
+            ->where('proveedor_id', $proveedor->id)
+            ->where('tipo_documento', $tipoDoc)
+            ->where('numero', $numero)
+            ->where('estado', '!=', CxpDocumento::ESTADO_ANULADO)
+            ->first();
+        if ($existente) {
+            return $existente;
+        }
 
         return DB::transaction(function () use ($companiaId, $proveedor, $dgi, $cufe, $numero, $tipoDoc, $cuentaId, $usuario) {
             $factura = CxpDocumento::create([
@@ -1233,6 +1305,91 @@ class CxpFacturaController extends Controller
 
         return redirect()->route('admin.cxp.facturas.show', $documento)
             ->with('status', "Factura {$documento->numero} anulada.");
+    }
+
+    /**
+     * Acciones masivas sobre las facturas marcadas en la lista.
+     * Reutiliza las mismas guardas y transacciones que las acciones individuales:
+     * contabilizar/eliminar solo aplican a BORRADOR; anular solo a contabilizadas
+     * sin pagos aplicados. Cada documento se procesa de forma aislada (su propia
+     * transacción) para que un caso inválido no bloquee a los demás.
+     */
+    public function bulk(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'accion' => ['required', Rule::in(['contabilizar', 'eliminar', 'anular'])],
+            'ids'    => ['required', 'array', 'min:1'],
+            'ids.*'  => ['integer'],
+        ]);
+
+        $companiaId = $this->companiaActivaId($request);
+        $usuario    = $request->user();
+
+        $documentos = CxpDocumento::where('compania_id', $companiaId)
+            ->whereIn('tipo_documento', CxpDocumento::tiposModulo())
+            ->whereIn('id', $data['ids'])
+            ->get();
+
+        $ok = 0;
+        $omitidas = 0;
+        $errores = [];
+
+        foreach ($documentos as $documento) {
+            try {
+                switch ($data['accion']) {
+                    case 'contabilizar':
+                        if (! $documento->esBorrador()) { $omitidas++; break; }
+                        $documento->load(['proveedor', 'detalle']);
+                        DB::transaction(fn () => $this->contabilizarFactura($documento, $usuario));
+                        $ok++;
+                        break;
+
+                    case 'eliminar':
+                        if (! $documento->esBorrador()) { $omitidas++; break; }
+                        DB::transaction(function () use ($documento) {
+                            $documento->detalle()->delete();
+                            $documento->delete();
+                        });
+                        $ok++;
+                        break;
+
+                    case 'anular':
+                        if ($documento->esBorrador() || $documento->esAnulado()) { $omitidas++; break; }
+                        if ($documento->aplicacionesComoDestino()->exists()) {
+                            $errores[] = "{$documento->numero}: tiene pagos aplicados (anula primero los pagos)";
+                            break;
+                        }
+                        DB::transaction(function () use ($documento, $usuario) {
+                            app(AsientoAutomatico::class)->anular($documento->asiento, $usuario);
+                            $documento->update([
+                                'estado' => CxpDocumento::ESTADO_ANULADO,
+                                'saldo' => 0,
+                                'updated_by' => $usuario->email,
+                            ]);
+                        });
+                        $ok++;
+                        break;
+                }
+            } catch (\Throwable $e) {
+                $errores[] = "{$documento->numero}: ".$e->getMessage();
+            }
+        }
+
+        $verbo = ['contabilizar' => 'Contabilizadas', 'eliminar' => 'Eliminadas', 'anular' => 'Anuladas'][$data['accion']];
+        $mensaje = "{$verbo}: {$ok} de ".$documentos->count().' seleccionada(s).';
+        if ($omitidas > 0) {
+            $detalle = $data['accion'] === 'anular'
+                ? 'ya estaban anuladas o aún en borrador'
+                : 'no estaban en borrador';
+            $mensaje .= " Omitidas {$omitidas} ({$detalle}).";
+        }
+
+        $redirect = redirect()->route('admin.cxp.facturas.index')->with('status', $mensaje);
+        if (! empty($errores)) {
+            $redirect->withErrors(['bulk' => 'No se procesaron: '.implode('; ', array_slice($errores, 0, 10))]);
+        }
+
+        return $redirect;
     }
 
     private function proveedores(int $companiaId)

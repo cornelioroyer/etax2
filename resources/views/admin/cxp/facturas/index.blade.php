@@ -41,11 +41,7 @@
 
             {{-- Filtros --}}
             <form method="GET" class="bg-white p-4 shadow-sm sm:rounded-lg">
-                <div class="grid grid-cols-2 gap-3 sm:grid-cols-7">
-                    <div class="col-span-2">
-                        <x-input-label for="q" value="Buscar" />
-                        <x-text-input id="q" name="q" type="text" class="mt-1 block w-full" :value="$filtros['q'] ?? ''" placeholder="Número o proveedor" />
-                    </div>
+                <div class="grid grid-cols-2 gap-3 sm:grid-cols-5">
                     <div>
                         <x-input-label for="tipo" value="Tipo" />
                         <select id="tipo" name="tipo" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -139,12 +135,39 @@
                 $sf  = fn($col) => request()->fullUrlWithQuery(['sort' => $col, 'dir' => ($sort === $col && $dir === 'asc') ? 'desc' : 'asc', 'page' => null]);
                 $ico = fn($col) => $sort === $col ? ($dir === 'asc' ? ' ↑' : ' ↓') : '';
                 $thSort = 'px-4 py-3 cursor-pointer select-none whitespace-nowrap hover:bg-gray-100';
+                $bulk = auth()->user()?->can('cxp.gestionar');
             @endphp
+
+            @if ($bulk)
+            <form id="bulk-form" method="POST" action="{{ route('admin.cxp.facturas.bulk') }}">
+                @csrf
+                <input type="hidden" name="accion" id="bulk-accion">
+                {{-- Barra de acciones masivas (aparece al marcar registros) --}}
+                <div id="bulk-bar" style="display:none;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.75rem;border:1px solid #bfdbfe;background:#eff6ff;border-radius:0.5rem;padding:0.6rem 1rem;">
+                    <span style="font-size:0.875rem;color:#1e3a8a;font-weight:700;"><span id="bulk-count">0</span> seleccionada(s)</span>
+                    <span style="font-size:0.8rem;color:#6b7280;">— ¿qué deseas hacer con los registros marcados?</span>
+                    <div style="margin-left:auto;display:flex;gap:0.5rem;flex-wrap:wrap;">
+                        <button type="button" onclick="bulkSubmit('contabilizar')" title="Solo procesa las que estén en borrador"
+                                style="background:#16a34a;color:#fff;border:none;border-radius:0.375rem;padding:0.45rem 0.9rem;font-size:0.85rem;font-weight:600;cursor:pointer;">Contabilizar</button>
+                        <button type="button" onclick="bulkSubmit('anular')" title="Solo facturas ya contabilizadas; revierte el asiento"
+                                style="background:#d97706;color:#fff;border:none;border-radius:0.375rem;padding:0.45rem 0.9rem;font-size:0.85rem;font-weight:600;cursor:pointer;">Anular</button>
+                        <button type="button" onclick="bulkSubmit('eliminar')" title="Solo borradores; acción irreversible"
+                                style="background:#dc2626;color:#fff;border:none;border-radius:0.375rem;padding:0.45rem 0.9rem;font-size:0.85rem;font-weight:600;cursor:pointer;">Eliminar</button>
+                    </div>
+                </div>
+            @endif
+
             <div class="bg-white shadow-sm sm:rounded-lg overflow-hidden">
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200 text-sm">
                         <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                             <tr>
+                                @if ($bulk)
+                                    <th class="px-4 py-3 w-10">
+                                        <input type="checkbox" id="chk-all" onclick="bulkToggleAll(this)"
+                                               class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" title="Marcar / desmarcar todos">
+                                    </th>
+                                @endif
                                 <th class="{{ $thSort }}" onclick="location.href='{{ $sf('numero') }}'">Número{{ $ico('numero') }}</th>
                                 <th class="{{ $thSort }}" onclick="location.href='{{ $sf('tipo_documento') }}'">Tipo{{ $ico('tipo_documento') }}</th>
                                 <th class="{{ $thSort }}" onclick="location.href='{{ $sf('fecha') }}'">Fecha{{ $ico('fecha') }}</th>
@@ -166,6 +189,12 @@
                                     $signo = $esNc ? -1 : 1;
                                 @endphp
                                 <tr class="hover:bg-gray-50">
+                                    @if ($bulk)
+                                        <td class="px-4 py-3">
+                                            <input type="checkbox" name="ids[]" value="{{ $factura->id }}" onchange="bulkSync()"
+                                                   class="row-chk rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                        </td>
+                                    @endif
                                     <td class="px-4 py-3 font-medium whitespace-nowrap">
                                         <a href="{{ route('admin.cxp.facturas.show', $factura) }}" class="text-blue-700 hover:underline">{{ $factura->numero }}</a>
                                     </td>
@@ -194,7 +223,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="9" class="px-4 py-10 text-center text-gray-500">
+                                    <td colspan="{{ $bulk ? 10 : 9 }}" class="px-4 py-10 text-center text-gray-500">
                                         No hay facturas que coincidan con el filtro.
                                         @can('cxp.gestionar')
                                             <a href="{{ route('admin.cxp.facturas.create') }}" class="text-blue-700 underline">Crear la primera</a>
@@ -206,7 +235,7 @@
                         @if ($facturas->isNotEmpty())
                             <tfoot class="border-t-2 border-gray-200 bg-gray-50 font-semibold text-gray-800">
                                 <tr>
-                                    <td class="px-4 py-3" colspan="4">Total ({{ $facturas->total() }} {{ $facturas->total() === 1 ? 'documento' : 'documentos' }})</td>
+                                    <td class="px-4 py-3" colspan="{{ $bulk ? 5 : 4 }}">Total ({{ $facturas->total() }} {{ $facturas->total() === 1 ? 'documento' : 'documentos' }})</td>
                                     <td class="px-4 py-3 text-right whitespace-nowrap">B/. {{ number_format((float) $totales->subtotal, 2) }}</td>
                                     <td class="px-4 py-3 text-right whitespace-nowrap">B/. {{ number_format((float) $totales->impuesto, 2) }}</td>
                                     <td class="px-4 py-3 text-right whitespace-nowrap">B/. {{ number_format((float) $totales->total, 2) }}</td>
@@ -221,6 +250,38 @@
                     <div class="border-t border-gray-100 px-4 py-3">{{ $facturas->links() }}</div>
                 @endif
             </div>
+            @if ($bulk)
+            </form>
+            <script>
+            function bulkToggleAll(master) {
+                document.querySelectorAll('.row-chk').forEach(function (c) { c.checked = master.checked; });
+                bulkSync();
+            }
+            function bulkSync() {
+                var chks = document.querySelectorAll('.row-chk');
+                var sel  = document.querySelectorAll('.row-chk:checked');
+                document.getElementById('bulk-count').textContent = sel.length;
+                document.getElementById('bulk-bar').style.display = sel.length ? 'flex' : 'none';
+                var all = document.getElementById('chk-all');
+                if (all) {
+                    all.checked = chks.length > 0 && sel.length === chks.length;
+                    all.indeterminate = sel.length > 0 && sel.length < chks.length;
+                }
+            }
+            function bulkSubmit(accion) {
+                var sel = document.querySelectorAll('.row-chk:checked');
+                if (!sel.length) { alert('Selecciona al menos una factura.'); return; }
+                var msgs = {
+                    contabilizar: '¿Contabilizar ' + sel.length + ' factura(s)? Solo se procesan las que estén en borrador.',
+                    anular:       '¿Anular ' + sel.length + ' factura(s)? Revierte el asiento y los saldos de cada una. Solo aplica a facturas ya contabilizadas.',
+                    eliminar:     '¿Eliminar ' + sel.length + ' borrador(es)? Esta acción no se puede deshacer. Solo se eliminan facturas en borrador.'
+                };
+                if (!confirm(msgs[accion])) return;
+                document.getElementById('bulk-accion').value = accion;
+                document.getElementById('bulk-form').submit();
+            }
+            </script>
+            @endif
         </div>
     </div>
 @can('cxp.gestionar')
