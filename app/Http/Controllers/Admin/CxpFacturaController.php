@@ -23,6 +23,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -642,6 +644,103 @@ class CxpFacturaController extends Controller
         }
 
         return response()->json(array_merge($r['factura'], ['cufe' => $cufe]));
+    }
+
+    /**
+     * Respaldo cuando el QR no se puede leer: la IA (visión de Claude) extrae el
+     * CUFE de una foto de la factura y luego se consulta la DGI (datos oficiales).
+     */
+    public function cufeDesdeFoto(Request $request): JsonResponse
+    {
+        $request->validate([
+            'foto' => ['required', 'image', 'max:10240'],
+        ]);
+
+        $apiKey = config('services.anthropic.key');
+        if (! $apiKey) {
+            return response()->json(['error' => 'La lectura con IA no está configurada (falta ANTHROPIC_API_KEY).'], 422);
+        }
+
+        $companiaId = $this->companiaActivaId($request);
+        $foto  = $request->file('foto');
+        $b64   = base64_encode((string) file_get_contents($foto->getRealPath()));
+        $media = $foto->getMimeType() ?: 'image/jpeg';
+
+        $prompt = 'Esta es una factura electrónica de Panamá (DGI/FEP). '
+            ."Busca el CUFE, también llamado \"Código Único de Factura Electrónica\". "
+            .'Es un código de 66 caracteres alfanuméricos con guiones que empieza con "FE". '
+            .'Devuelve ÚNICAMENTE el CUFE, sin texto adicional, sin espacios ni saltos de línea. '
+            .'Si no lo encuentras con claridad, responde exactamente: NONE';
+
+        try {
+            $resp = Http::withHeaders([
+                'x-api-key'         => $apiKey,
+                'anthropic-version' => '2023-06-01',
+                'content-type'      => 'application/json',
+            ])->timeout(60)->post('https://api.anthropic.com/v1/messages', [
+                'model'      => config('services.anthropic.model', 'claude-opus-4-8'),
+                'max_tokens' => 200,
+                'messages'   => [[
+                    'role'    => 'user',
+                    'content' => [
+                        ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $media, 'data' => $b64]],
+                        ['type' => 'text', 'text' => $prompt],
+                    ],
+                ]],
+            ]);
+
+            if (! $resp->successful()) {
+                Log::error('CUFE-IA: Anthropic respondió error', ['status' => $resp->status(), 'body' => $resp->body()]);
+
+                return response()->json(['error' => 'La IA no pudo procesar la imagen (HTTP '.$resp->status().').'], 422);
+            }
+
+            // Extrae el texto de la respuesta del modelo.
+            $texto = '';
+            foreach ($resp->json('content', []) as $bloque) {
+                if (($bloque['type'] ?? null) === 'text') {
+                    $texto .= $bloque['text'];
+                }
+            }
+
+            // Limpia: deja solo caracteres válidos de un CUFE.
+            $cufe = preg_replace('/[^A-Za-z0-9\-]/', '', trim($texto));
+
+            if (stripos($texto, 'NONE') === 0 || strlen($cufe) < 40) {
+                return response()->json([
+                    'error'  => 'La IA no encontró un CUFE legible en la foto. Acerca la cámara al área del CUFE o ingrésalo manualmente.',
+                    'motivo' => 'sin_cufe',
+                ], 422);
+            }
+        } catch (Throwable $e) {
+            Log::error('CUFE-IA: excepción', ['error' => $e->getMessage()]);
+
+            return response()->json(['error' => 'Error al leer la factura con IA: '.$e->getMessage()], 422);
+        }
+
+        // Deduplicar
+        $existente = CxpDocumento::where('compania_id', $companiaId)->where('cufe', $cufe)->first();
+        if ($existente) {
+            return response()->json([
+                'ya_registrada' => true,
+                'numero'        => $existente->numero,
+                'id'            => $existente->id,
+                'url'           => route('admin.cxp.facturas.show', $existente),
+            ]);
+        }
+
+        // Consultar la DGI con el CUFE leído por la IA (datos oficiales).
+        $r = app(DgiFepConsulta::class)->porQr($cufe);
+
+        if (! $r['ok']) {
+            return response()->json([
+                'error'  => 'La IA leyó el CUFE ('.$cufe.') pero la DGI no devolvió la factura: '.($r['mensaje'] ?? '').' Verifica que la foto del CUFE esté nítida.',
+                'motivo' => $r['motivo'] ?? 'error',
+                'cufe'   => $cufe,
+            ], 422);
+        }
+
+        return response()->json(array_merge($r['factura'], ['cufe' => $r['cufe'] ?? $cufe, 'via' => 'ia']));
     }
 
     public function desdeCufe(Request $request): RedirectResponse

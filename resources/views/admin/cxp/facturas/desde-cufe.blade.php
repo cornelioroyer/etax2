@@ -37,6 +37,19 @@
                     </svg>
                     Escanear QR
                 </button>
+                {{-- Respaldo con IA: si el QR no se lee, foto de la factura --}}
+                <div class="mt-4">
+                    <input type="file" id="foto-ia" accept="image/*" capture="environment" style="display:none;" onchange="enviarFoto(this)">
+                    <button type="button" onclick="document.getElementById('foto-ia').click()"
+                            style="display:inline-flex;align-items:center;gap:0.5rem;background:#fff;color:#4f46e5;border:1.5px solid #c7d2fe;border-radius:0.5rem;padding:0.6rem 1.25rem;font-size:0.9rem;font-weight:600;cursor:pointer;">
+                        <svg xmlns="http://www.w3.org/2000/svg" style="width:1.2rem;height:1.2rem;" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 3.75H6.912a2.25 2.25 0 0 0-2.15 1.588L3.32 8.91a2.25 2.25 0 0 0-.1.661V18a2.25 2.25 0 0 0 2.25 2.25h13.5A2.25 2.25 0 0 0 21 18V9.572a2.25 2.25 0 0 0-.1-.661L19.24 5.338A2.25 2.25 0 0 0 17.088 3.75H15M9 3.75h6M9 3.75 8.25 6m6.75-2.25L15.75 6m-3 3.75a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z" />
+                        </svg>
+                        ¿No se lee el QR? Leer factura con IA
+                    </button>
+                    <p class="text-xs text-gray-400 mt-1">Toma una foto donde se vea el CUFE; la IA lo lee y consulta la DGI.</p>
+                </div>
+
                 <div class="mt-5 border-t pt-4">
                     <p class="text-xs text-gray-500 mb-2">¿Ya tienes el CUFE o la URL? Pégalo aquí:</p>
                     <div class="flex gap-2">
@@ -295,6 +308,31 @@
     @if (session('ok_factura'))
     window.addEventListener('load', function () { setTimeout(abrirScanner, 350); });
     @endif
+
+    // ── RESPALDO IA: foto de la factura → Claude extrae el CUFE → DGI ─
+    function enviarFoto(input) {
+        var file = input.files && input.files[0];
+        if (!file) return;
+
+        mostrarCargando('Leyendo la factura con IA…');
+
+        var fd = new FormData();
+        fd.append('foto', file);
+
+        fetch('{{ route('admin.cxp.facturas.cufe-desde-foto') }}', {
+            method : 'POST',
+            headers: { 'X-CSRF-TOKEN': _csrf, 'Accept': 'application/json' },
+            body   : fd,
+        })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+        .then(function (r) {
+            if (!r.ok) { mostrarError(r.data.error || 'La IA no pudo leer la factura.'); return; }
+            if (r.data.ya_registrada) { mostrarYaRegistrada(r.data); return; }
+            mostrarPreview(r.data.cufe, r.data);
+        })
+        .catch(function () { mostrarError('No se pudo conectar al servidor.'); })
+        .finally(function () { input.value = ''; });
+    }
 
     // ── CONSULTA DGI usando el QR completo (chFE + digestValue + JWT) ─
     function consultarDGI(raw) {
