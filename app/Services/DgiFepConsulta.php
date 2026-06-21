@@ -50,11 +50,12 @@ class DgiFepConsulta
     }
 
     /**
-     * Consulta usando el contenido COMPLETO del QR de la factura.
+     * Consulta a partir del contenido del QR de la factura (o de un CUFE pelado).
      *
-     * El QR de la DGI codifica una URL con chFE (CUFE), digestValue y un JWT
-     * firmado por la propia DGI. Ese JWT prueba que se posee el documento físico,
-     * por lo que la consulta no exige reCAPTCHA si se reenvían esos tres datos.
+     * El QR codifica una URL con chFE (el CUFE de 66 caracteres). Basta extraer
+     * ese CUFE y pedir FacturasPorCUFE/{cufe}: ese GET devuelve el detalle directo,
+     * sin reCAPTCHA (el captcha solo protege el buscador manual). La clave es usar
+     * el CUFE COMPLETO de 66 caracteres — uno truncado devuelve el formulario vacío.
      *
      * @return array{ok:bool,motivo?:string,mensaje?:string,factura?:array,cufe?:?string}
      */
@@ -63,106 +64,31 @@ class DgiFepConsulta
         $qr   = trim($qr);
         $cufe = $this->extraerCufe($qr);
 
-        // Debe ser una URL de la DGI (FacturasPorQR / FacturasPorCUFE, con chFE y JWT).
-        $esUrlDgi = stripos($qr, 'dgi-fep') !== false
-            || stripos($qr, 'FacturasPor') !== false
-            || stripos($qr, 'chFE=') !== false;
-
-        if (! $esUrlDgi) {
+        if (! $cufe) {
             $muestra = mb_strlen($qr) > 140 ? mb_substr($qr, 0, 140).'…' : $qr;
             return [
                 'ok'       => false,
-                'motivo'   => 'sin_jwt',
-                'mensaje'  => 'El QR no trae la firma de la DGI. Contenido leído: '.$muestra,
-                'cufe'     => $cufe,
+                'motivo'   => 'sin_cufe',
+                'mensaje'  => 'No se encontró un CUFE en el QR. Contenido leído: '.$muestra,
                 'recibido' => $muestra,
             ];
         }
 
-        $digest = $this->paramUrl($qr, 'digestValue');
-        $jwt    = $this->paramUrl($qr, 'jwt');
-
-        try {
-            $jar = new \GuzzleHttp\Cookie\CookieJar;
-            $ua  = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
-
-            // 1) GET de la URL completa del QR. La DGI valida el JWT contra el chFE;
-            //    si es válido, renderiza el detalle y/o marca la sesión como verificada.
-            $get = Http::withOptions(['cookies' => $jar])
-                ->timeout(25)
-                ->withHeaders(['User-Agent' => $ua])
-                ->get($qr);
-
-            $cuerpoQr = $get->successful() ? $get->body() : '';
-
-            // Firma del QR inválida o vencida.
-            if (stripos($cuerpoQr, 'Error en c') !== false && stripos($cuerpoQr, 'QR') !== false) {
-                return ['ok' => false, 'motivo' => 'qr_invalido', 'mensaje' => 'La DGI rechazó la firma del QR (código QR vs código de seguridad del emisor). Reescanea el QR original de la factura.', 'cufe' => $cufe];
-            }
-
-            // ¿El propio FacturasPorQR ya trae el detalle?
-            $factura = $this->parsear($cufe ?? '', $cuerpoQr, false);
-            if ($factura) {
-                return ['ok' => true, 'factura' => $factura, 'cufe' => $cufe];
-            }
-
-            // 1b) Con la sesión ya verificada por el QR, FacturasPorCUFE/{cufe}
-            //     suele renderizar el detalle sin reCAPTCHA.
-            if ($cufe) {
-                $get2 = Http::withOptions(['cookies' => $jar])
-                    ->timeout(25)
-                    ->withHeaders(['User-Agent' => $ua, 'Referer' => $qr])
-                    ->get(self::BASE.rawurlencode($cufe));
-
-                if ($get2->successful()) {
-                    $factura = $this->parsear($cufe, $get2->body(), false);
-                    if ($factura) {
-                        return ['ok' => true, 'factura' => $factura, 'cufe' => $cufe];
-                    }
-                }
-            }
-
-            // 2) POST reenviando CUFE + digestValue + JWT (la firma sustituye al captcha).
-            $resp = Http::withOptions(['cookies' => $jar])
-                ->timeout(30)
-                ->asForm()
-                ->withHeaders([
-                    'User-Agent'       => $ua,
-                    'X-Requested-With' => 'XMLHttpRequest',
-                    'Referer'          => $qr,
-                ])
-                ->post('https://dgi-fep.mef.gob.pa/Consultas/ConsultarFacturasPorCUFE?Length=9', array_filter([
-                    'CUFE'         => $cufe,
-                    'chFE'         => $cufe,
-                    'digestValue'  => $digest,
-                    'jwt'          => $jwt,
-                ], fn ($v) => $v !== null && $v !== ''));
-
-            if (! $resp->successful()) {
-                return ['ok' => false, 'motivo' => 'error', 'mensaje' => 'La DGI respondió '.$resp->status().'.', 'cufe' => $cufe];
-            }
-
-            $json = $resp->json();
-
-            if (is_array($json) && ! empty($json['Recaptcha']) && empty($json['FacturaHTML'])) {
-                return ['ok' => false, 'motivo' => 'captcha', 'mensaje' => $json['Mensaje'] ?? 'La DGI exigió reCAPTCHA pese al JWT.', 'cufe' => $cufe];
-            }
-
-            $html = is_array($json) ? ($json['FacturaHTML'] ?? null) : null;
-            if (! $html) {
-                $msg = is_array($json) ? ($json['Mensaje'] ?? 'La DGI no devolvió la factura.') : 'Respuesta inesperada de la DGI.';
-                return ['ok' => false, 'motivo' => 'no_encontrada', 'mensaje' => $msg, 'cufe' => $cufe];
-            }
-
-            $factura = $this->parsear($cufe ?? '', $html, false);
-            if (! $factura) {
-                return ['ok' => false, 'motivo' => 'no_encontrada', 'mensaje' => 'No se pudo leer el detalle de la factura.', 'cufe' => $cufe];
-            }
-
-            return ['ok' => true, 'factura' => $factura, 'cufe' => $cufe];
-        } catch (Throwable $e) {
-            return ['ok' => false, 'motivo' => 'error', 'mensaje' => 'Error consultando la DGI: '.$e->getMessage(), 'cufe' => $cufe];
+        if (strlen($cufe) !== 66) {
+            return [
+                'ok'      => false,
+                'motivo'  => 'cufe_invalido',
+                'mensaje' => 'El CUFE leído tiene '.strlen($cufe).' caracteres (deben ser 66). Reescanea el QR bien centrado.',
+                'cufe'    => $cufe,
+            ];
         }
+
+        $factura = $this->porCufe($cufe);
+        if (! $factura) {
+            return ['ok' => false, 'motivo' => 'no_encontrada', 'mensaje' => 'La DGI no devolvió la factura para ese CUFE.', 'cufe' => $cufe];
+        }
+
+        return ['ok' => true, 'factura' => $factura, 'cufe' => $cufe];
     }
 
     /** Extrae el CUFE de una URL de QR (chFE=), de una ruta /FacturasPorCUFE/, o del valor pelado. */
@@ -179,83 +105,6 @@ class DgiFepConsulta
             return $m[1];
         }
         return null;
-    }
-
-    /** Devuelve el valor crudo (base64 incluido) de un parámetro de la URL del QR. */
-    private function paramUrl(string $url, string $clave): ?string
-    {
-        if (preg_match('/[?&]'.preg_quote($clave, '/').'=([^&\s]+)/i', $url, $m)) {
-            return $m[1];
-        }
-        return null;
-    }
-
-    /**
-     * Consulta usando un token de reCAPTCHA resuelto por el usuario.
-     *
-     * El portal de la DGI exige reCAPTCHA desde mediados de 2026: el GET directo
-     * solo devuelve el formulario. Hay que hacer un POST a ConsultarFacturasPorCUFE
-     * con el CUFE y el `g-recaptcha-response`; la respuesta es JSON con FacturaHTML.
-     *
-     * @return array{ok:bool,motivo?:string,mensaje?:string,factura?:array}
-     */
-    public function porCufeConCaptcha(string $cufe, string $recaptcha): array
-    {
-        $cufe = trim($cufe);
-        if ($cufe === '') {
-            return ['ok' => false, 'motivo' => 'error', 'mensaje' => 'CUFE vacío.'];
-        }
-
-        try {
-            $jar = new \GuzzleHttp\Cookie\CookieJar;
-            $ua  = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
-
-            // 1) GET de la página de búsqueda para sembrar cookies de sesión.
-            Http::withOptions(['cookies' => $jar])
-                ->timeout(25)
-                ->withHeaders(['User-Agent' => $ua])
-                ->get(self::BASE.rawurlencode($cufe));
-
-            // 2) POST con el token de reCAPTCHA. Responde JSON.
-            $resp = Http::withOptions(['cookies' => $jar])
-                ->timeout(30)
-                ->asForm()
-                ->withHeaders([
-                    'User-Agent'       => $ua,
-                    'X-Requested-With' => 'XMLHttpRequest',
-                    'Referer'          => self::BASE.rawurlencode($cufe),
-                ])
-                ->post('https://dgi-fep.mef.gob.pa/Consultas/ConsultarFacturasPorCUFE?Length=9', [
-                    'CUFE'                 => $cufe,
-                    'g-recaptcha-response' => $recaptcha,
-                ]);
-
-            if (! $resp->successful()) {
-                return ['ok' => false, 'motivo' => 'error', 'mensaje' => 'La DGI respondió '.$resp->status().'.'];
-            }
-
-            $json = $resp->json();
-
-            // reCAPTCHA rechazado por la DGI.
-            if (is_array($json) && ! empty($json['Recaptcha']) && empty($json['FacturaHTML'])) {
-                return ['ok' => false, 'motivo' => 'captcha', 'mensaje' => $json['Mensaje'] ?? 'La DGI rechazó el reCAPTCHA.'];
-            }
-
-            $html = is_array($json) ? ($json['FacturaHTML'] ?? null) : null;
-            if (! $html) {
-                $msg = is_array($json) ? ($json['Mensaje'] ?? 'La DGI no devolvió la factura.') : 'Respuesta inesperada de la DGI.';
-                return ['ok' => false, 'motivo' => 'no_encontrada', 'mensaje' => $msg];
-            }
-
-            $factura = $this->parsear($cufe, $html, false);
-            if (! $factura) {
-                return ['ok' => false, 'motivo' => 'no_encontrada', 'mensaje' => 'No se pudo leer el detalle de la factura.'];
-            }
-
-            return ['ok' => true, 'factura' => $factura];
-        } catch (Throwable $e) {
-            return ['ok' => false, 'motivo' => 'error', 'mensaje' => 'Error consultando la DGI: '.$e->getMessage()];
-        }
     }
 
     private function parsear(string $cufe, string $html, bool $exigirCufe = true): ?array
