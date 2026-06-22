@@ -28,8 +28,14 @@ class AsientoAutomatico
         string $origenModulo,
         ?string $origenTabla,
         ?int $origenId,
-        User $usuario,
+        mixed $usuario,
     ): Asiento {
+        // Normalize: callers may pass a stdClass{email} or null; load the full User model.
+        if (! ($usuario instanceof User)) {
+            $email   = is_object($usuario) ? ($usuario->email ?? '') : '';
+            $usuario = User::where('email', $email)->firstOrFail();
+        }
+
         $debito = round(collect($lineas)->sum('debito'), 2);
         $credito = round(collect($lineas)->sum('credito'), 2);
 
