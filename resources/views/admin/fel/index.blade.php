@@ -79,10 +79,16 @@
                                     <div class="flex justify-end gap-2">
                                         @if ($doc->estado_fel === 'BORRADOR')
                                             @can('fel.gestionar')
+                                                <a href="{{ route('admin.fel.edit', $doc) }}" class="text-gray-600 hover:text-gray-900">Editar</a>
                                                 <form method="POST" action="{{ route('admin.fel.emitir', $doc) }}"
                                                       onsubmit="return confirm('¿Emitir este borrador ante la DGI?')">
                                                     @csrf
                                                     <button type="submit" class="text-blue-600 hover:text-blue-800 font-medium">Emitir</button>
+                                                </form>
+                                                <form method="POST" action="{{ route('admin.fel.destroy', $doc) }}"
+                                                      onsubmit="return confirm('¿Eliminar este borrador?')">
+                                                    @csrf @method('DELETE')
+                                                    <button type="submit" class="text-red-600 hover:text-red-800">Eliminar</button>
                                                 </form>
                                             @endcan
                                         @elseif ($doc->estado_fel === 'AUTORIZADO')

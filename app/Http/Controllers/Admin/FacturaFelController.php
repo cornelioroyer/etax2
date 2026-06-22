@@ -163,6 +163,132 @@ class FacturaFelController extends Controller
             ->withErrors(['fel' => "Factura {$numeroFiscal} rechazada: {$mensaje}"]);
     }
 
+    /** Carga el formulario de edición de un borrador. */
+    public function editBorrador(Request $request, FelDocumento $documento): View
+    {
+        abort_unless($request->user()->can('fel.gestionar'), 403);
+        $compania = $this->companiaActiva($request);
+        abort_unless($documento->compania_id === $compania->id, 404);
+        abort_unless($documento->estado_fel === 'BORRADOR', 403);
+
+        $config = FelConfiguracion::firstWhere('compania_id', $compania->id);
+        $clientes = Contacto::where('compania_id', $compania->id)
+            ->where('activo', true)
+            ->orderBy('nombre')
+            ->get(['id', 'nombre', 'identificacion', 'dv', 'forma_pago']);
+
+        $clientesFormaPago = $clientes->mapWithKeys(fn ($c) => [
+            $c->id => match ($c->forma_pago) {
+                'CREDITO' => '01',
+                default   => '02',
+            },
+        ]);
+
+        return view('admin.fel.create', [
+            'compania'          => $compania,
+            'config'            => $config,
+            'clientes'          => $clientes,
+            'clientesFormaPago' => $clientesFormaPago,
+            'tasas'             => ['00' => 'Exento (0%)', '01' => 'ITBMS 7%', '02' => 'ITBMS 10%', '03' => 'ITBMS 15%'],
+            'formasPago'        => FelDocumentoBuilder::FORMAS_PAGO,
+            'tiposDocumento'    => FelDocumentoBuilder::TIPOS_DOCUMENTO,
+            'documento'         => $documento,
+            'borrador'          => data_get($documento->respuesta_dgi, 'borrador', []),
+        ]);
+    }
+
+    /** Actualiza un borrador; si la acción es "emitir" lo envía al PAC. */
+    public function updateBorrador(Request $request, FelDocumento $documento): RedirectResponse
+    {
+        abort_unless($request->user()->can('fel.gestionar'), 403);
+        $compania = $this->companiaActiva($request);
+        abort_unless($documento->compania_id === $compania->id, 404);
+        abort_unless($documento->estado_fel === 'BORRADOR', 403);
+
+        $data = $request->validate([
+            'tipo_documento' => ['required', Rule::in(array_keys(FelDocumentoBuilder::TIPOS_DOCUMENTO))],
+            'cliente_id' => ['nullable', 'integer', Rule::exists('contact_contactos', 'id')->where('compania_id', $compania->id)],
+            'forma_pago' => ['required', Rule::in(array_keys(FelDocumentoBuilder::FORMAS_PAGO))],
+            'informacion_interes' => ['nullable', 'string', 'max:500'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.descripcion' => ['required', 'string', 'max:500'],
+            'items.*.cantidad' => ['required', 'numeric', 'gt:0'],
+            'items.*.precio' => ['required', 'numeric', 'gte:0'],
+            'items.*.tasa' => ['required', Rule::in(['00', '01', '02', '03'])],
+        ]);
+
+        $cliente = $data['cliente_id'] ? Contacto::find($data['cliente_id']) : null;
+        $usuario = $request->user()->email;
+
+        $subtotal = 0;
+        $itbms    = 0;
+        foreach ($data['items'] as $l) {
+            $neto = round($l['cantidad'] * $l['precio'], 2);
+            $imp  = round($neto * FelDocumentoBuilder::TASAS_ITBMS[$l['tasa']], 2);
+            $subtotal += $neto;
+            $itbms    += $imp;
+        }
+
+        DB::transaction(function () use ($documento, $data, $cliente, $usuario, $subtotal, $itbms) {
+            $documento->update([
+                'tipo_documento' => $data['tipo_documento'],
+                'cliente_id'     => $cliente?->id,
+                'subtotal'       => round($subtotal, 2),
+                'itbms'          => round($itbms, 2),
+                'total'          => round($subtotal + $itbms, 2),
+                'respuesta_dgi'  => [
+                    'borrador' => [
+                        'tipo_documento'      => $data['tipo_documento'],
+                        'forma_pago'          => $data['forma_pago'],
+                        'informacion_interes' => $data['informacion_interes'] ?? null,
+                        'items'               => $data['items'],
+                    ],
+                ],
+                'updated_by'     => $usuario,
+            ]);
+
+            $documento->detalle()->delete();
+
+            foreach ($data['items'] as $i => $l) {
+                $neto = round($l['cantidad'] * $l['precio'], 2);
+                $imp  = round($neto * FelDocumentoBuilder::TASAS_ITBMS[$l['tasa']], 2);
+                FelDocumentoDetalle::create([
+                    'fel_documento_id' => $documento->id,
+                    'linea'            => $i + 1,
+                    'descripcion'      => $l['descripcion'],
+                    'cantidad'         => $l['cantidad'],
+                    'precio_unitario'  => $l['precio'],
+                    'impuesto_monto'   => $imp,
+                    'total_linea'      => round($neto + $imp, 2),
+                    'created_by'       => $usuario,
+                ]);
+            }
+        });
+
+        if ($request->input('accion') === 'emitir') {
+            return $this->emitirBorrador($request, $documento->fresh());
+        }
+
+        return redirect()->route('admin.fel.index')
+            ->with('status', 'Borrador actualizado.');
+    }
+
+    /** Elimina un borrador (no aplica a documentos ya emitidos). */
+    public function destroyBorrador(Request $request, FelDocumento $documento): RedirectResponse
+    {
+        abort_unless($request->user()->can('fel.gestionar'), 403);
+        $compania = $this->companiaActiva($request);
+        abort_unless($documento->compania_id === $compania->id, 404);
+        abort_unless($documento->estado_fel === 'BORRADOR', 403);
+
+        DB::transaction(function () use ($documento) {
+            $documento->detalle()->delete();
+            $documento->delete();
+        });
+
+        return redirect()->route('admin.fel.index')->with('status', 'Borrador eliminado.');
+    }
+
     /** Guarda un borrador local sin enviar al PAC ni consumir número fiscal. */
     private function guardarBorrador(Compania $compania, array $data, ?Contacto $cliente, string $usuario): RedirectResponse
     {

@@ -1,5 +1,16 @@
+@php
+    $doc       = $documento ?? null;
+    $brd       = $borrador ?? [];
+    $esEdicion = (bool) $doc;
+    // Valores precargados (edición) con prioridad a old() tras un error de validación
+    $vTipo   = old('tipo_documento', $brd['tipo_documento'] ?? '01');
+    $vCliente = old('cliente_id', $doc->cliente_id ?? null);
+    $vForma  = old('forma_pago', $brd['forma_pago'] ?? '02');
+    $vObs    = old('informacion_interes', $brd['informacion_interes'] ?? '');
+    $vItems  = old('items', $brd['items'] ?? [['descripcion' => '', 'cantidad' => 1, 'precio' => 0, 'tasa' => '01']]);
+@endphp
 <x-app-layout>
-    <x-slot name="header"><h2 class="font-semibold text-xl text-gray-800 leading-tight">Nueva factura electrónica</h2></x-slot>
+    <x-slot name="header"><h2 class="font-semibold text-xl text-gray-800 leading-tight">{{ $esEdicion ? 'Editar borrador' : 'Nueva factura electrónica' }}</h2></x-slot>
 
     <div class="py-8">
         <div class="max-w-5xl mx-auto sm:px-6 lg:px-8 space-y-4">
@@ -20,15 +31,16 @@
                 </div>
             @endif
 
-            <form method="POST" action="{{ route('admin.fel.store') }}" class="bg-white p-6 shadow-sm sm:rounded-lg space-y-5"
+            <form method="POST" action="{{ $esEdicion ? route('admin.fel.update', $doc) : route('admin.fel.store') }}" class="bg-white p-6 shadow-sm sm:rounded-lg space-y-5"
                   x-data="facturaFel()">
                 @csrf
+                @if ($esEdicion) @method('PUT') @endif
 
                 <div>
                     <x-input-label for="tipo_documento" value="Tipo de documento" />
                     <select id="tipo_documento" name="tipo_documento" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:w-1/2">
                         @foreach ($tiposDocumento as $codigo => $nombre)
-                            <option value="{{ $codigo }}" @selected(old('tipo_documento', '01') === $codigo)>{{ $codigo }} — {{ $nombre }}</option>
+                            <option value="{{ $codigo }}" @selected($vTipo === $codigo)>{{ $codigo }} — {{ $nombre }}</option>
                         @endforeach
                     </select>
                     <p class="mt-1 text-xs text-gray-500">Las notas genéricas (06/07) no referencian un documento original.</p>
@@ -40,11 +52,11 @@
                         <input type="text" class="cliente-buscar mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
                                placeholder="Buscar por nombre o RUC…" autocomplete="off" style="padding:.375rem .75rem">
                         <select id="cliente_id" name="cliente_id" class="cliente-select mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="" data-forma-pago="" @selected(! old('cliente_id'))>Consumidor final (sin RUC)</option>
+                            <option value="" data-forma-pago="" @selected(! $vCliente)>Consumidor final (sin RUC)</option>
                             @foreach ($clientes as $cli)
                                 <option value="{{ $cli->id }}"
                                         data-forma-pago="{{ $clientesFormaPago[$cli->id] ?? '02' }}"
-                                        @selected(old('cliente_id') == $cli->id)>
+                                        @selected($vCliente == $cli->id)>
                                     {{ $cli->nombre }}{{ $cli->identificacion ? ' — RUC ' . $cli->identificacion . ($cli->dv ? ' DV ' . $cli->dv : '') : '' }}
                                 </option>
                             @endforeach
@@ -55,7 +67,7 @@
                         <x-input-label for="forma_pago" value="Forma de pago" />
                         <select id="forma_pago" name="forma_pago" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                             @foreach ($formasPago as $codigo => $nombre)
-                                <option value="{{ $codigo }}" @selected(old('forma_pago', '02') === $codigo)>{{ $nombre }}</option>
+                                <option value="{{ $codigo }}" @selected($vForma === $codigo)>{{ $nombre }}</option>
                             @endforeach
                         </select>
                     </div>
@@ -63,7 +75,7 @@
 
                 <div>
                     <x-input-label for="informacion_interes" value="Observaciones (opcional)" />
-                    <x-text-input id="informacion_interes" name="informacion_interes" type="text" class="mt-1 block w-full" :value="old('informacion_interes')" />
+                    <x-text-input id="informacion_interes" name="informacion_interes" type="text" class="mt-1 block w-full" :value="$vObs" />
                 </div>
 
                 {{-- Ítems --}}
@@ -135,7 +147,7 @@
                     </button>
                     <button type="submit" name="accion" value="borrador"
                             class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                        Guardar borrador
+                        {{ $esEdicion ? 'Guardar cambios' : 'Guardar borrador' }}
                     </button>
                     <a href="{{ route('admin.fel.index') }}" class="text-sm text-gray-600 hover:text-gray-900">Cancelar</a>
                 </div>
@@ -185,8 +197,17 @@
     <script>
         function facturaFel() {
             const tasas = { '00': 0, '01': 0.07, '02': 0.10, '03': 0.15 };
+            const precargados = @json(array_values($vItems));
+            const items = (precargados && precargados.length)
+                ? precargados.map(i => ({
+                    descripcion: i.descripcion ?? '',
+                    cantidad: Number(i.cantidad ?? 1),
+                    precio: Number(i.precio ?? 0),
+                    tasa: String(i.tasa ?? '01'),
+                  }))
+                : [{ descripcion: '', cantidad: 1, precio: 0, tasa: '01' }];
             return {
-                items: [{ descripcion: '', cantidad: 1, precio: 0, tasa: '01' }],
+                items,
                 agregar() { this.items.push({ descripcion: '', cantidad: 1, precio: 0, tasa: '01' }); },
                 neto(i) { return Math.round((i.cantidad || 0) * (i.precio || 0) * 100) / 100; },
                 imp(i) { return Math.round(this.neto(i) * tasas[i.tasa] * 100) / 100; },
