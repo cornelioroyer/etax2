@@ -450,6 +450,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('fel/configuracion/probar', [FelConfiguracionController::class, 'probar'])->name('fel.configuracion.probar');
         Route::get('fel/nueva', [FacturaFelController::class, 'create'])->name('fel.create');
         Route::post('fel', [FacturaFelController::class, 'store'])->name('fel.store');
+        Route::post('fel/{documento}/emitir', [FacturaFelController::class, 'emitirBorrador'])->name('fel.emitir');
         Route::post('fel/{documento}/anular', [FacturaFelController::class, 'anular'])->name('fel.anular');
     });
 

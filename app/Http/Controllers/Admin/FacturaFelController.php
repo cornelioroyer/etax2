@@ -13,6 +13,7 @@ use App\Services\FelService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -41,15 +42,24 @@ class FacturaFelController extends Controller
         $clientes = Contacto::where('compania_id', $compania->id)
             ->where('activo', true)
             ->orderBy('nombre')
-            ->get(['id', 'nombre', 'identificacion', 'dv']);
+            ->get(['id', 'nombre', 'identificacion', 'dv', 'forma_pago']);
+
+        // Mapa id → código FEL de forma de pago para auto-selección en el form
+        $clientesFormaPago = $clientes->mapWithKeys(fn ($c) => [
+            $c->id => match ($c->forma_pago) {
+                'CREDITO' => '01',
+                default   => '02',
+            },
+        ]);
 
         return view('admin.fel.create', [
-            'compania' => $compania,
-            'config' => $config,
-            'clientes' => $clientes,
-            'tasas' => ['00' => 'Exento (0%)', '01' => 'ITBMS 7%', '02' => 'ITBMS 10%', '03' => 'ITBMS 15%'],
-            'formasPago' => FelDocumentoBuilder::FORMAS_PAGO,
-            'tiposDocumento' => FelDocumentoBuilder::TIPOS_DOCUMENTO,
+            'compania'          => $compania,
+            'config'            => $config,
+            'clientes'          => $clientes,
+            'clientesFormaPago' => $clientesFormaPago,
+            'tasas'             => ['00' => 'Exento (0%)', '01' => 'ITBMS 7%', '02' => 'ITBMS 10%', '03' => 'ITBMS 15%'],
+            'formasPago'        => FelDocumentoBuilder::FORMAS_PAGO,
+            'tiposDocumento'    => FelDocumentoBuilder::TIPOS_DOCUMENTO,
         ]);
     }
 
@@ -79,6 +89,11 @@ class FacturaFelController extends Controller
         $cliente = $data['cliente_id'] ? Contacto::find($data['cliente_id']) : null;
         $builder = new FelDocumentoBuilder();
         $usuario = $request->user()->email;
+
+        // ── Guardar como borrador (sin enviar al PAC) ──
+        if ($request->input('accion') === 'borrador') {
+            return $this->guardarBorrador($compania, $data, $cliente, $usuario);
+        }
 
         // correlativo con bloqueo para evitar números duplicados (consecutivo
         // único compartido cuando se usan las credenciales demo de HKA).
@@ -146,6 +161,141 @@ class FacturaFelController extends Controller
 
         return redirect()->route('admin.fel.index')
             ->withErrors(['fel' => "Factura {$numeroFiscal} rechazada: {$mensaje}"]);
+    }
+
+    /** Guarda un borrador local sin enviar al PAC ni consumir número fiscal. */
+    private function guardarBorrador(Compania $compania, array $data, ?Contacto $cliente, string $usuario): RedirectResponse
+    {
+        $subtotal = 0;
+        $itbms    = 0;
+        foreach ($data['items'] as $l) {
+            $neto   = round($l['cantidad'] * $l['precio'], 2);
+            $imp    = round($neto * FelDocumentoBuilder::TASAS_ITBMS[$l['tasa']], 2);
+            $subtotal += $neto;
+            $itbms    += $imp;
+        }
+
+        $fel = DB::transaction(function () use ($compania, $data, $cliente, $usuario, $subtotal, $itbms) {
+            $fel = FelDocumento::create([
+                'compania_id'      => $compania->id,
+                'tipo_documento'   => $data['tipo_documento'],
+                'documento_origen' => 'fel_manual',
+                'documento_id'     => 0,
+                'numero'           => '',        // sin número fiscal aún
+                'fecha'            => now()->toDateString(),
+                'cliente_id'       => $cliente?->id,
+                'subtotal'         => round($subtotal, 2),
+                'itbms'            => round($itbms, 2),
+                'total'            => round($subtotal + $itbms, 2),
+                'estado_fel'       => 'BORRADOR',
+                'respuesta_dgi'    => [
+                    'borrador' => [
+                        'tipo_documento'      => $data['tipo_documento'],
+                        'forma_pago'          => $data['forma_pago'],
+                        'informacion_interes' => $data['informacion_interes'] ?? null,
+                        'items'               => $data['items'],
+                    ],
+                ],
+                'created_by'       => $usuario,
+            ]);
+            // Número temporal legible, reemplazado al emitir
+            $fel->update(['numero' => 'BRD-'.$fel->id]);
+
+            foreach ($data['items'] as $i => $l) {
+                $neto = round($l['cantidad'] * $l['precio'], 2);
+                $imp  = round($neto * FelDocumentoBuilder::TASAS_ITBMS[$l['tasa']], 2);
+                FelDocumentoDetalle::create([
+                    'fel_documento_id' => $fel->id,
+                    'linea'            => $i + 1,
+                    'descripcion'      => $l['descripcion'],
+                    'cantidad'         => $l['cantidad'],
+                    'precio_unitario'  => $l['precio'],
+                    'impuesto_monto'   => $imp,
+                    'total_linea'      => round($neto + $imp, 2),
+                    'created_by'       => $usuario,
+                ]);
+            }
+
+            return $fel;
+        });
+
+        return redirect()->route('admin.fel.index')
+            ->with('status', 'Borrador guardado. Emítelo cuando estés listo.');
+    }
+
+    /** Emite un borrador guardado previamente ante el PAC/DGI. */
+    public function emitirBorrador(Request $request, FelDocumento $documento): RedirectResponse
+    {
+        abort_unless($request->user()->can('fel.gestionar'), 403);
+        $compania = $this->companiaActiva($request);
+        abort_unless($documento->compania_id === $compania->id, 404);
+
+        if ($documento->estado_fel !== 'BORRADOR') {
+            return back()->withErrors(['fel' => 'Solo se pueden emitir borradores.']);
+        }
+
+        $config = FelConfiguracion::firstWhere('compania_id', $compania->id);
+        if (! $config || ! $config->token_empresa) {
+            return redirect()->route('admin.fel.configuracion')
+                ->withErrors(['fel' => 'Configura primero los tokens de The Factory HKA.']);
+        }
+
+        $borrador = data_get($documento->respuesta_dgi, 'borrador', []);
+        $cliente  = $documento->cliente_id ? Contacto::find($documento->cliente_id) : null;
+        $builder  = new FelDocumentoBuilder();
+        $usuario  = $request->user()->email;
+
+        $data = [
+            'tipo_documento'      => $borrador['tipo_documento'] ?? $documento->tipo_documento,
+            'forma_pago'          => $borrador['forma_pago'] ?? '02',
+            'informacion_interes' => $borrador['informacion_interes'] ?? null,
+            'items'               => $borrador['items'] ?? [],
+        ];
+
+        if (empty($data['items'])) {
+            return back()->withErrors(['fel' => 'El borrador no tiene ítems; elimínalo y créalo de nuevo.']);
+        }
+
+        $numeroFiscal = DB::transaction(fn () => $config->siguienteNumeroFiscal());
+        $xmlDoc = $builder->facturaInterna($compania, $config, $cliente, $data, $numeroFiscal);
+
+        $documento->update([
+            'numero'        => (string) $numeroFiscal,
+            'fecha'         => now()->toDateString(),
+            'estado_fel'    => 'PENDIENTE',
+            'updated_by'    => $usuario,
+        ]);
+
+        $resp      = (new FelService($config))->enviar($xmlDoc);
+        $this->registrarEvento($documento, 'ENVIO', $resp, $usuario);
+
+        $codigo    = (string) ($resp['codigo'] ?? $resp['EnviarResult']['codigo'] ?? '');
+        $resultado = $resp['EnviarResult'] ?? $resp;
+
+        if ($codigo === '200' || ($resultado['resultado'] ?? '') === 'Procesado') {
+            $documento->update([
+                'estado_fel'    => 'AUTORIZADO',
+                'cufe'          => $resultado['cufe'] ?? null,
+                'qr'            => $resultado['qr'] ?? null,
+                'respuesta_dgi' => $resp,
+                'fecha_envio'   => now(),
+                'updated_by'    => $usuario,
+            ]);
+
+            return redirect()->route('admin.fel.index')
+                ->with('status', "Factura {$numeroFiscal} autorizada. CUFE: ".substr((string) ($resultado['cufe'] ?? ''), 0, 40).'…');
+        }
+
+        $documento->update([
+            'estado_fel'    => 'RECHAZADO',
+            'respuesta_dgi' => $resp,
+            'fecha_envio'   => now(),
+            'updated_by'    => $usuario,
+        ]);
+
+        $mensaje = $resultado['mensaje'] ?? $resp['mensaje'] ?? 'Sin detalle';
+
+        return back()->withErrors(['fel' => "Factura {$numeroFiscal} rechazada: {$mensaje}"]);
     }
 
     /** Descarga el CAFE (PDF) desde el PAC. */

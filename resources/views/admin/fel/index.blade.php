@@ -47,7 +47,13 @@
                     <tbody class="divide-y divide-gray-100">
                         @forelse ($documentos as $doc)
                             <tr class="hover:bg-gray-50">
-                                <td class="px-4 py-3 font-medium text-gray-900">{{ $doc->numero }}</td>
+                                <td class="px-4 py-3 font-medium text-gray-900">
+                                    @if ($doc->estado_fel === 'BORRADOR')
+                                        <span class="text-gray-400 italic">Borrador</span>
+                                    @else
+                                        {{ $doc->numero }}
+                                    @endif
+                                </td>
                                 <td class="px-4 py-3">
                                     @php $tipoNombre = \App\Services\FelDocumentoBuilder::TIPOS_DOCUMENTO[$doc->tipo_documento] ?? $doc->tipo_documento; @endphp
                                     <span class="inline-flex rounded px-2 py-0.5 text-xs font-medium {{ $doc->tipo_documento === '01' ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700' }}" title="{{ $tipoNombre }}">{{ $doc->tipo_documento }}</span>
@@ -61,16 +67,25 @@
                                     @php
                                         $badge = match ($doc->estado_fel) {
                                             'AUTORIZADO' => 'bg-green-100 text-green-800',
-                                            'RECHAZADO' => 'bg-red-100 text-red-800',
-                                            'ANULADO' => 'bg-gray-200 text-gray-700',
-                                            default => 'bg-amber-100 text-amber-800',
+                                            'RECHAZADO'  => 'bg-red-100 text-red-800',
+                                            'ANULADO'    => 'bg-gray-200 text-gray-700',
+                                            'BORRADOR'   => 'bg-indigo-100 text-indigo-800',
+                                            default      => 'bg-amber-100 text-amber-800',
                                         };
                                     @endphp
                                     <span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold {{ $badge }}">{{ $doc->estado_fel }}</span>
                                 </td>
                                 <td class="px-4 py-3 text-right">
                                     <div class="flex justify-end gap-2">
-                                        @if ($doc->estado_fel === 'AUTORIZADO')
+                                        @if ($doc->estado_fel === 'BORRADOR')
+                                            @can('fel.gestionar')
+                                                <form method="POST" action="{{ route('admin.fel.emitir', $doc) }}"
+                                                      onsubmit="return confirm('¿Emitir este borrador ante la DGI?')">
+                                                    @csrf
+                                                    <button type="submit" class="text-blue-600 hover:text-blue-800 font-medium">Emitir</button>
+                                                </form>
+                                            @endcan
+                                        @elseif ($doc->estado_fel === 'AUTORIZADO')
                                             <a href="{{ route('admin.fel.pdf', $doc) }}" target="_blank" class="text-blue-600 hover:text-blue-800">CAFE</a>
                                             @if ($doc->qr)
                                                 <a href="{{ $doc->qr }}" target="_blank" class="text-blue-600 hover:text-blue-800">QR</a>

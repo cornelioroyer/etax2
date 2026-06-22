@@ -40,9 +40,11 @@
                         <input type="text" class="cliente-buscar mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
                                placeholder="Buscar por nombre o RUC…" autocomplete="off" style="padding:.375rem .75rem">
                         <select id="cliente_id" name="cliente_id" class="cliente-select mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="" @selected(! old('cliente_id'))>Consumidor final (sin RUC)</option>
+                            <option value="" data-forma-pago="" @selected(! old('cliente_id'))>Consumidor final (sin RUC)</option>
                             @foreach ($clientes as $cli)
-                                <option value="{{ $cli->id }}" @selected(old('cliente_id') == $cli->id)>
+                                <option value="{{ $cli->id }}"
+                                        data-forma-pago="{{ $clientesFormaPago[$cli->id] ?? '02' }}"
+                                        @selected(old('cliente_id') == $cli->id)>
                                     {{ $cli->nombre }}{{ $cli->identificacion ? ' — RUC ' . $cli->identificacion . ($cli->dv ? ' DV ' . $cli->dv : '') : '' }}
                                 </option>
                             @endforeach
@@ -127,7 +129,14 @@
                 </div>
 
                 <div class="flex items-center gap-3 border-t border-gray-100 pt-4">
-                    <x-primary-button>Emitir factura</x-primary-button>
+                    <button type="submit" name="accion" value="emitir"
+                            class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
+                        Emitir factura
+                    </button>
+                    <button type="submit" name="accion" value="borrador"
+                            class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                        Guardar borrador
+                    </button>
                     <a href="{{ route('admin.fel.index') }}" class="text-sm text-gray-600 hover:text-gray-900">Cancelar</a>
                 </div>
             </form>
@@ -155,6 +164,13 @@
             if (inp) inp.value = '';
             e.target.size = 1;
             Array.from(e.target.options).forEach(function (o) { o.hidden = false; });
+            // Auto-seleccionar forma de pago del cliente
+            var sel = e.target.selectedOptions[0];
+            var fp = sel ? sel.dataset.formaPago : '';
+            if (fp) {
+                var fpSel = document.getElementById('forma_pago');
+                if (fpSel) fpSel.value = fp;
+            }
         });
         document.addEventListener('blur', function (e) {
             if (!e.target.classList.contains('cliente-select')) return;
