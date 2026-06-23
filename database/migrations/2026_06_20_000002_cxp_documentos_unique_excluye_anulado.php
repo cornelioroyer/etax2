@@ -21,6 +21,12 @@ return new class extends Migration
 
     public function up(): void
     {
+        // Índice parcial con WHERE y DROP CONSTRAINT son sintaxis de PostgreSQL.
+        // En tests (SQLite) se omite: la tabla conserva su índice único completo.
+        if (DB::connection()->getDriverName() !== 'pgsql') {
+            return;
+        }
+
         DB::statement("ALTER TABLE cxp_documentos DROP CONSTRAINT IF EXISTS {$this->constraint}");
         DB::statement(
             "CREATE UNIQUE INDEX IF NOT EXISTS {$this->indiceParcial} ".
@@ -31,6 +37,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') {
+            return;
+        }
+
         DB::statement("DROP INDEX IF EXISTS {$this->indiceParcial}");
         DB::statement(
             "ALTER TABLE cxp_documentos ADD CONSTRAINT {$this->constraint} ".
