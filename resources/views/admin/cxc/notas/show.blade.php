@@ -9,6 +9,12 @@
                 <button onclick="window.print()" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 print:hidden">Imprimir</button>
                 @if (! $nota->esAnulado())
                     @can('cxc.gestionar')
+                        @if (! ($nota->tipo_documento === \App\Models\CxcDocumento::TIPO_NOTA_DEBITO && $nota->aplicacionesComoDestino()->exists()))
+                            <form method="POST" action="{{ route('admin.cxc.notas.corregir', $nota) }}" onsubmit="return confirm('Para editar esta nota se anulará (revirtiendo su asiento y saldos) y se reabrirá el formulario con sus datos para registrar la corrección como una nota nueva. ¿Continuar?');" class="print:hidden">
+                                @csrf
+                                <button class="rounded-md border border-blue-300 bg-white px-4 py-2 text-sm text-blue-700 hover:bg-blue-50">Editar</button>
+                            </form>
+                        @endif
                         <form method="POST" action="{{ route('admin.cxc.notas.anular', $nota) }}" onsubmit="return confirm('¿Anular esta nota? Se revertirá su asiento y los saldos afectados.');" class="print:hidden">
                             @csrf
                             <button class="rounded-md border border-red-300 bg-white px-4 py-2 text-sm text-red-700 hover:bg-red-50">Anular</button>

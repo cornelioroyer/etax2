@@ -5,6 +5,9 @@
 
     <div class="py-8">
         <div class="max-w-5xl mx-auto sm:px-6 lg:px-8 space-y-4">
+            @if (session('status'))
+                <div class="rounded-md bg-amber-50 p-4 text-sm text-amber-800">{{ session('status') }}</div>
+            @endif
             @if ($errors->any())
                 <div class="rounded-md bg-red-50 p-4 text-sm text-red-800">
                     @foreach ($errors->all() as $error)<div>{{ $error }}</div>@endforeach
@@ -34,8 +37,9 @@
                         El cliente no tiene facturas con saldo pendiente.
                     </div>
                 @else
+                    @php($montosPrellenados = collect(old('aplicaciones', []))->keyBy('documento_id'))
                     <form method="POST" action="{{ route('admin.cxc.cobros.store') }}"
-                          x-data="cobroCxc({{ $facturas->map(fn ($f) => ['id' => $f->id, 'numero' => $f->numero, 'fecha' => $f->fecha->format('d/m/Y'), 'total' => (float) $f->total, 'saldo' => (float) $f->saldo, 'monto' => 0])->toJson() }})"
+                          x-data="cobroCxc({{ $facturas->map(fn ($f) => ['id' => $f->id, 'numero' => $f->numero, 'fecha' => $f->fecha->format('d/m/Y'), 'total' => (float) $f->total, 'saldo' => (float) $f->saldo, 'monto' => (float) ($montosPrellenados[$f->id]['monto'] ?? 0)])->toJson() }})"
                           class="bg-white p-6 shadow-sm sm:rounded-lg">
                         @csrf
                         <input type="hidden" name="cliente_id" value="{{ $clienteId }}">

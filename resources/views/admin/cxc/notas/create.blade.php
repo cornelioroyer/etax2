@@ -7,6 +7,9 @@
 
     <div class="py-8">
         <div class="max-w-3xl mx-auto sm:px-6 lg:px-8 space-y-4">
+            @if (session('status'))
+                <div class="rounded-md bg-amber-50 p-4 text-sm text-amber-800">{{ session('status') }}</div>
+            @endif
             @if ($errors->any())
                 <div class="rounded-md bg-red-50 p-4 text-sm text-red-800">
                     @foreach ($errors->all() as $error)<div>{{ $error }}</div>@endforeach
@@ -57,7 +60,7 @@
                             <x-input-label for="factura_id" value="Factura a la que se aplica *" />
                             <select id="factura_id" name="factura_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                 @foreach ($facturas as $f)
-                                    <option value="{{ $f->id }}" data-saldo="{{ (float) $f->saldo }}">{{ $f->numero }} · {{ $f->fecha->format('d/m/Y') }} · saldo B/. {{ number_format((float) $f->saldo, 2) }}</option>
+                                    <option value="{{ $f->id }}" data-saldo="{{ (float) $f->saldo }}" @selected(old('factura_id') == $f->id)>{{ $f->numero }} · {{ $f->fecha->format('d/m/Y') }} · saldo B/. {{ number_format((float) $f->saldo, 2) }}</option>
                                 @endforeach
                             </select>
                         </div>

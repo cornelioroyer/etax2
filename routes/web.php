@@ -137,6 +137,8 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
 
     // Bitácora de actividad de usuarios (solo super_admin).
     Route::get('auditoria', [AuditoriaController::class, 'index'])->name('auditoria.index');
+    // Auditoría GLOBAL (todas las compañías), solo super_admin.
+    Route::get('auditoria-global', [AuditoriaController::class, 'globalIndex'])->name('auditoria.global');
     Route::get('auditoria/{actividad}', [AuditoriaController::class, 'show'])->whereNumber('actividad')->name('auditoria.show');
 
     // Asistente IA: chat en lenguaje natural. Solo super_admin. Las
@@ -213,12 +215,15 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::get('cxc/notas/crear', [CxcNotaController::class, 'create'])->name('cxc.notas.create');
         Route::post('cxc/notas', [CxcNotaController::class, 'store'])->name('cxc.notas.store');
         Route::post('cxc/notas/{documento}/anular', [CxcNotaController::class, 'anular'])->whereNumber('documento')->name('cxc.notas.anular');
+        Route::post('cxc/notas/{documento}/corregir', [CxcNotaController::class, 'corregir'])->whereNumber('documento')->name('cxc.notas.corregir');
         Route::get('cxc/facturas/nueva', [CxcFacturaController::class, 'create'])->name('cxc.facturas.create');
         Route::post('cxc/facturas', [CxcFacturaController::class, 'store'])->name('cxc.facturas.store');
         Route::post('cxc/facturas/{documento}/anular', [CxcFacturaController::class, 'anular'])->whereNumber('documento')->name('cxc.facturas.anular');
+        Route::post('cxc/facturas/{documento}/corregir', [CxcFacturaController::class, 'corregir'])->whereNumber('documento')->name('cxc.facturas.corregir');
         Route::get('cxc/cobros/nuevo', [CxcCobroController::class, 'create'])->name('cxc.cobros.create');
         Route::post('cxc/cobros', [CxcCobroController::class, 'store'])->name('cxc.cobros.store');
         Route::post('cxc/cobros/{documento}/anular', [CxcCobroController::class, 'anular'])->whereNumber('documento')->name('cxc.cobros.anular');
+        Route::post('cxc/cobros/{documento}/corregir', [CxcCobroController::class, 'corregir'])->whereNumber('documento')->name('cxc.cobros.corregir');
     });
 
     Route::middleware('permission:cxp.ver')->group(function () {
@@ -255,6 +260,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('cxp/facturas/{documento}/contabilizar', [CxpFacturaController::class, 'contabilizar'])->whereNumber('documento')->name('cxp.facturas.contabilizar');
         Route::delete('cxp/facturas/{documento}', [CxpFacturaController::class, 'destroy'])->whereNumber('documento')->name('cxp.facturas.destroy');
         Route::post('cxp/facturas/{documento}/anular', [CxpFacturaController::class, 'anular'])->whereNumber('documento')->name('cxp.facturas.anular');
+        Route::post('cxp/facturas/{documento}/corregir', [CxpFacturaController::class, 'corregir'])->whereNumber('documento')->name('cxp.facturas.corregir');
         Route::post('cxp/facturas/bulk', [CxpFacturaController::class, 'bulk'])->name('cxp.facturas.bulk');
         Route::get('cxp/pagos/nuevo', [CxpPagoController::class, 'create'])->name('cxp.pagos.create');
         Route::post('cxp/pagos', [CxpPagoController::class, 'store'])->name('cxp.pagos.store');
@@ -383,6 +389,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::put('ventas/facturas/{factura}', [VentaFacturaController::class, 'update'])->whereNumber('factura')->name('ventas.facturas.update');
         Route::post('ventas/facturas/{factura}/emitir', [VentaFacturaController::class, 'emitir'])->whereNumber('factura')->name('ventas.facturas.emitir');
         Route::post('ventas/facturas/{factura}/anular', [VentaFacturaController::class, 'anular'])->whereNumber('factura')->name('ventas.facturas.anular');
+        Route::post('ventas/facturas/{factura}/corregir', [VentaFacturaController::class, 'corregir'])->whereNumber('factura')->name('ventas.facturas.corregir');
         Route::post('ventas/facturas/{factura}/notas', [VentaFacturaController::class, 'actualizarNotas'])->whereNumber('factura')->name('ventas.facturas.notas');
     });
 

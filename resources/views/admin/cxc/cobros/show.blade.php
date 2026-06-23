@@ -56,13 +56,22 @@
 
                     @can('cxc.gestionar')
                         @if (! $cobro->esAnulado())
-                            <form method="POST" action="{{ route('admin.cxc.cobros.anular', $cobro) }}"
-                                  onsubmit="return confirm('¿Anular el cobro {{ $cobro->numero }}? Se restaurará el saldo de las facturas y se anulará el asiento.');">
-                                @csrf
-                                <button class="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">
-                                    Anular cobro
-                                </button>
-                            </form>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <form method="POST" action="{{ route('admin.cxc.cobros.corregir', $cobro) }}"
+                                      onsubmit="return confirm('Para editar el cobro {{ $cobro->numero }} se anulará (restaurando el saldo de las facturas y su asiento) y se reabrirá el formulario con sus datos para registrar la corrección como un cobro nuevo. ¿Continuar?');">
+                                    @csrf
+                                    <button class="rounded-md border border-blue-300 bg-white px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">
+                                        Editar
+                                    </button>
+                                </form>
+                                <form method="POST" action="{{ route('admin.cxc.cobros.anular', $cobro) }}"
+                                      onsubmit="return confirm('¿Anular el cobro {{ $cobro->numero }}? Se restaurará el saldo de las facturas y se anulará el asiento.');">
+                                    @csrf
+                                    <button class="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">
+                                        Anular cobro
+                                    </button>
+                                </form>
+                            </div>
                         @endif
                     @endcan
                 </div>

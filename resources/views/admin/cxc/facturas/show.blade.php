@@ -54,13 +54,24 @@
 
                     @can('cxc.gestionar')
                         @if (! $factura->esAnulado())
-                            <form method="POST" action="{{ route('admin.cxc.facturas.anular', $factura) }}"
-                                  onsubmit="return confirm('¿Anular la factura {{ $factura->numero }}? También se anulará su asiento contable.');">
-                                @csrf
-                                <button class="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">
-                                    Anular factura
-                                </button>
-                            </form>
+                            <div class="flex flex-wrap items-center gap-2">
+                                @if ($factura->aplicacionesComoDestino->isEmpty())
+                                    <form method="POST" action="{{ route('admin.cxc.facturas.corregir', $factura) }}"
+                                          onsubmit="return confirm('Para editar la factura {{ $factura->numero }} se anulará (con su asiento) y se reabrirá el formulario con sus datos para registrar la corrección como un documento nuevo. ¿Continuar?');">
+                                        @csrf
+                                        <button class="rounded-md border border-blue-300 bg-white px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">
+                                            Editar
+                                        </button>
+                                    </form>
+                                @endif
+                                <form method="POST" action="{{ route('admin.cxc.facturas.anular', $factura) }}"
+                                      onsubmit="return confirm('¿Anular la factura {{ $factura->numero }}? También se anulará su asiento contable.');">
+                                    @csrf
+                                    <button class="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">
+                                        Anular factura
+                                    </button>
+                                </form>
+                            </div>
                         @endif
                     @endcan
                 </div>

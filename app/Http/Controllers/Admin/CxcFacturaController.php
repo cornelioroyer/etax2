@@ -277,6 +277,68 @@ class CxcFacturaController extends Controller
             ->with('status', "Factura {$documento->numero} anulada.");
     }
 
+    /**
+     * "Editar" una factura ya contabilizada. Como la factura CxC postea de
+     * inmediato (no tiene borrador), corregir = anular el documento (reversa
+     * del asiento) y reabrir el formulario de captura pre-llenado con sus
+     * datos, para registrar la corrección como un documento nuevo. El original
+     * queda ANULADO en el historial (no se borra nada). Mismo criterio de
+     * guardas que anular: no se puede si ya está anulada o tiene cobros.
+     */
+    public function corregir(Request $request, CxcDocumento $documento): RedirectResponse
+    {
+        abort_unless($documento->compania_id === $this->companiaActivaId($request), 404);
+        abort_unless($documento->tipo_documento === CxcDocumento::TIPO_FACTURA, 404);
+
+        if ($documento->esAnulado()) {
+            return back()->withErrors(['documento' => 'La factura ya está anulada.']);
+        }
+
+        if ($documento->aplicacionesComoDestino()->exists()) {
+            return back()->withErrors(['documento' => 'La factura tiene cobros aplicados; anula primero los cobros, luego corrígela.']);
+        }
+
+        $usuario = $request->user();
+        $documento->load('detalle');
+
+        DB::transaction(function () use ($documento, $usuario) {
+            if ($documento->asiento) {
+                app(AsientoAutomatico::class)->anular($documento->asiento, $usuario);
+            }
+
+            $documento->update([
+                'estado' => CxcDocumento::ESTADO_ANULADO,
+                'saldo' => 0,
+                'updated_by' => $usuario->email,
+            ]);
+        });
+
+        $lineas = $documento->detalle->map(function (CxcDocumentoDetalle $l) {
+            $base = round((float) $l->cantidad * (float) $l->precio_unitario, 2);
+            $tasa = $base > 0 ? (int) round(((float) $l->impuesto_monto) / $base * 100) : 0;
+            if (! in_array($tasa, self::TASAS_ITBMS, true)) {
+                $tasa = 0;
+            }
+
+            return [
+                'descripcion' => $l->descripcion,
+                'cantidad' => rtrim(rtrim(number_format((float) $l->cantidad, 4, '.', ''), '0'), '.'),
+                'precio_unitario' => number_format((float) $l->precio_unitario, 2, '.', ''),
+                'tasa_itbms' => $tasa,
+                'cuenta_id' => $l->cuenta_id,
+            ];
+        })->values()->all();
+
+        return redirect()->route('admin.cxc.facturas.create')
+            ->withInput([
+                'cliente_id' => $documento->cliente_id,
+                'fecha' => $documento->fecha->format('Y-m-d'),
+                'fecha_vencimiento' => $documento->fecha_vencimiento?->format('Y-m-d'),
+                'lineas' => $lineas,
+            ])
+            ->with('status', "Factura {$documento->numero} anulada para corrección. Ajusta los datos y registra de nuevo (se asignará un número nuevo; el original queda anulado en el historial).");
+    }
+
     private function datosFormulario(Request $request): array
     {
         $companiaId = $this->companiaActivaId($request);

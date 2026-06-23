@@ -287,4 +287,68 @@ class CxcCobroController extends Controller
         return redirect()->route('admin.cxc.cobros.show', $documento)
             ->with('status', "Cobro {$documento->numero} anulado; los saldos de las facturas fueron restaurados.");
     }
+
+    /**
+     * "Editar" un cobro ya registrado. El cobro postea de inmediato (no tiene
+     * borrador), así que corregir = anularlo (restaura los saldos de las
+     * facturas y reversa el asiento, igual que anular) y reabrir el formulario
+     * de captura pre-llenado con el cliente, la cuenta de depósito y los montos
+     * aplicados, para registrar la corrección como un cobro nuevo. El original
+     * queda ANULADO en el historial.
+     */
+    public function corregir(Request $request, CxcDocumento $documento): RedirectResponse
+    {
+        abort_unless($documento->compania_id === $this->companiaActivaId($request), 404);
+        abort_unless($documento->tipo_documento === CxcDocumento::TIPO_PAGO, 404);
+
+        if ($documento->esAnulado()) {
+            return back()->withErrors(['documento' => 'El cobro ya está anulado.']);
+        }
+
+        $usuario = $request->user();
+        $documento->load('asiento.detalle');
+
+        // Aplicaciones (factura → monto) antes de borrarlas en la reversa.
+        $aplicaciones = $documento->aplicacionesComoOrigen()
+            ->get(['documento_destino_id', 'monto_aplicado'])
+            ->map(fn ($a) => [
+                'documento_id' => (int) $a->documento_destino_id,
+                'monto' => number_format((float) $a->monto_aplicado, 2, '.', ''),
+            ])->values()->all();
+
+        // Cuenta de depósito = línea de débito del asiento (la otra es CXC).
+        $cuentaCobroId = $documento->asiento?->detalle
+            ->firstWhere(fn ($d) => (float) $d->debito > 0)?->cuenta_id;
+
+        DB::transaction(function () use ($documento, $usuario) {
+            foreach ($documento->aplicacionesComoOrigen()->with('destino')->lockForUpdate()->get() as $aplicacion) {
+                $factura = $aplicacion->destino;
+                $factura->saldo = round((float) $factura->saldo + (float) $aplicacion->monto_aplicado, 2);
+                $factura->estado = $factura->estadoSegunSaldo();
+                $factura->updated_by = $usuario->email;
+                $factura->save();
+
+                $aplicacion->delete();
+            }
+
+            if ($documento->asiento) {
+                app(AsientoAutomatico::class)->anular($documento->asiento, $usuario);
+            }
+
+            $documento->update([
+                'estado' => CxcDocumento::ESTADO_ANULADO,
+                'saldo' => 0,
+                'updated_by' => $usuario->email,
+            ]);
+        });
+
+        return redirect()->route('admin.cxc.cobros.create', ['cliente_id' => $documento->cliente_id])
+            ->withInput([
+                'cliente_id' => $documento->cliente_id,
+                'fecha' => $documento->fecha->format('Y-m-d'),
+                'cuenta_cobro_id' => $cuentaCobroId,
+                'aplicaciones' => $aplicaciones,
+            ])
+            ->with('status', "Cobro {$documento->numero} anulado para corrección y saldos restaurados. Ajusta los montos y registra de nuevo (se asignará un número nuevo).");
+    }
 }

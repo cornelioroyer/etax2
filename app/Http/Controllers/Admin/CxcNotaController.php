@@ -359,6 +359,87 @@ class CxcNotaController extends Controller
             ->with('status', "Nota {$documento->numero} anulada.");
     }
 
+    /**
+     * "Editar" una nota ya contabilizada. La nota postea de inmediato (no tiene
+     * borrador), así que corregir = anularla (reversa del asiento y, en NC,
+     * restauración del saldo de la factura aplicada, igual que anular) y reabrir
+     * el formulario de captura pre-llenado (tipo, cliente, factura, concepto,
+     * cuenta, monto e ITBMS), para registrar la corrección como una nota nueva.
+     * El original queda ANULADO en el historial.
+     */
+    public function corregir(Request $request, CxcDocumento $documento): RedirectResponse
+    {
+        abort_unless($documento->compania_id === $this->companiaActivaId($request), 404);
+        abort_unless(in_array($documento->tipo_documento, [CxcDocumento::TIPO_NOTA_CREDITO, CxcDocumento::TIPO_NOTA_DEBITO], true), 404);
+
+        if ($documento->esAnulado()) {
+            return back()->withErrors(['documento' => 'La nota ya está anulada.']);
+        }
+
+        if ($documento->tipo_documento === CxcDocumento::TIPO_NOTA_DEBITO
+            && $documento->aplicacionesComoDestino()->exists()) {
+            return back()->withErrors(['documento' => 'La nota de débito tiene cobros aplicados; anúlalos primero, luego corrígela.']);
+        }
+
+        $companiaId = $this->companiaActivaId($request);
+        $usuario = $request->user();
+        $documento->load('asiento.detalle');
+
+        $esCredito = $documento->tipo_documento === CxcDocumento::TIPO_NOTA_CREDITO;
+        $tipo = $esCredito ? 'credito' : 'debito';
+
+        // Factura a la que se aplicó (solo NC) y línea de contrapartida del
+        // asiento (la que no es CXC ni ITBMS) para recuperar cuenta y concepto.
+        $facturaId = $esCredito
+            ? $documento->aplicacionesComoOrigen()->value('documento_destino_id')
+            : null;
+
+        $cxcId = CuentaDefault::idPara($companiaId, 'CXC');
+        $itbmsId = CuentaDefault::idPara($companiaId, 'ITBMS_POR_PAGAR');
+        $contra = $documento->asiento?->detalle
+            ->first(fn ($d) => $d->cuenta_id !== $cxcId && $d->cuenta_id !== $itbmsId);
+
+        $base = round((float) $documento->subtotal, 2);
+        $tasa = $base > 0 ? (int) round(((float) $documento->impuesto) / $base * 100) : 0;
+        if (! in_array($tasa, self::TASAS_ITBMS, true)) {
+            $tasa = 0;
+        }
+
+        DB::transaction(function () use ($documento, $usuario) {
+            foreach ($documento->aplicacionesComoOrigen()->with('destino')->lockForUpdate()->get() as $aplicacion) {
+                $factura = $aplicacion->destino;
+                $factura->saldo = round((float) $factura->saldo + (float) $aplicacion->monto_aplicado, 2);
+                $factura->estado = $factura->estadoSegunSaldo();
+                $factura->updated_by = $usuario->email;
+                $factura->save();
+
+                $aplicacion->delete();
+            }
+
+            if ($documento->asiento) {
+                app(AsientoAutomatico::class)->anular($documento->asiento, $usuario);
+            }
+
+            $documento->update([
+                'estado' => CxcDocumento::ESTADO_ANULADO,
+                'saldo' => 0,
+                'updated_by' => $usuario->email,
+            ]);
+        });
+
+        return redirect()->route('admin.cxc.notas.create', ['tipo' => $tipo, 'cliente_id' => $documento->cliente_id])
+            ->withInput([
+                'cliente_id' => $documento->cliente_id,
+                'factura_id' => $facturaId,
+                'fecha' => $documento->fecha->format('Y-m-d'),
+                'concepto' => $contra?->descripcion,
+                'cuenta_id' => $contra?->cuenta_id,
+                'monto' => number_format($base, 2, '.', ''),
+                'tasa_itbms' => $tasa,
+            ])
+            ->with('status', ($esCredito ? 'Nota de crédito ' : 'Nota de débito ')."{$documento->numero} anulada para corrección. Ajusta los datos y registra de nuevo (se asignará un número nuevo; el original queda anulado en el historial).");
+    }
+
     private function clientes(int $companiaId)
     {
         return Contacto::where('compania_id', $companiaId)
