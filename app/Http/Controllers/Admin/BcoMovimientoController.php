@@ -9,6 +9,7 @@ use App\Models\BcoMovimiento;
 use App\Models\Contacto;
 use App\Models\CuentaContable;
 use App\Services\AsientoAutomatico;
+use App\Services\BancoSync;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -166,5 +167,101 @@ class BcoMovimientoController extends Controller
         $movimiento->load('cuenta.banco', 'contacto', 'asiento');
 
         return view('admin.bco.movimientos.show', compact('movimiento'));
+    }
+
+    /**
+     * Anula un movimiento bancario manual: revierte su asiento (si lo tiene) y
+     * lo retira del ledger del banco. Solo aplica a movimientos manuales; los
+     * reflejos de un asiento de otro módulo (BancoSync) o un movimiento ya
+     * conciliado no se tocan aquí.
+     */
+    public function anular(Request $request, BcoMovimiento $movimiento): RedirectResponse
+    {
+        abort_unless($movimiento->compania_id === $this->companiaActivaId($request), 404);
+
+        if ($motivo = $this->motivoBloqueo($movimiento)) {
+            return back()->withErrors(['movimiento' => $motivo]);
+        }
+
+        $usuario = $request->user();
+
+        DB::transaction(function () use ($movimiento, $usuario) {
+            if ($movimiento->asiento) {
+                app(AsientoAutomatico::class)->anular($movimiento->asiento, $usuario);
+            }
+
+            $movimiento->delete();
+        });
+
+        return redirect()->route('admin.bco.movimientos.index')
+            ->with('status', 'Movimiento eliminado'.($movimiento->asiento_id ? ' y su asiento anulado' : '').'.');
+    }
+
+    /**
+     * "Editar" un movimiento bancario manual: lo anula (revierte el asiento y
+     * lo retira del ledger) y reabre el formulario de captura pre-llenado para
+     * registrar la corrección como un movimiento nuevo.
+     */
+    public function editar(Request $request, BcoMovimiento $movimiento): RedirectResponse
+    {
+        abort_unless($movimiento->compania_id === $this->companiaActivaId($request), 404);
+
+        if ($motivo = $this->motivoBloqueo($movimiento)) {
+            return back()->withErrors(['movimiento' => $motivo]);
+        }
+
+        $usuario = $request->user();
+        $movimiento->load('asiento.detalle', 'cuenta');
+
+        // Contrapartida = línea del asiento cuya cuenta NO es la cuenta contable
+        // del banco; así se recupera la cuenta para el asiento automático.
+        $cuentaContableId = null;
+        if ($movimiento->asiento) {
+            $glBanco = $movimiento->cuenta?->cuenta_contable_id;
+            $cuentaContableId = $movimiento->asiento->detalle
+                ->first(fn ($d) => $d->cuenta_id !== $glBanco)?->cuenta_id;
+        }
+
+        $old = [
+            'cuenta_bancaria_id' => $movimiento->cuenta_bancaria_id,
+            'fecha'              => $movimiento->fecha->format('Y-m-d'),
+            'tipo_movimiento'    => $movimiento->tipo_movimiento,
+            'descripcion'        => $movimiento->descripcion,
+            'referencia'         => $movimiento->referencia,
+            'debito'             => number_format((float) $movimiento->debito, 2, '.', ''),
+            'credito'            => number_format((float) $movimiento->credito, 2, '.', ''),
+            'contacto_id'        => $movimiento->contacto_id,
+            'cuenta_contable_id' => $cuentaContableId,
+        ];
+
+        DB::transaction(function () use ($movimiento, $usuario) {
+            if ($movimiento->asiento) {
+                app(AsientoAutomatico::class)->anular($movimiento->asiento, $usuario);
+            }
+
+            $movimiento->delete();
+        });
+
+        return redirect()->route('admin.bco.movimientos.create')
+            ->withInput($old)
+            ->with('status', 'Movimiento anulado para corrección. Ajusta los datos y regístralo de nuevo (se crea uno nuevo; el anterior queda fuera del ledger y su asiento anulado).');
+    }
+
+    /**
+     * Razón por la que un movimiento no se puede anular/editar aquí, o null si
+     * sí se puede. Los movimientos conciliados y los reflejos de asientos de
+     * otros módulos (BancoSync) quedan protegidos.
+     */
+    private function motivoBloqueo(BcoMovimiento $movimiento): ?string
+    {
+        if ($movimiento->conciliado) {
+            return 'El movimiento está conciliado; reabre la conciliación antes de modificarlo.';
+        }
+
+        if ($movimiento->documento_origen === BancoSync::ORIGEN) {
+            return 'Este movimiento refleja un asiento de otro módulo; corrígelo desde su documento de origen, no desde Bancos.';
+        }
+
+        return null;
     }
 }

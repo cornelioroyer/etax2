@@ -8,6 +8,9 @@
 
     <div class="py-8">
         <div class="max-w-3xl mx-auto sm:px-6 lg:px-8 space-y-4">
+            @if (session('status'))
+                <div class="rounded-md bg-amber-50 p-4 text-sm text-amber-800">{{ session('status') }}</div>
+            @endif
             @if ($errors->any())
                 <div class="rounded-md bg-red-50 p-4 text-sm text-red-800">
                     @foreach ($errors->all() as $e)<div>{{ $e }}</div>@endforeach

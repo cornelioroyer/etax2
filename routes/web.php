@@ -308,6 +308,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('compras/ordenes/{orden}/anular', [CompraOrdenController::class, 'anular'])->whereNumber('orden')->name('compras.ordenes.anular');
         Route::post('compras/ordenes/{orden}/facturar', [CompraOrdenController::class, 'facturar'])->whereNumber('orden')->name('compras.ordenes.facturar');
         Route::post('compras/ordenes/{orden}/recepciones', [CompraRecepcionController::class, 'store'])->whereNumber('orden')->name('compras.ordenes.recepciones.store');
+        Route::post('compras/ordenes/{orden}/recepciones/{recepcion}/anular', [CompraRecepcionController::class, 'anular'])->whereNumber(['orden', 'recepcion'])->name('compras.ordenes.recepciones.anular');
     });
 
     Route::middleware('permission:caja.ver')->group(function () {
@@ -439,6 +440,8 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('bco/cuentas/{cuenta}/toggle', [BcoCuentaController::class, 'toggle'])->whereNumber('cuenta')->name('bco.cuentas.toggle');
         Route::get('bco/movimientos/nuevo', [BcoMovimientoController::class, 'create'])->name('bco.movimientos.create');
         Route::post('bco/movimientos', [BcoMovimientoController::class, 'store'])->name('bco.movimientos.store');
+        Route::post('bco/movimientos/{movimiento}/anular', [BcoMovimientoController::class, 'anular'])->whereNumber('movimiento')->name('bco.movimientos.anular');
+        Route::post('bco/movimientos/{movimiento}/editar', [BcoMovimientoController::class, 'editar'])->whereNumber('movimiento')->name('bco.movimientos.editar');
         Route::get('bco/transferencias/nueva', [BcoTransferenciaController::class, 'create'])->name('bco.transferencias.create');
         Route::post('bco/transferencias', [BcoTransferenciaController::class, 'store'])->name('bco.transferencias.store');
         Route::get('bco/conciliaciones/nueva', [BcoConciliacionController::class, 'create'])->name('bco.conciliaciones.create');

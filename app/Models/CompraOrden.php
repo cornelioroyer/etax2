@@ -95,7 +95,7 @@ class CompraOrden extends Model
         }
 
         $recibidoPorLinea = CompraRecepcionDetalle::query()
-            ->whereIn('recepcion_id', $this->recepciones()->pluck('id'))
+            ->whereIn('recepcion_id', $this->recepciones()->where('estado', '!=', CompraRecepcion::ESTADO_ANULADO)->pluck('id'))
             ->selectRaw('orden_detalle_id, SUM(cantidad) AS recibido')
             ->groupBy('orden_detalle_id')
             ->pluck('recibido', 'orden_detalle_id');
@@ -118,6 +118,10 @@ class CompraOrden extends Model
             $estado = self::ESTADO_RECIBIDA;
         } elseif ($algoRecibido) {
             $estado = self::ESTADO_RECIBIDA_PARCIAL;
+        } else {
+            // Nada recibido vigente (p. ej. se anularon todas las recepciones):
+            // la orden vuelve a quedar aprobada y recibible.
+            $estado = self::ESTADO_APROBADA;
         }
 
         if ($estado !== $this->estado) {

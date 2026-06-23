@@ -55,9 +55,9 @@ class CompraRecepcionController extends Controller
         $orden->load(['detalle', 'recepciones']);
         $detallePorId = $orden->detalle->keyBy('id');
 
-        // Cantidad ya recibida por línea.
+        // Cantidad ya recibida por línea (excluye recepciones anuladas).
         $recibido = CompraRecepcionDetalle::query()
-            ->whereIn('recepcion_id', $orden->recepciones->pluck('id'))
+            ->whereIn('recepcion_id', $orden->recepciones->where('estado', '!=', CompraRecepcion::ESTADO_ANULADO)->pluck('id'))
             ->selectRaw('orden_detalle_id, SUM(cantidad) AS recibido')
             ->groupBy('orden_detalle_id')
             ->pluck('recibido', 'orden_detalle_id');
@@ -121,5 +121,39 @@ class CompraRecepcionController extends Controller
 
         return redirect()->route('admin.compras.ordenes.show', $orden)
             ->with('status', "Recepción {$recepcion->numero} registrada.");
+    }
+
+    /**
+     * Anula una recepción de mercancía. Marca la recepción como ANULADO (sus
+     * cantidades dejan de contar como recibidas) y recalcula el estado de
+     * recepción de la orden. No se permite si la orden ya fue facturada.
+     */
+    public function anular(Request $request, CompraOrden $orden, CompraRecepcion $recepcion): RedirectResponse
+    {
+        abort_unless($request->user()->can('compras.gestionar'), 403);
+        abort_unless($orden->compania_id === $this->companiaActivaId($request), 404);
+        abort_unless($recepcion->orden_id === $orden->id, 404);
+
+        if ($recepcion->estado === CompraRecepcion::ESTADO_ANULADO) {
+            return back()->withErrors(['recepcion' => 'La recepción ya está anulada.']);
+        }
+
+        if ($orden->cxp_documento_id
+            || in_array($orden->estado, [CompraOrden::ESTADO_FACTURADA, CompraOrden::ESTADO_ANULADA], true)) {
+            return back()->withErrors(['recepcion' => 'La orden ya fue facturada o anulada; no se puede anular la recepción.']);
+        }
+
+        DB::transaction(function () use ($orden, $recepcion, $request) {
+            $recepcion->update([
+                'estado'     => CompraRecepcion::ESTADO_ANULADO,
+                'updated_by' => $request->user()->email,
+            ]);
+
+            $orden->refresh();
+            $orden->refrescarEstadoRecepcion();
+        });
+
+        return redirect()->route('admin.compras.ordenes.show', $orden)
+            ->with('status', "Recepción {$recepcion->numero} anulada; las cantidades volvieron a quedar pendientes.");
     }
 }

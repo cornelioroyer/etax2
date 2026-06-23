@@ -7,7 +7,34 @@
     </x-slot>
 
     <div class="py-8">
-        <div class="max-w-3xl mx-auto sm:px-6 lg:px-8">
+        <div class="max-w-3xl mx-auto sm:px-6 lg:px-8 space-y-4">
+            @if (session('status'))
+                <div class="rounded-md bg-green-50 p-4 text-sm text-green-800">{{ session('status') }}</div>
+            @endif
+            @if ($errors->any())
+                <div class="rounded-md bg-red-50 p-4 text-sm text-red-800">
+                    @foreach ($errors->all() as $e)<div>{{ $e }}</div>@endforeach
+                </div>
+            @endif
+
+            @can('bancos.gestionar')
+                @php($esManual = ! $movimiento->conciliado && $movimiento->documento_origen !== \App\Services\BancoSync::ORIGEN)
+                @if ($esManual)
+                    <div class="flex flex-wrap items-center justify-end gap-2">
+                        <form method="POST" action="{{ route('admin.bco.movimientos.editar', $movimiento) }}"
+                              onsubmit="return confirm('Para editar este movimiento se anulará (retirándolo del ledger y anulando su asiento) y se reabrirá el formulario con sus datos para registrarlo de nuevo. ¿Continuar?');">
+                            @csrf
+                            <button class="rounded-md border border-blue-300 bg-white px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">Editar</button>
+                        </form>
+                        <form method="POST" action="{{ route('admin.bco.movimientos.anular', $movimiento) }}"
+                              onsubmit="return confirm('¿Anular este movimiento? Se retirará del ledger del banco y se anulará su asiento contable.');">
+                            @csrf
+                            <button class="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">Anular</button>
+                        </form>
+                    </div>
+                @endif
+            @endcan
+
             <div class="bg-white p-6 shadow-sm sm:rounded-lg">
                 <dl class="grid grid-cols-2 gap-x-8 gap-y-3 text-sm sm:grid-cols-3">
                     <div>
