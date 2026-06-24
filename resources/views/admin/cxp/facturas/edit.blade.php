@@ -11,6 +11,7 @@
             $base = round((float) $l->cantidad * (float) $l->precio_unitario, 2);
             $tasa = $base > 0 ? (int) round((float) $l->impuesto_monto / $base * 100) : 0;
             return [
+                'item_id' => $l->item_id,
                 'descripcion' => $l->descripcion,
                 'cantidad' => (float) $l->cantidad,
                 'precio_unitario' => (float) $l->precio_unitario,
@@ -82,7 +83,7 @@
                                         <th class="w-24 py-2 pr-2 text-right">Cant.</th>
                                         <th class="w-32 py-2 pr-2 text-right">Precio</th>
                                         <th class="w-24 py-2 pr-2">ITBMS</th>
-                                        <th class="py-2 pr-2 min-w-[14rem]">Cuenta de gasto/costo</th>
+                                        <th class="py-2 pr-2 min-w-[14rem]">Cuenta contable (gasto / inventario)</th>
                                         <th class="w-28 py-2 pr-2 text-right">Total</th>
                                         <th class="w-10"></th>
                                     </tr>
@@ -91,7 +92,32 @@
                                     <template x-for="(linea, idx) in lineas" :key="idx">
                                         <tr class="border-t border-gray-100 align-top">
                                             <td class="py-2 pr-2">
+                                                <input type="hidden" :name="`lineas[${idx}][item_id]`" :value="linea.item_id ?? ''">
+                                                {{-- Combobox de artículo de inventario (opcional): elígelo para subir stock --}}
+                                                <div class="relative mb-1" @click.outside="linea.mostrarItems = false">
+                                                    <input type="text" x-model="linea.busqueda" autocomplete="off"
+                                                           @focus="linea.mostrarItems = true" @input="linea.item_id = null; linea.mostrarItems = true"
+                                                           placeholder="Buscar artículo (opcional)…"
+                                                           style="padding-right:1.75rem"
+                                                           class="block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                                           :class="linea.item_id ? 'text-gray-800 font-semibold' : 'text-gray-500'">
+                                                    <button type="button" x-show="linea.item_id || linea.busqueda" @click="limpiarArticulo(linea)"
+                                                            style="position:absolute;right:0.4rem;top:50%;transform:translateY(-50%)"
+                                                            class="text-xs text-gray-400 hover:text-gray-700">✕</button>
+                                                    <div x-show="linea.mostrarItems && linea.busqueda.length > 0 && !linea.item_id" x-cloak
+                                                         class="absolute z-30 mt-1 w-full max-h-44 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                                                        <template x-for="art in articulosFiltrados(linea.busqueda)" :key="art.id">
+                                                            <button type="button" @click="seleccionarArticulo(linea, art)"
+                                                                    class="block w-full px-3 py-1.5 text-left text-xs hover:bg-indigo-50">
+                                                                <span class="font-semibold text-gray-800" x-text="art.codigo ? art.codigo + ' — ' + art.nombre : art.nombre"></span>
+                                                                <span class="ml-1 text-gray-400" x-text="art.tipo === 'PRODUCTO' ? '· inventario' : '· servicio'"></span>
+                                                            </button>
+                                                        </template>
+                                                        <div x-show="articulosFiltrados(linea.busqueda).length === 0" class="px-3 py-1.5 text-xs text-gray-400">Sin resultados</div>
+                                                    </div>
+                                                </div>
                                                 <input type="text" :name="`lineas[${idx}][descripcion]`" x-model="linea.descripcion" required
+                                                       placeholder="Descripción"
                                                        class="block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                             </td>
                                             <td class="py-2 pr-2">
@@ -205,21 +231,62 @@
     </script>
 
     <script>
+        // Catálogo de artículos para el combobox de cada línea de compra.
+        const ARTICULOS_CXP = @json($articulos->map(fn ($a) => [
+            'id' => (string) $a->id,
+            'codigo' => $a->codigo,
+            'nombre' => $a->nombre,
+            'tipo' => $a->tipo,
+            'costo' => (float) $a->costo,
+            'cuenta_inventario_id' => $a->cuenta_inventario_id ? (string) $a->cuenta_inventario_id : '',
+            'cuenta_gasto_id' => $a->cuenta_gasto_id ? (string) $a->cuenta_gasto_id : '',
+        ])->values());
+        const CUENTA_INVENTARIO_DEFAULT = '{{ (int) ($cuentaInventarioId ?? 0) ?: '' }}';
+
         function facturaCxp(lineasIniciales, cuentaGastoId, provCuentas) {
             return {
                 cuentaGlobal: cuentaGastoId || '',
                 provCuentas: provCuentas || {},
                 cuentaActual: cuentaGastoId || '',
-                nueva() { return { descripcion: '', cantidad: 1, precio_unitario: 0, tasa_itbms: 7, cuenta_id: this.cuentaActual || '' }; },
+                nueva() { return { item_id: null, busqueda: '', mostrarItems: false, descripcion: '', cantidad: 1, precio_unitario: 0, tasa_itbms: 7, cuenta_id: this.cuentaActual || '' }; },
                 lineas: lineasIniciales.length
-                    ? lineasIniciales.map(l => ({
-                        descripcion: l.descripcion ?? '',
-                        cantidad: parseFloat(l.cantidad) || 1,
-                        precio_unitario: parseFloat(l.precio_unitario) || 0,
-                        tasa_itbms: parseInt(l.tasa_itbms) || 0,
-                        cuenta_id: l.cuenta_id ?? '',
-                    }))
-                    : [{ descripcion: '', cantidad: 1, precio_unitario: 0, tasa_itbms: 7, cuenta_id: cuentaGastoId || '' }],
+                    ? lineasIniciales.map(l => {
+                        const art = l.item_id ? ARTICULOS_CXP.find(a => a.id === String(l.item_id)) : null;
+                        return {
+                            item_id: l.item_id ? parseInt(l.item_id) : null,
+                            busqueda: art ? (art.codigo ? art.codigo + ' — ' + art.nombre : art.nombre) : '',
+                            mostrarItems: false,
+                            descripcion: l.descripcion ?? '',
+                            cantidad: parseFloat(l.cantidad) || 1,
+                            precio_unitario: parseFloat(l.precio_unitario) || 0,
+                            tasa_itbms: parseInt(l.tasa_itbms) || 0,
+                            cuenta_id: l.cuenta_id ?? '',
+                        };
+                    })
+                    : [{ item_id: null, busqueda: '', mostrarItems: false, descripcion: '', cantidad: 1, precio_unitario: 0, tasa_itbms: 7, cuenta_id: cuentaGastoId || '' }],
+                articulosFiltrados(q) {
+                    const t = (q || '').trim().toLowerCase();
+                    const lista = !t ? ARTICULOS_CXP : ARTICULOS_CXP.filter(a =>
+                        (a.codigo || '').toLowerCase().includes(t) || (a.nombre || '').toLowerCase().includes(t));
+                    return lista.slice(0, 12);
+                },
+                seleccionarArticulo(linea, art) {
+                    linea.item_id = parseInt(art.id);
+                    linea.busqueda = art.codigo ? art.codigo + ' — ' + art.nombre : art.nombre;
+                    if (!linea.descripcion) linea.descripcion = art.nombre;
+                    if (art.costo > 0) linea.precio_unitario = art.costo;
+                    if (art.tipo === 'PRODUCTO') {
+                        linea.cuenta_id = art.cuenta_inventario_id || CUENTA_INVENTARIO_DEFAULT || linea.cuenta_id;
+                    } else if (art.cuenta_gasto_id) {
+                        linea.cuenta_id = art.cuenta_gasto_id;
+                    }
+                    linea.mostrarItems = false;
+                },
+                limpiarArticulo(linea) {
+                    linea.item_id = null;
+                    linea.busqueda = '';
+                    linea.mostrarItems = false;
+                },
                 onProveedor(provId) {
                     const nuevaCuenta = String((this.provCuentas[provId] ?? '') || this.cuentaGlobal || '');
                     const anterior = String(this.cuentaActual || '');

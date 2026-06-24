@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Concerns\ConCompaniaActiva;
+use App\Http\Controllers\Concerns\EmparejaContactos;
 use App\Http\Controllers\Concerns\ExportaReporte;
 use App\Http\Controllers\Controller;
 use App\Exports\CxpComprasPlantillaExport;
@@ -17,6 +18,8 @@ use App\Models\AfiActivo;
 use App\Models\CxpDocumento;
 use App\Models\CxpDocumentoDetalle;
 use App\Models\CxpImportacion;
+use App\Models\InvAlmacen;
+use App\Models\ItemProducto;
 use App\Models\TipoContacto;
 use App\Models\TipoDocumento;
 use App\Services\AsientoAutomatico;
@@ -41,6 +44,7 @@ use Throwable;
 class CxpFacturaController extends Controller
 {
     use ConCompaniaActiva;
+    use EmparejaContactos;
     use ExportaReporte;
 
     public function index(Request $request): View|Response
@@ -157,6 +161,8 @@ class CxpFacturaController extends Controller
                 ->orderBy('codigo')
                 ->get(['id', 'codigo', 'nombre']),
             'cuentaGastoId' => CuentaDefault::idPara($companiaId, 'GASTO_DEFAULT'),
+            'cuentaInventarioId' => CuentaDefault::idPara($companiaId, 'INVENTARIO'),
+            'articulos' => $this->articulosCompra($companiaId),
             'cuentasPago' => $this->cuentasPago($companiaId),
             'cuentaPagoId' => CuentaDefault::idPara($companiaId, 'BANCO_DEFAULT')
                 ?? CuentaDefault::idPara($companiaId, 'CAJA_DEFAULT'),
@@ -262,6 +268,8 @@ class CxpFacturaController extends Controller
                 ->orderBy('codigo')
                 ->get(['id', 'codigo', 'nombre']),
             'cuentaGastoId' => CuentaDefault::idPara($companiaId, 'GASTO_DEFAULT'),
+            'cuentaInventarioId' => CuentaDefault::idPara($companiaId, 'INVENTARIO'),
+            'articulos' => $this->articulosCompra($companiaId),
         ]);
     }
 
@@ -360,6 +368,10 @@ class CxpFacturaController extends Controller
                 Rule::exists('cgl_cuentas', 'id')->where('compania_id', $companiaId),
             ],
             'lineas' => ['required', 'array', 'min:1'],
+            'lineas.*.item_id' => [
+                'nullable', 'integer',
+                Rule::exists('item_productos_servicios', 'id')->where('compania_id', $companiaId),
+            ],
             'lineas.*.descripcion' => ['required', 'string', 'max:500'],
             'lineas.*.cantidad' => ['required', 'numeric', 'gt:0', 'max:999999999'],
             'lineas.*.precio_unitario' => ['required', 'numeric', 'gte:0', 'max:999999999'],
@@ -419,6 +431,7 @@ class CxpFacturaController extends Controller
 
             $lineas[] = [
                 'linea' => $i + 1,
+                'item_id' => ! empty($linea['item_id']) ? (int) $linea['item_id'] : null,
                 'descripcion' => $linea['descripcion'],
                 'cantidad' => $cantidad,
                 'precio_unitario' => $precio,
@@ -543,6 +556,9 @@ class CxpFacturaController extends Controller
             'estado' => CxpDocumento::ESTADO_PENDIENTE,
             'updated_by' => $usuario->email,
         ]);
+
+        // Sube existencias de las líneas que apuntan a un artículo de inventario.
+        $this->registrarEntradasInventario($factura, $usuario);
     }
 
     /**
@@ -611,6 +627,93 @@ class CxpFacturaController extends Controller
             'estado' => CxpDocumento::ESTADO_PAGADO,
             'updated_by' => $usuario->email,
         ]);
+
+        // Sube existencias de las líneas que apuntan a un artículo de inventario.
+        $this->registrarEntradasInventario($factura, $usuario);
+    }
+
+    /**
+     * Sube a inventario las líneas de la factura que apuntan a un artículo de
+     * tipo PRODUCTO. La contabilidad ya la lleva el asiento de la factura
+     * (Dr Inventario / Cr CxP o Banco), así que el movimiento de inventario NO
+     * postea asiento propio: solo enlaza al documento para kárdex/trazabilidad.
+     *
+     * Solo aplica a documentos de cargo (factura/ND/reembolso/importación); las
+     * notas de crédito (abonos) no mueven stock. Debe llamarse dentro de la
+     * transacción de contabilización, con $factura->detalle ya cargado.
+     */
+    private function registrarEntradasInventario(CxpDocumento $factura, $usuario): void
+    {
+        if ($factura->esAbono()) {
+            return;
+        }
+
+        $itemIds = $factura->detalle->pluck('item_id')->filter()->unique();
+        if ($itemIds->isEmpty()) {
+            return;
+        }
+
+        $items = ItemProducto::whereIn('id', $itemIds)
+            ->where('compania_id', $factura->compania_id)
+            ->get(['id', 'tipo'])
+            ->keyBy('id');
+
+        $entradas = [];
+        foreach ($factura->detalle as $linea) {
+            if (! $linea->item_id) {
+                continue;
+            }
+            $item = $items->get($linea->item_id);
+            if (! $item || $item->tipo !== ItemProducto::TIPO_PRODUCTO) {
+                continue;
+            }
+            $cantidad = (float) $linea->cantidad;
+            if ($cantidad <= 0) {
+                continue;
+            }
+            // Costo = base sin ITBMS (el crédito fiscal no es costo del inventario).
+            $base = round((float) $linea->total_linea - (float) $linea->impuesto_monto, 2);
+            $entradas[] = [
+                'item_id'        => (int) $linea->item_id,
+                'cantidad'       => $cantidad,
+                'costo_unitario' => round($base / $cantidad, 4),
+            ];
+        }
+
+        if (empty($entradas)) {
+            return;
+        }
+
+        // Almacén destino: el primer almacén activo de la compañía. Sin almacén
+        // no se mueve stock (la contabilidad ya quedó registrada en el asiento).
+        $almacenId = InvAlmacen::where('compania_id', $factura->compania_id)
+            ->where('activo', true)
+            ->orderBy('codigo')
+            ->value('id');
+
+        if (! $almacenId) {
+            return;
+        }
+
+        app(InventarioCompras::class)->registrarEntrada(
+            $factura->compania_id,
+            $almacenId,
+            $factura->fecha->format('Y-m-d'),
+            $entradas,
+            $factura->asiento_id,
+            'cxp_documentos',
+            $factura->id,
+            $usuario,
+        );
+    }
+
+    /** Artículos activos de la compañía para el combobox de líneas de compra. */
+    private function articulosCompra(int $companiaId)
+    {
+        return ItemProducto::where('compania_id', $companiaId)
+            ->where('activo', true)
+            ->orderBy('nombre')
+            ->get(['id', 'codigo', 'nombre', 'descripcion', 'tipo', 'costo', 'cuenta_inventario_id', 'cuenta_gasto_id']);
     }
 
     private function autorizarFactura(Request $request, CxpDocumento $documento): void
@@ -1334,6 +1437,14 @@ class CxpFacturaController extends Controller
             ->get(['id', 'codigo'])
             ->keyBy(fn ($c) => trim((string) $c->codigo));
 
+        // Índice de contactos para emparejar proveedores con tolerancia (sin duplicar):
+        // por RUC exacto, código exacto y nombre NORMALIZADO. Se construye una vez y los
+        // proveedores nuevos se agregan dentro del bucle para reconocerlos en filas siguientes.
+        $indiceProveedores = ['ruc' => [], 'codigo' => [], 'nombre' => []];
+        foreach (Contacto::where('compania_id', $companiaId)->get(['id', 'codigo', 'nombre', 'identificacion', 'cuenta_gasto_id']) as $c) {
+            $this->indexarContacto($indiceProveedores, $c);
+        }
+
         $errores = [];
         $documentos = []; // clave proveedor|tipo|numero => cabecera + líneas
 
@@ -1361,7 +1472,7 @@ class CxpFacturaController extends Controller
                 continue;
             }
 
-            $proveedor = $this->resolverOCrearProveedorGenerico($f, $companiaId, $cuentaGastoDefault, $usuario);
+            $proveedor = $this->resolverOCrearProveedorGenerico($f, $companiaId, $cuentaGastoDefault, $usuario, $indiceProveedores);
 
             // Cuenta de gasto: por código del Excel, o la del proveedor, o la default.
             $cuentaId = null;
@@ -1474,26 +1585,31 @@ class CxpFacturaController extends Controller
     }
 
     /** Resuelve el proveedor por RUC → código → nombre; si no existe lo crea. */
-    private function resolverOCrearProveedorGenerico(array $f, int $companiaId, ?int $cuentaGastoDefault, $usuario): Contacto
+    /**
+     * Resuelve el proveedor contra el índice (RUC exacto → código exacto → nombre
+     * NORMALIZADO, tolerante a tildes/mayúsculas/puntuación/espacios); si no existe
+     * lo crea y lo agrega al índice para las filas siguientes. $indice por referencia.
+     */
+    private function resolverOCrearProveedorGenerico(array $f, int $companiaId, ?int $cuentaGastoDefault, $usuario, array &$indice): Contacto
     {
         $ruc = $f['ruc'] !== '' ? substr($f['ruc'], 0, 50) : null;
         $nombre = $f['proveedor'];
 
-        $proveedor = null;
-        if ($ruc) {
-            $proveedor = Contacto::where('compania_id', $companiaId)->where('identificacion', $ruc)->first();
+        if ($ruc && isset($indice['ruc'][$ruc])) {
+            return $indice['ruc'][$ruc];
         }
-        if (! $proveedor && $nombre !== '') {
-            $proveedor = Contacto::where('compania_id', $companiaId)
-                ->where(fn ($q) => $q->where('codigo', $nombre)->orWhere('nombre', $nombre))
-                ->first();
-        }
-        if ($proveedor) {
-            return $proveedor;
+        if ($nombre !== '') {
+            if (isset($indice['codigo'][$nombre])) {
+                return $indice['codigo'][$nombre];
+            }
+            $norm = $this->normalizarTexto($nombre);
+            if ($norm !== '' && isset($indice['nombre'][$norm])) {
+                return $indice['nombre'][$norm];
+            }
         }
 
         $codigo = $ruc;
-        if ($codigo && Contacto::where('compania_id', $companiaId)->where('codigo', $codigo)->exists()) {
+        if ($codigo && isset($indice['codigo'][$codigo])) {
             $codigo = null;
         }
 
@@ -1511,6 +1627,8 @@ class CxpFacturaController extends Controller
         if ($tipoProveedor = TipoContacto::where('codigo', 'PROVEEDOR')->first()) {
             $proveedor->tipos()->attach($tipoProveedor->id);
         }
+
+        $this->indexarContacto($indice, $proveedor);
 
         return $proveedor;
     }
