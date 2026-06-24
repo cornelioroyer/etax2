@@ -100,6 +100,7 @@ class RolesYPermisosSeeder extends Seeder
             'zonas.ver',
             'contabilidad.ver',
             'compras.ver',
+            'compras.gestionar', // por ahora todos los usuarios pueden gestionar órdenes de compra
             'ventas.ver',
             'bancos.ver',
             'caja.ver',

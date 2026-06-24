@@ -24,11 +24,7 @@
 
             {{-- Filtros --}}
             <form method="GET" class="bg-white p-4 shadow-sm sm:rounded-lg">
-                <div class="grid grid-cols-2 gap-3 sm:grid-cols-6">
-                    <div class="col-span-2">
-                        <x-input-label for="q" value="Buscar" />
-                        <x-text-input id="q" name="q" type="text" class="mt-1 block w-full" :value="$filtros['q'] ?? ''" placeholder="Número o proveedor" />
-                    </div>
+                <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
                     <x-buscador-contacto name="proveedor_id" label="Proveedor" :opciones="$proveedores" :selected="$filtros['proveedor_id'] ?? null" />
                     <div>
                         <x-input-label for="estado" value="Estado" />

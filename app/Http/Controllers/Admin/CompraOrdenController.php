@@ -41,7 +41,6 @@ class CompraOrdenController extends Controller
             'proveedor_id' => ['nullable', 'integer'],
             'desde'        => ['nullable', 'date'],
             'hasta'        => ['nullable', 'date'],
-            'q'            => ['nullable', 'string', 'max:100'],
         ]);
 
         $ordenes = CompraOrden::query()
@@ -51,13 +50,6 @@ class CompraOrdenController extends Controller
             ->when($filtros['proveedor_id'] ?? null, fn ($q, $v) => $q->where('proveedor_id', $v))
             ->when($filtros['desde'] ?? null, fn ($q, $v) => $q->whereDate('fecha', '>=', $v))
             ->when($filtros['hasta'] ?? null, fn ($q, $v) => $q->whereDate('fecha', '<=', $v))
-            ->when($filtros['q'] ?? null, function ($q, $texto) {
-                $b = '%'.mb_strtolower($texto).'%';
-                $q->where(fn ($q) => $q
-                    ->whereRaw('LOWER(numero) LIKE ?', [$b])
-                    ->orWhereHas('proveedor', fn ($c) => $c->whereRaw('LOWER(nombre) LIKE ?', [$b]))
-                );
-            })
             ->orderByDesc('fecha')
             ->orderByDesc('numero')
             ->paginate(25)

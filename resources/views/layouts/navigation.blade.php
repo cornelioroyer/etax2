@@ -39,7 +39,7 @@
             'show' => $can('compras.ver'),
             'children' => [
                 ['label' => 'Proveedores', 'href' => route('admin.contactos.index', ['tipo' => 'PROVEEDOR']), 'active' => request()->routeIs('admin.contactos.*') && request('tipo') === 'PROVEEDOR', 'show' => $can('contactos.ver')],
-                ['label' => 'Órdenes de compra', 'href' => route('admin.compras.ordenes.index'), 'active' => request()->routeIs('admin.compras.ordenes.*'), 'show' => false /* oculto hasta completar implementación */],
+                ['label' => 'Órdenes de compra', 'href' => route('admin.compras.ordenes.index'), 'active' => request()->routeIs('admin.compras.ordenes.*'), 'show' => $can('compras.ver')],
                 ['label' => 'Facturas de compra', 'href' => route('admin.cxp.facturas.index'), 'active' => request()->routeIs('admin.cxp.facturas.*') && !request()->routeIs('admin.cxp.facturas.desde-cufe*'), 'show' => $can('cxp.ver')],
                 ['label' => 'Registrar por QR / CUFE', 'href' => route('admin.cxp.facturas.desde-cufe.form'), 'active' => request()->routeIs('admin.cxp.facturas.desde-cufe*'), 'show' => $can('cxp.gestionar')],
             ],
