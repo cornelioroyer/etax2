@@ -39,8 +39,12 @@ garantizan **en dos capas**: en PHP (`AsientoAutomatico`) y en la base de datos
 
 **Nota.** La **función** del trigger está en una migración, pero la sentencia
 `CREATE TRIGGER` que la engancha a la tabla no aparece en el repositorio: vive en
-el esquema maestro (ver D-01). ⚠ **Verificar** que el trigger esté efectivamente
-creado en producción.
+el esquema maestro (ver D-01).
+
+> ✅ **Verificado 2026-06-23 (dev y prod).** La función `fn_validar_asiento_posteado`
+> existe y el trigger **`trg_cgl_asientos_posteo` sobre `cgl_asientos` está ACTIVO**
+> (`pg_trigger.tgenabled='O'`) tanto en `etax2_dev` como en `etax2`. El control
+> contable en base de datos está operativo. Sin acción pendiente.
 
 ---
 
@@ -89,19 +93,38 @@ poder descifrarse. ⚠ Custodiar `APP_KEY`.
 
 ---
 
-## D-06 · ITBMS con dos fuentes de verdad (inconsistencia)
+## D-06 · ITBMS con TRES fuentes de verdad (inconsistencia)
+
+> **Actualizado 2026-06-23 (revisión de código).** El registro original decía "dos
+> fuentes". La revisión confirmó que en realidad hay **tres** representaciones
+> independientes de las tasas ITBMS.
 
 **Qué se observó.**
-- Ventas y Compras calculan el ITBMS leyendo el **porcentaje de la tabla
-  `tax_impuestos`** (`base * porcentaje / 100`).
-- El módulo **FEL** usa un arreglo de **factores fijos en código**
-  (`FelDocumentoBuilder::TASAS_ITBMS = ['00'=>0.00, '01'=>0.07, '02'=>0.10, '03'=>0.15]`).
+1. **Tabla `tax_impuestos`** (porcentaje por fila): la usan **Ventas** (factura,
+   cotización), **Compras** (orden), **Items** y el importador FEL, vía
+   `TaxImpuesto::itbmsGlobales()` y `base * porcentaje / 100`. Códigos de catálogo:
+   `ITBMS_0 / ITBMS_7 / ITBMS_10 / ITBMS_15`.
+2. **Arreglo fijo en código `[0, 7, 10, 15]`** (enteros %): lo usan **CxC y CxP**
+   en `CxcFacturaController`, `CxpFacturaController`, `CxcNotaController`,
+   `CxpNotaController` (`public const TASAS_ITBMS`), validado con `Rule::in`. Estos
+   controladores **NO** leen `tax_impuestos`.
+3. **Arreglo fijo en código `FelDocumentoBuilder::TASAS_ITBMS`** (factores por
+   código DGI): `['00'=>0.00, '01'=>0.07, '02'=>0.10, '03'=>0.15]`, usado por FEL
+   para armar el XML de la DGI (`FacturaFelController`).
 
-**Decisión inferida / riesgo.** Hoy ambos dan el mismo resultado, pero son dos
-fuentes de verdad distintas. Si la DGI cambiara una tasa, habría que actualizarla
-en **dos lugares**. Detallado en `fiscal/itbms.md` → "Inconsistencias detectadas".
+**Riesgo.** Hoy los valores coinciden (0/7/10/15 %), por lo que no hay descuadre
+numérico inmediato. Pero ante un cambio de tasa de la DGI habría que tocar **tres
+lugares**, y CxC/CxP quedarían fuera de cualquier catálogo administrado en
+`tax_impuestos`. Detallado en `fiscal/itbms.md` → "Inconsistencias detectadas".
 
-⚠ **Verificar con contador.**
+**Decisión propuesta (en curso).** Centralizar la definición canónica en el modelo
+`TaxImpuesto` (constantes `PORCENTAJES_ITBMS` y `DGI_CODIGO_POR_PORCENTAJE` +
+helper `factorItbmsPorCodigoDgi()`), y que CxC/CxP y FEL **deriven** de ahí. La
+tabla `tax_impuestos` debe mantenerse consistente con esa definición. Pendiente de
+prueba en dev (`php artisan test`).
+
+⚠ **Verificar con contador** que las cuatro tasas (0/7/10/15) y su asignación por
+tipo de producto sean las correctas para Panamá.
 
 ---
 
@@ -133,8 +156,46 @@ contra utilidades retenidas se ajuste a la política contable de la empresa.
 **Decisión inferida.** Hubo una primera versión de tablas que luego fue sustituida
 por las `core_*` / `bco_*`. Las primeras quedaron como legado.
 
-⚠ **Pendiente de verificar:** confirmar cuáles tablas están realmente en uso y
-retirar las obsoletas para evitar confusión.
+> **Actualizado 2026-06-23 (revisión de código).** Confirmado por modelo:
+> `Compania` → `core_companias`, `Zona` → `core_zonas` (las tablas `companias` y
+> `zonas` quedan como legado dormido, solo las crea su migración).
+>
+> **Hallazgo nuevo — el par de bancos NO es legado dormido, está activo:** existen
+> **dos módulos bancarios cableados en rutas a la vez** bajo el mismo permiso
+> `bancos.ver`:
+> - `bancos.*` (`routes/web.php` ~286-292) → **viejo** `BancoCuentaController`,
+>   tabla `banco_cuentas`, con `tests/Feature/BancoTest.php` dependiente.
+> - `bco/*` (`routes/web.php` ~424+) → **nuevo** módulo (`BcoCuentaController`,
+>   `BcoMovimientoController`, conciliación, transferencias), tabla `bco_cuentas`.
+>
+> Riesgo: un usuario podría crear cuentas en `banco_cuentas` (módulo viejo) que el
+> módulo nuevo `bco_*` no ve. Antes de retirar el viejo hay que verificar en
+> **dev/prod** si `banco_cuentas` tiene filas/movimientos reales.
+
+> ✅ **Verificado y corregido 2026-06-23.** Conteo en BD:
+> | tabla | etax2_dev | etax2 (prod) |
+> |---|---|---|
+> | `banco_cuentas` (legado) | **0** | **0** |
+> | `bco_cuentas` (activa) | 5 | 4 |
+> | `companias` (legado) | 1 | 1 |
+> | `core_companias` (activa) | 3 | 13 |
+> | `zonas` (legado) | 1 | 1 |
+> | `core_zonas` (activa) | 1 | 1 |
+>
+> Como `banco_cuentas` está **vacía en dev y prod** y el módulo viejo estaba
+> huérfano (el menú ya apuntaba a `bco.*`, y `BancoSync` usa `BcoCuenta`), se
+> **retiró el módulo legado** en código: rutas `bancos.*`, `BancoCuentaController`,
+> modelo `BancoCuenta`, vista `admin/bancos/index.blade.php` y `BancoTest`.
+>
+> **Resuelto 2026-06-23 (autorizado).** Se ejecutó `DROP TABLE banco_cuentas` en
+> `etax2_dev` y `etax2` (estaba vacía: 0 filas, 0 FK dependientes). Su DDL queda
+> versionado en la migración `2026_06_12_000002_banco_cuentas_tabla.php` (recreable).
+> El despliegue de código (retiro del módulo + unificación ITBMS de D-06) se aplicó
+> a **dev y prod** con la suite de pruebas en verde.
+>
+> Quedan como legado dormido (no eliminadas) `companias` y `zonas` con 1 fila
+> huérfana cada una; pueden retirarse en una limpieza posterior si se confirma que
+> ningún proceso las consulta.
 
 ---
 

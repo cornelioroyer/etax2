@@ -38,15 +38,7 @@
                         <x-input-label for="q" value="Buscar" />
                         <x-text-input id="q" name="q" type="text" class="mt-1 block w-full" :value="$filtros['q'] ?? ''" placeholder="Número o cliente" />
                     </div>
-                    <div>
-                        <x-input-label for="cliente_id" value="Cliente" />
-                        <select id="cliente_id" name="cliente_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="">Todos</option>
-                            @foreach ($clientes as $cliente)
-                                <option value="{{ $cliente->id }}" @selected(($filtros['cliente_id'] ?? null) == $cliente->id)>{{ $cliente->nombre }}</option>
-                            @endforeach
-                        </select>
-                    </div>
+                    <x-buscador-contacto name="cliente_id" label="Cliente" :opciones="$clientes" :selected="$filtros['cliente_id'] ?? null" />
                     <div>
                         <x-input-label for="estado" value="Estado" />
                         <select id="estado" name="estado" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">

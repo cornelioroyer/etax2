@@ -15,7 +15,13 @@ use App\Models\FelConfiguracion;
  */
 class FelDocumentoBuilder
 {
-    /** Tasas ITBMS según catálogo DGI: código => factor */
+    /**
+     * Tasas ITBMS según catálogo DGI: código => factor.
+     *
+     * Estos factores DEBEN coincidir con los porcentajes canónicos de
+     * App\Models\TaxImpuesto (PORCENTAJES_ITBMS / DGI_CODIGO_POR_PORCENTAJE).
+     * La consistencia la verifica ItbmsConsistenciaTest. Ver DECISIONES.md → D-06.
+     */
     public const TASAS_ITBMS = [
         '00' => 0.00,   // Exento
         '01' => 0.07,   // 7%

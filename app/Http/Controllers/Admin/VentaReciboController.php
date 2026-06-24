@@ -48,7 +48,7 @@ class VentaReciboController extends Controller
             ->where('activo', true)
             ->whereHas('tipos', fn ($q) => $q->where('codigo', 'CLIENTE'))
             ->orderBy('nombre')
-            ->get(['id', 'nombre']);
+            ->get(['id', 'codigo', 'nombre']);
 
         return view('admin.ventas.recibos.index', compact('recibos', 'filtros', 'clientes'));
     }

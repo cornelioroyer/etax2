@@ -71,14 +71,9 @@
                             <x-input-error :messages="$errors->get('numero_manual')" class="mt-1" />
                         </div>
                         <div>
-                            <x-input-label for="cliente_id" value="Cliente *" />
-                            <select id="cliente_id" name="cliente_id" required
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="">— Cliente —</option>
-                                @foreach ($clientes as $cliente)
-                                    <option value="{{ $cliente->id }}" @selected(old('cliente_id', $factura->cliente_id ?? null) == $cliente->id)>{{ $cliente->codigo }} — {{ $cliente->nombre }}</option>
-                                @endforeach
-                            </select>
+                            <x-buscador-contacto name="cliente_id" label="Cliente *" required
+                                placeholder="— Selecciona el cliente —"
+                                :opciones="$clientes" :selected="old('cliente_id', $factura->cliente_id ?? null)" />
                             <x-input-error :messages="$errors->get('cliente_id')" class="mt-1" />
                         </div>
                         <div>

@@ -18,14 +18,9 @@
             <form method="GET" action="{{ route('admin.cxc.cobros.create') }}" class="bg-white p-6 shadow-sm sm:rounded-lg">
                 <div class="flex flex-wrap items-end gap-3">
                     <div class="min-w-64 flex-1">
-                        <x-input-label for="cliente_id" value="Cliente *" />
-                        <select id="cliente_id" name="cliente_id" onchange="this.form.submit()"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="">— Selecciona el cliente —</option>
-                            @foreach ($clientes as $cliente)
-                                <option value="{{ $cliente->id }}" @selected($clienteId == $cliente->id)>{{ $cliente->codigo }} — {{ $cliente->nombre }}</option>
-                            @endforeach
-                        </select>
+                        <x-buscador-contacto name="cliente_id" label="Cliente *" submit-on-select
+                            placeholder="— Selecciona el cliente —"
+                            :opciones="$clientes" :selected="$clienteId" />
                     </div>
                     <p class="pb-2 text-xs text-gray-500">Al elegir el cliente se cargan sus facturas con saldo.</p>
                 </div>

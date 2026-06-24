@@ -11,6 +11,7 @@ use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
 use App\Models\CxcDocumento;
 use App\Models\CxcDocumentoDetalle;
+use App\Models\TaxImpuesto;
 use App\Services\AsientoAutomatico;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Http\RedirectResponse;
@@ -25,8 +26,8 @@ class CxcFacturaController extends Controller
     use ConCompaniaActiva;
     use ExportaReporte;
 
-    /** Tasas ITBMS de Panamá aceptadas por línea. */
-    public const TASAS_ITBMS = [0, 7, 10, 15];
+    /** Tasas ITBMS de Panamá aceptadas por línea (fuente única: TaxImpuesto). */
+    public const TASAS_ITBMS = TaxImpuesto::PORCENTAJES_ITBMS;
 
     public function index(Request $request): View|Response
     {

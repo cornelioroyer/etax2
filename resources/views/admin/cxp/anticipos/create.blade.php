@@ -17,14 +17,9 @@
 
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div class="sm:col-span-2">
-                            <x-input-label for="proveedor_id" value="Proveedor *" />
-                            <select id="proveedor_id" name="proveedor_id" required
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="">— Proveedor —</option>
-                                @foreach ($proveedores as $proveedor)
-                                    <option value="{{ $proveedor->id }}" @selected(old('proveedor_id', $proveedorId) == $proveedor->id)>{{ $proveedor->codigo }} — {{ $proveedor->nombre }}</option>
-                                @endforeach
-                            </select>
+                            <x-buscador-contacto name="proveedor_id" label="Proveedor *" required
+                                placeholder="— Selecciona el proveedor —"
+                                :opciones="$proveedores" :selected="old('proveedor_id', $proveedorId)" />
                             <x-input-error :messages="$errors->get('proveedor_id')" class="mt-1" />
                         </div>
                         <div>

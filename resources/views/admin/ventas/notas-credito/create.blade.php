@@ -19,13 +19,9 @@
                 <div class="bg-white p-6 shadow-sm sm:rounded-lg space-y-4">
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Cliente <span class="text-red-500">*</span></label>
-                            <select name="cliente_id" id="cliente_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 text-sm" required onchange="this.form.submit()">
-                                <option value="">Seleccionar…</option>
-                                @foreach ($clientes as $c)
-                                    <option value="{{ $c->id }}" @selected(old('cliente_id', $clienteId) == $c->id)>{{ $c->codigo }} — {{ $c->nombre }}</option>
-                                @endforeach
-                            </select>
+                            <x-buscador-contacto name="cliente_id" label="Cliente *" submit-on-select
+                                placeholder="Seleccionar cliente…"
+                                :opciones="$clientes" :selected="old('cliente_id', $clienteId)" />
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Fecha <span class="text-red-500">*</span></label>

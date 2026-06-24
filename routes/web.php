@@ -26,7 +26,6 @@ use App\Http\Controllers\Admin\ReporteBalanceController;
 use App\Http\Controllers\Admin\ReporteComparativoController;
 use App\Http\Controllers\Admin\ReporteResultadosController;
 use App\Http\Controllers\Admin\FelConfiguracionController;
-use App\Http\Controllers\Admin\BancoCuentaController;
 use App\Http\Controllers\Admin\CierreAnualController;
 use App\Http\Controllers\Admin\CuentaDefaultController;
 use App\Http\Controllers\Admin\DiarioController;
@@ -254,6 +253,8 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('cxp/facturas/importar', [CxpFacturaController::class, 'importar'])->name('cxp.facturas.importar');
         Route::get('cxp/facturas/importar/{importacion}/progreso', [CxpFacturaController::class, 'importarProgreso'])->whereNumber('importacion')->name('cxp.facturas.importar.progreso');
         Route::get('cxp/facturas/importar/{importacion}/estado', [CxpFacturaController::class, 'importarEstado'])->whereNumber('importacion')->name('cxp.facturas.importar.estado');
+        Route::get('cxp/facturas/importar-generico/plantilla', [CxpFacturaController::class, 'importarGenericoPlantilla'])->name('cxp.facturas.importar-generico.plantilla');
+        Route::post('cxp/facturas/importar-generico', [CxpFacturaController::class, 'importarGenerico'])->name('cxp.facturas.importar-generico');
         Route::post('cxp/facturas', [CxpFacturaController::class, 'store'])->name('cxp.facturas.store');
         Route::get('cxp/facturas/{documento}/editar', [CxpFacturaController::class, 'edit'])->whereNumber('documento')->name('cxp.facturas.edit');
         Route::put('cxp/facturas/{documento}', [CxpFacturaController::class, 'update'])->whereNumber('documento')->name('cxp.facturas.update');
@@ -280,16 +281,6 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::get('reportes/flujo-caja', ReporteFlujoCajaController::class)->name('reportes.flujo-caja');
         Route::get('reportes/liquidacion-itbms', ReporteLiquidacionItbmsController::class)->name('reportes.liquidacion-itbms');
         Route::get('reportes/cuadre-auxiliares', ReporteCuadreAuxiliaresController::class)->name('reportes.cuadre-auxiliares');
-    });
-
-    Route::middleware('permission:bancos.ver')->group(function () {
-        Route::get('bancos', [BancoCuentaController::class, 'index'])->name('bancos.index');
-    });
-
-    Route::middleware('permission:bancos.gestionar')->group(function () {
-        Route::post('bancos', [BancoCuentaController::class, 'store'])->name('bancos.store');
-        Route::put('bancos/{cuenta}', [BancoCuentaController::class, 'update'])->name('bancos.update');
-        Route::post('bancos/{cuenta}/toggle', [BancoCuentaController::class, 'toggleActiva'])->name('bancos.toggle');
     });
 
     Route::middleware('permission:compras.ver')->group(function () {

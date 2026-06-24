@@ -29,15 +29,7 @@
             {{-- Filtros --}}
             <form method="GET" class="bg-white p-4 shadow-sm sm:rounded-lg">
                 <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    <div>
-                        <x-input-label for="proveedor_id" value="Proveedor" />
-                        <select id="proveedor_id" name="proveedor_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="">Todos</option>
-                            @foreach ($proveedores as $proveedor)
-                                <option value="{{ $proveedor->id }}" @selected(($filtros['proveedor_id'] ?? null) == $proveedor->id)>{{ $proveedor->nombre }}</option>
-                            @endforeach
-                        </select>
-                    </div>
+                    <x-buscador-contacto name="proveedor_id" label="Proveedor" :opciones="$proveedores" :selected="$filtros['proveedor_id'] ?? null" />
                     <div>
                         <x-input-label for="desde" value="Desde" />
                         <x-text-input id="desde" name="desde" type="text" class="js-date mt-1 block w-full" :value="$filtros['desde'] ?? ''" />
