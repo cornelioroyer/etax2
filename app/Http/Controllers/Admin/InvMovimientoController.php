@@ -132,7 +132,7 @@ class InvMovimientoController extends Controller
 
                 $existencia = InvExistencia::firstOrCreate(
                     ['almacen_id' => $data['almacen_id'], 'item_id' => $linea['item_id']],
-                    ['cantidad' => 0, 'costo_promedio' => $costo, 'updated_by' => $usuario->email]
+                    ['compania_id' => $companiaId, 'cantidad' => 0, 'costo_promedio' => $costo, 'updated_by' => $usuario->email]
                 );
 
                 if ($tipo === 'ENTRADA') {

@@ -10,6 +10,7 @@ use App\Models\CxpDocumento;
 use App\Models\TipoContacto;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
 
 class CxpTest extends TestCase
@@ -171,6 +172,60 @@ class CxpTest extends TestCase
         $this->assertSame($this->banco->id, $lineas[2]->cuenta_id);
         $this->assertSame('107.00', (string) $lineas[2]->credito);
         $this->assertFalse($asiento->detalle->contains('cuenta_id', $this->cxp->id));
+    }
+
+    public function test_importar_compras_generico_crea_borradores(): void
+    {
+        // Excel "propio" (no DGI): proveedor nuevo (se crea), 2 líneas del mismo
+        // documento (se agrupan), itbms por monto y por tasa%, y una NC aparte.
+        $csv = implode("\n", [
+            'proveedor,ruc,numero,fecha,tipo,concepto,cuenta,subtotal,itbms,tasa,vencimiento',
+            'NUEVO PROVEEDOR SA,9-999-9999,FX-100,15/06/2026,FACTURA,Mercancia,60101,100,7,,15/07/2026',
+            'NUEVO PROVEEDOR SA,9-999-9999,FX-100,15/06/2026,FACTURA,Flete,60101,50,,7,',
+            'NUEVO PROVEEDOR SA,9-999-9999,NC-9,16/06/2026,NC,Devolucion,60101,20,1.40,,',
+        ]);
+
+        $archivo = UploadedFile::fake()->createWithContent('compras.csv', $csv);
+
+        $this->actuar()->post(route('admin.cxp.facturas.importar-generico'), ['archivo' => $archivo])
+            ->assertRedirect(route('admin.cxp.facturas.index'))
+            ->assertSessionHas('status');
+
+        // Proveedor creado automáticamente por RUC.
+        $proveedor = Contacto::where('compania_id', $this->compania->id)
+            ->where('identificacion', '9-999-9999')->first();
+        $this->assertNotNull($proveedor);
+
+        // Factura con 2 líneas agrupadas: subtotal 150, itbms 7+3.50, total 160.50.
+        $factura = CxpDocumento::where('tipo_documento', 'FACTURA')->where('numero', 'FX-100')->first();
+        $this->assertNotNull($factura);
+        $this->assertSame('BORRADOR', $factura->estado);
+        $this->assertSame('150.00', (string) $factura->subtotal);
+        $this->assertSame('10.50', (string) $factura->impuesto);
+        $this->assertSame('160.50', (string) $factura->total);
+        $this->assertCount(2, $factura->detalle);
+        $this->assertSame($this->gasto->id, $factura->detalle->first()->cuenta_id);
+
+        // Nota de crédito registrada como tipo NOTA_CREDITO.
+        $nc = CxpDocumento::where('tipo_documento', 'NOTA_CREDITO')->where('numero', 'NC-9')->first();
+        $this->assertNotNull($nc);
+        $this->assertSame('21.40', (string) $nc->total);
+    }
+
+    public function test_importar_compras_generico_es_idempotente(): void
+    {
+        $csv = "proveedor,ruc,numero,fecha,tipo,concepto,cuenta,subtotal,itbms\n"
+             ."PROVEEDOR PRUEBA,,DUP-1,15/06/2026,FACTURA,Algo,60101,100,7";
+
+        $this->actuar()->post(route('admin.cxp.facturas.importar-generico'), [
+            'archivo' => UploadedFile::fake()->createWithContent('c1.csv', $csv),
+        ]);
+        $this->actuar()->post(route('admin.cxp.facturas.importar-generico'), [
+            'archivo' => UploadedFile::fake()->createWithContent('c2.csv', $csv),
+        ]);
+
+        // El segundo import omite el documento ya existente.
+        $this->assertSame(1, CxpDocumento::where('tipo_documento', 'FACTURA')->where('numero', 'DUP-1')->count());
     }
 
     public function test_compra_al_contado_requiere_cuenta_de_pago(): void

@@ -32,7 +32,8 @@ class AsientoController extends Controller
             'desde' => ['nullable', 'date'],
             'hasta' => ['nullable', 'date'],
             'q' => ['nullable', 'string', 'max:100'],
-            'orden' => ['nullable', Rule::in(['numero', 'fecha', 'descripcion', 'referencia', 'total_debito', 'total_credito', 'estado'])],
+            'origen' => ['nullable', Rule::in(Asiento::ETIQUETAS_ORIGEN)],
+            'orden' => ['nullable', Rule::in(['numero', 'fecha', 'descripcion', 'referencia', 'total_debito', 'total_credito', 'origen_modulo', 'estado'])],
             'dir' => ['nullable', Rule::in(['asc', 'desc'])],
         ]);
 
@@ -42,6 +43,7 @@ class AsientoController extends Controller
         $asientos = Asiento::query()
             ->where('compania_id', $companiaId)
             ->when($filtros['estado'] ?? null, fn ($q, $estado) => $q->where('estado', $estado))
+            ->when($filtros['origen'] ?? null, fn ($q, $origen) => $q->origenEtiqueta($origen))
             ->when($filtros['desde'] ?? null, fn ($q, $desde) => $q->whereDate('fecha', '>=', $desde))
             ->when($filtros['hasta'] ?? null, fn ($q, $hasta) => $q->whereDate('fecha', '<=', $hasta))
             ->when($filtros['q'] ?? null, function ($q, $texto) {
@@ -398,22 +400,44 @@ class AsientoController extends Controller
         return view('admin.asientos.show', compact('asiento'));
     }
 
-    public function edit(Request $request, Asiento $asiento): View
+    public function edit(Request $request, Asiento $asiento): View|RedirectResponse
     {
         abort_unless($request->user()->can('contabilidad.editar'), 403);
         $this->verificarCompania($request, $asiento);
-        $this->soloBorrador($asiento, 'editar');
+
+        // Asiento de módulo (CXC, CXP, VEN…): la edición se hace en el documento
+        // de origen, no aquí (editar el asiento descuadraría auxiliar vs mayor).
+        // Si sabemos su URL, redirigimos a la fuente; si no, cae al bloqueo
+        // explicativo de verificarEditable().
+        if ($asiento->esPosteado() && ! $asiento->esManual()) {
+            if ($url = $asiento->urlOrigen()) {
+                return redirect($url)->with('status',
+                    "El asiento {$asiento->numero} proviene de {$asiento->nombreModuloOrigen()}; edítalo en su documento de origen.");
+            }
+        }
+
+        $this->verificarEditable($asiento);
 
         $asiento->load('detalle');
 
-        return view('admin.asientos.edit', ['asiento' => $asiento] + $this->datosFormulario($request));
+        return view('admin.asientos.edit', [
+            'asiento' => $asiento,
+            'reemitir' => $asiento->esPosteado(),
+        ] + $this->datosFormulario($request));
     }
 
     public function update(Request $request, Asiento $asiento): RedirectResponse
     {
         abort_unless($request->user()->can('contabilidad.editar'), 403);
         $this->verificarCompania($request, $asiento);
-        $this->soloBorrador($asiento, 'editar');
+        $this->verificarEditable($asiento);
+
+        // Re-emisión: un asiento posteado NO se muta en sitio (rompería la
+        // inmutabilidad y la auditoría). Se anula el original y se crea uno
+        // nuevo corregido, enlazado al anterior. Solo aplica a manuales.
+        if ($asiento->esPosteado()) {
+            return $this->reemitir($request, $asiento);
+        }
 
         [$data, $lineas] = $this->validated($request, $asiento->compania_id);
         $usuario = $request->user();
@@ -439,6 +463,53 @@ class AsientoController extends Controller
 
         return redirect()->route('admin.asientos.show', $asiento)
             ->with('status', $postear ? "Asiento {$asiento->numero} posteado." : "Asiento {$asiento->numero} actualizado.");
+    }
+
+    /**
+     * Re-emite un asiento manual posteado: en una sola transacción anula el
+     * original (queda ANULADO, con su reverso en saldos) y crea uno nuevo
+     * posteado con las líneas corregidas, enlazado al anterior por origen_id.
+     * Nada se borra: el número viejo permanece en el historial.
+     */
+    private function reemitir(Request $request, Asiento $asiento): RedirectResponse
+    {
+        [$data, $lineas] = $this->validated($request, $asiento->compania_id);
+        $usuario = $request->user();
+
+        $nuevo = DB::transaction(function () use ($asiento, $data, $lineas, $usuario) {
+            // 1) Anular el original. El AsientoObserver revierte saldos y, si un
+            //    movimiento bancario reflejado está conciliado, lanza y revierte.
+            $asiento->update([
+                'estado' => Asiento::ESTADO_ANULADO,
+                'updated_by' => $usuario->email,
+            ]);
+
+            // 2) Crear el sustituto como borrador, enlazado al original.
+            $nuevo = Asiento::create([
+                'compania_id' => $asiento->compania_id,
+                'diario_id' => $asiento->diario_id,
+                'numero' => Asiento::siguienteNumero($asiento->compania_id),
+                'fecha' => $data['fecha'],
+                'descripcion' => $data['descripcion'] ?? null,
+                'referencia' => $data['referencia'] ?? null,
+                'estado' => Asiento::ESTADO_BORRADOR,
+                'origen_modulo' => 'CGL',
+                'origen_tabla' => 'cgl_asientos',
+                'origen_id' => $asiento->id,
+                'total_debito' => collect($lineas)->sum('debito'),
+                'total_credito' => collect($lineas)->sum('credito'),
+                'usuario_id' => $usuario->id,
+                'created_by' => $usuario->email,
+            ]);
+
+            $this->guardarLineas($nuevo, $lineas, $usuario->email);
+            $this->postearAsiento($nuevo, $usuario);
+
+            return $nuevo;
+        });
+
+        return redirect()->route('admin.asientos.show', $nuevo)
+            ->with('status', "Re-emitido: {$asiento->numero} anulado y reemplazado por {$nuevo->numero} (posteado).");
     }
 
     public function destroy(Request $request, Asiento $asiento): RedirectResponse
@@ -679,6 +750,42 @@ class AsientoController extends Controller
             $asiento->esBorrador(),
             422,
             "Solo los borradores se pueden {$accion}; un asiento posteado es inmutable (anúlalo o reviértelo)."
+        );
+    }
+
+    /**
+     * Permite editar borradores y re-emitir asientos manuales posteados en
+     * período abierto. Bloquea los asientos de módulo (CXC, CXP, VEN…): esos
+     * se corrigen anulando su documento de origen, no desde Contabilidad.
+     */
+    private function verificarEditable(Asiento $asiento): void
+    {
+        if ($asiento->esBorrador()) {
+            return;
+        }
+
+        abort_unless(
+            $asiento->esPosteado(),
+            422,
+            "El asiento {$asiento->numero} está anulado; no se puede editar."
+        );
+
+        if (! $asiento->esManual()) {
+            $modulo = $asiento->nombreModuloOrigen();
+
+            abort(422, $modulo
+                ? "El asiento {$asiento->numero} refleja un documento de {$modulo}. "
+                  .'Corrígelo en ese documento, dentro de su módulo, no desde Contabilidad.'
+                : "El asiento {$asiento->numero} no es un asiento manual; "
+                  .'solo los asientos manuales se pueden re-emitir.');
+        }
+
+        $periodo = $asiento->periodo;
+
+        abort_if(
+            $periodo && ! $periodo->estaAbierto(),
+            422,
+            "El período {$periodo->anio}-".str_pad((string) $periodo->mes, 2, '0', STR_PAD_LEFT)." está {$periodo->estado}; no se puede re-emitir el asiento."
         );
     }
 

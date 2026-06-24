@@ -31,6 +31,13 @@
                     @endcan
                 @elseif ($asiento->esPosteado())
                     @can('contabilidad.editar')
+                        @if ($asiento->esManual())
+                            <a href="{{ route('admin.asientos.edit', $asiento) }}"
+                               class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Editar</a>
+                        @elseif ($urlOrigen = $asiento->urlOrigen())
+                            <a href="{{ $urlOrigen }}"
+                               class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Editar en {{ $asiento->nombreModuloOrigen() }} →</a>
+                        @endif
                         <form method="POST" action="{{ route('admin.asientos.anular', $asiento) }}"
                               onsubmit="return confirm('¿Anular el asiento {{ $asiento->numero }}? Esta acción revierte su efecto en los saldos.');">
                             @csrf

@@ -245,24 +245,57 @@ class AsientoTest extends TestCase
         $this->assertNull(Asiento::find($asiento->id));
     }
 
-    public function test_un_asiento_posteado_no_se_puede_editar_ni_eliminar(): void
+    public function test_un_asiento_posteado_manual_se_reemite_pero_no_se_elimina(): void
     {
         $asiento = $this->crearBorrador();
         $this->actingAs($this->admin)
             ->withSession(['compania_activa_id' => $this->compania->id])
             ->post(route('admin.asientos.postear', $asiento));
 
+        // Un asiento MANUAL (origen CGL) posteado en período abierto se puede
+        // corregir vía re-emisión: edit() abre el formulario (no se bloquea).
         $this->actingAs($this->admin)
             ->withSession(['compania_activa_id' => $this->compania->id])
             ->get(route('admin.asientos.edit', $asiento))
-            ->assertStatus(422);
+            ->assertOk();
 
+        // Pero un asiento posteado NUNCA se elimina físicamente.
         $this->actingAs($this->admin)
             ->withSession(['compania_activa_id' => $this->compania->id])
             ->delete(route('admin.asientos.destroy', $asiento))
             ->assertStatus(422);
 
         $this->assertSame('POSTEADO', $asiento->fresh()->estado);
+    }
+
+    public function test_reemitir_asiento_posteado_anula_original_y_crea_nuevo(): void
+    {
+        $asiento = $this->crearBorrador();
+        $this->actingAs($this->admin)
+            ->withSession(['compania_activa_id' => $this->compania->id])
+            ->post(route('admin.asientos.postear', $asiento));
+
+        // Re-emisión vía update() sobre un posteado: anula el original (queda en
+        // historial) y crea uno nuevo posteado con las líneas corregidas.
+        $this->actingAs($this->admin)
+            ->withSession(['compania_activa_id' => $this->compania->id])
+            ->put(route('admin.asientos.update', $asiento), [
+                'fecha' => '2026-06-12',
+                'descripcion' => 'Asiento corregido',
+                'lineas' => $this->lineasCuadradas(150),
+                'accion' => 'postear',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('ANULADO', $asiento->fresh()->estado);
+
+        $nuevo = Asiento::where('origen_id', $asiento->id)
+            ->where('estado', 'POSTEADO')
+            ->latest('id')
+            ->first();
+        $this->assertNotNull($nuevo);
+        $this->assertSame('150.00', (string) $nuevo->total_debito);
+        $this->assertSame('150.00', (string) $nuevo->total_credito);
     }
 
     public function test_usuario_solo_consulta_ve_pero_no_crea(): void

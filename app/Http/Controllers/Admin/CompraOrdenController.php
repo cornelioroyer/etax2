@@ -12,9 +12,11 @@ use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
 use App\Models\CxpDocumento;
 use App\Models\CxpDocumentoDetalle;
+use App\Models\InvAlmacen;
 use App\Models\ItemProducto;
 use App\Models\TaxImpuesto;
 use App\Services\AsientoAutomatico;
+use App\Services\InventarioCompras;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -174,9 +176,20 @@ class CompraOrdenController extends Controller
             ->groupBy('orden_detalle_id')
             ->pluck('recibido', 'orden_detalle_id');
 
+        // ¿La orden tiene líneas inventariables (ítem tipo PRODUCTO)?  Solo en
+        // ese caso ofrecemos elegir almacén al facturar (entrada a inventario).
+        $itemIds          = $orden->detalle->pluck('item_id')->filter()->unique();
+        $tieneInventariables = $itemIds->isNotEmpty() && ItemProducto::whereIn('id', $itemIds)
+            ->where('tipo', ItemProducto::TIPO_PRODUCTO)
+            ->exists();
+        $almacenes = $tieneInventariables
+            ? InvAlmacen::where('compania_id', $orden->compania_id)->where('activo', true)->orderBy('codigo')->get(['id', 'codigo', 'nombre'])
+            : collect();
+
         return view('admin.compras.ordenes.show', [
-            'orden'    => $orden,
-            'recibido' => $recibido,
+            'orden'     => $orden,
+            'recibido'  => $recibido,
+            'almacenes' => $almacenes,
         ]);
     }
 
@@ -326,24 +339,38 @@ class CompraOrdenController extends Controller
             return back()->withErrors(['orden' => 'La orden no se puede facturar en su estado actual o ya tiene factura.']);
         }
 
+        $companiaId = $orden->compania_id;
+
         $data = $request->validate([
             'numero'            => ['required', 'string', 'max:50'],
             'fecha'             => ['required', 'date'],
             'fecha_vencimiento' => ['nullable', 'date', 'after_or_equal:fecha'],
+            'almacen_id'        => ['nullable', 'integer', Rule::exists('inv_almacenes', 'id')->where('compania_id', $companiaId)],
         ]);
 
-        $companiaId = $orden->compania_id;
-        $usuario    = $request->user();
+        $usuario = $request->user();
 
-        $cuentaCxpId   = CuentaDefault::idPara($companiaId, 'CXP');
-        $cuentaItbmsId = CuentaDefault::idPara($companiaId, 'ITBMS_CREDITO');
-        $cuentaGastoId = CuentaDefault::idPara($companiaId, 'GASTO_DEFAULT');
+        $cuentaCxpId        = CuentaDefault::idPara($companiaId, 'CXP');
+        $cuentaItbmsId      = CuentaDefault::idPara($companiaId, 'ITBMS_CREDITO');
+        $cuentaGastoId      = CuentaDefault::idPara($companiaId, 'GASTO_DEFAULT');
+        $cuentaInvDefaultId = CuentaDefault::idPara($companiaId, 'INVENTARIO');
 
         if (! $cuentaCxpId) {
             return back()->withErrors(['orden' => 'La compañía no tiene configurada la cuenta default CXP.']);
         }
 
         $orden->load('detalle.impuesto');
+
+        // Ítems inventariables (tipo PRODUCTO) de la orden, para enrutar su
+        // débito a la cuenta de inventario y subir existencias al facturar.
+        $itemIds  = $orden->detalle->pluck('item_id')->filter()->unique();
+        $itemsMap = $itemIds->isNotEmpty()
+            ? ItemProducto::whereIn('id', $itemIds)->get(['id', 'tipo', 'cuenta_inventario_id'])->keyBy('id')
+            : collect();
+
+        // Almacén destino: el elegido, o el primero activo de la compañía.
+        $almacenId = $data['almacen_id']
+            ?? InvAlmacen::where('compania_id', $companiaId)->where('activo', true)->orderBy('codigo')->value('id');
 
         $impuesto = (float) $orden->itbms;
         if ($impuesto > 0 && ! $cuentaItbmsId) {
@@ -368,7 +395,7 @@ class CompraOrdenController extends Controller
             throw ValidationException::withMessages(['numero' => "Ya existe la factura {$data['numero']} de ese proveedor."]);
         }
 
-        $factura = DB::transaction(function () use ($orden, $data, $companiaId, $usuario, $cuentaCxpId, $cuentaItbmsId, $cuentaGastoId, $impuesto) {
+        $factura = DB::transaction(function () use ($orden, $data, $companiaId, $usuario, $cuentaCxpId, $cuentaItbmsId, $cuentaGastoId, $cuentaInvDefaultId, $impuesto, $itemsMap, $almacenId) {
             $factura = CxpDocumento::create([
                 'compania_id'       => $companiaId,
                 'proveedor_id'      => $orden->proveedor_id,
@@ -385,12 +412,33 @@ class CompraOrdenController extends Controller
                 'created_by'        => $usuario->email,
             ]);
 
-            $lineasAsiento = [];
+            $lineasAsiento  = [];
+            $entradasInv    = [];
 
             foreach ($orden->detalle as $linea) {
                 $impLinea  = round((float) $linea->cantidad * (float) $linea->precio_unitario * (float) ($linea->impuesto->porcentaje ?? 0) / 100, 2);
                 $baseLinea = round((float) $linea->total_linea - $impLinea, 2);
-                $cuentaId  = $linea->cuenta_id ?? $cuentaGastoId;
+
+                // ¿Línea inventariable? Ítem tipo PRODUCTO con cuenta de
+                // inventario resolvible y almacén destino disponible. Si no, se
+                // comporta como hasta hoy (débito a gasto, sin tocar stock).
+                $item       = $linea->item_id ? $itemsMap->get($linea->item_id) : null;
+                $cuentaInvId = $item && $item->tipo === ItemProducto::TIPO_PRODUCTO
+                    ? ($item->cuenta_inventario_id ?? $cuentaInvDefaultId)
+                    : null;
+                $esInventario = $cuentaInvId && $almacenId;
+
+                $cuentaId = $esInventario
+                    ? $cuentaInvId
+                    : ($linea->cuenta_id ?? $cuentaGastoId);
+
+                if ($esInventario && (float) $linea->cantidad > 0) {
+                    $entradasInv[] = [
+                        'item_id'        => (int) $linea->item_id,
+                        'cantidad'       => (float) $linea->cantidad,
+                        'costo_unitario' => round($baseLinea / (float) $linea->cantidad, 4),
+                    ];
+                }
 
                 CxpDocumentoDetalle::create([
                     'documento_id'    => $factura->id,
@@ -441,6 +489,15 @@ class CompraOrdenController extends Controller
                 'cxp_documento_id' => $factura->id,
                 'updated_by'       => $usuario->email,
             ]);
+
+            // Entrada a inventario de las líneas inventariables (sube stock al
+            // costo de la factura; la contabilidad ya va en el asiento de arriba).
+            if (! empty($entradasInv)) {
+                app(InventarioCompras::class)->registrarEntrada(
+                    $companiaId, $almacenId, $data['fecha'], $entradasInv,
+                    $asiento->id, 'cxp_documentos', $factura->id, $usuario,
+                );
+            }
 
             return $factura;
         });

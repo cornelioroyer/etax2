@@ -30,7 +30,7 @@
 
             {{-- Filtros --}}
             <form method="GET" class="bg-white p-4 shadow-sm sm:rounded-lg">
-                <div class="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                <div class="grid grid-cols-2 gap-3 sm:grid-cols-6">
                     <div class="col-span-2">
                         <x-input-label for="q" value="Buscar" />
                         <x-text-input id="q" name="q" type="text" class="mt-1 block w-full" :value="$filtros['q'] ?? ''" placeholder="Número, descripción o referencia" />
@@ -41,6 +41,15 @@
                             <option value="">Todos</option>
                             @foreach (['BORRADOR', 'POSTEADO', 'ANULADO'] as $estado)
                                 <option value="{{ $estado }}" @selected(($filtros['estado'] ?? '') === $estado)>{{ ucfirst(strtolower($estado)) }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <x-input-label for="origen" value="Origen" />
+                        <select id="origen" name="origen" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">Todos</option>
+                            @foreach (\App\Models\Asiento::ETIQUETAS_ORIGEN as $origen)
+                                <option value="{{ $origen }}" @selected(($filtros['origen'] ?? '') === $origen)>{{ $origen }}</option>
                             @endforeach
                         </select>
                     </div>
@@ -74,6 +83,7 @@
                             <tr>
                                 <th class="px-4 py-3"><a href="{{ $linkOrden('numero') }}" class="hover:text-gray-800">Número{{ $flecha('numero') }}</a></th>
                                 <th class="px-4 py-3"><a href="{{ $linkOrden('fecha') }}" class="hover:text-gray-800">Fecha{{ $flecha('fecha') }}</a></th>
+                                <th class="px-4 py-3 hidden md:table-cell"><a href="{{ $linkOrden('origen_modulo') }}" class="hover:text-gray-800">Origen{{ $flecha('origen_modulo') }}</a></th>
                                 <th class="px-4 py-3 hidden md:table-cell"><a href="{{ $linkOrden('descripcion') }}" class="hover:text-gray-800">Descripción{{ $flecha('descripcion') }}</a></th>
                                 <th class="px-4 py-3 hidden lg:table-cell"><a href="{{ $linkOrden('referencia') }}" class="hover:text-gray-800">Referencia{{ $flecha('referencia') }}</a></th>
                                 <th class="px-4 py-3 text-right"><a href="{{ $linkOrden('total_debito') }}" class="hover:text-gray-800">Débito{{ $flecha('total_debito') }}</a></th>
@@ -88,6 +98,9 @@
                                         <a href="{{ route('admin.asientos.show', $asiento) }}" class="text-blue-700 hover:underline">{{ $asiento->numero }}</a>
                                     </td>
                                     <td class="px-4 py-3 whitespace-nowrap">{{ $asiento->fecha->format('d/m/Y') }}</td>
+                                    <td class="px-4 py-3 hidden md:table-cell whitespace-nowrap">
+                                        <span class="inline-flex rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">{{ $asiento->etiquetaOrigen() }}</span>
+                                    </td>
                                     <td class="px-4 py-3 hidden md:table-cell max-w-xs truncate">{{ $asiento->descripcion }}</td>
                                     <td class="px-4 py-3 hidden lg:table-cell">{{ $asiento->referencia }}</td>
                                     <td class="px-4 py-3 text-right whitespace-nowrap">B/. {{ number_format((float) $asiento->total_debito, 2) }}</td>
@@ -104,7 +117,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="7" class="px-4 py-10 text-center text-gray-500">
+                                    <td colspan="8" class="px-4 py-10 text-center text-gray-500">
                                         No hay asientos que coincidan con el filtro.
                                         @can('contabilidad.crear')
                                             <a href="{{ route('admin.asientos.create') }}" class="text-blue-700 underline">Crear el primero</a>

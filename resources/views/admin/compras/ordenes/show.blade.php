@@ -171,6 +171,18 @@
                                     <x-text-input id="fac_venc" name="fecha_vencimiento" type="text" class="js-date mt-1 block w-full" />
                                 </div>
                             </div>
+                            @if ($almacenes->isNotEmpty())
+                                <div class="mt-4 sm:w-1/3">
+                                    <x-input-label for="fac_almacen" value="Almacén (entrada a inventario)" />
+                                    <select id="fac_almacen" name="almacen_id"
+                                            class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        @foreach ($almacenes as $almacen)
+                                            <option value="{{ $almacen->id }}">{{ $almacen->codigo }} — {{ $almacen->nombre }}</option>
+                                        @endforeach
+                                    </select>
+                                    <p class="mt-1 text-xs text-gray-500">Las líneas con producto inventariable subirán las existencias a este almacén.</p>
+                                </div>
+                            @endif
                             <div class="mt-4">
                                 <button class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">Generar factura CxP</button>
                             </div>

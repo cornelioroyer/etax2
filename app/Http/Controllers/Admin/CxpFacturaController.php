@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Concerns\ConCompaniaActiva;
 use App\Http\Controllers\Concerns\ExportaReporte;
 use App\Http\Controllers\Controller;
+use App\Exports\CxpComprasPlantillaExport;
+use App\Imports\CxpComprasGenericoImport;
 use App\Imports\CxpFacturasImport;
 use App\Jobs\ProcesarImportacionCxpFel;
 use App\Models\Compania;
@@ -19,6 +21,7 @@ use App\Models\TipoContacto;
 use App\Models\TipoDocumento;
 use App\Services\AsientoAutomatico;
 use App\Services\DgiFepConsulta;
+use App\Services\InventarioCompras;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -177,7 +180,7 @@ class CxpFacturaController extends Controller
         $contado = in_array($tipo, CxpDocumento::tiposFacturaCargo(), true)
             && in_array($formaPago, ['CONTADO', 'TARJETA'], true);
 
-        $factura = DB::transaction(function () use ($companiaId, $data, $tipo, $lineas, $subtotal, $impuesto, $total, $usuario, $contado) {
+        $factura = DB::transaction(function () use ($companiaId, $data, $tipo, $lineas, $subtotal, $impuesto, $total, $usuario, $contado, $formaPago) {
             $factura = CxpDocumento::create([
                 'compania_id' => $companiaId,
                 'proveedor_id' => $data['proveedor_id'],
@@ -226,7 +229,7 @@ class CxpFacturaController extends Controller
     {
         $this->autorizarFactura($request, $documento);
 
-        $documento->load(['proveedor', 'detalle.cuenta', 'asiento', 'aplicacionesComoDestino.origen', 'compraOrden']);
+        $documento->load(['proveedor', 'detalle.cuenta.tipo', 'asiento', 'aplicacionesComoDestino.origen', 'compraOrden']);
 
         $activosPorDetalle = AfiActivo::whereIn('cxp_detalle_id', $documento->detalle->pluck('id'))
             ->get(['id', 'codigo', 'descripcion', 'cxp_detalle_id'])
@@ -372,10 +375,14 @@ class CxpFacturaController extends Controller
         $tipo = $tipoForzado ?? ($data['tipo_documento'] ?? CxpDocumento::TIPO_FACTURA);
         $data['tipo_documento'] = $tipo;
 
+        // Una factura ANULADA no bloquea el número: el índice único de BD es
+        // parcial (excluye ANULADO), así se puede re-registrar/clonar con el
+        // mismo número. La validación de la app debe respetar esa misma regla.
         $duplicada = CxpDocumento::where('compania_id', $companiaId)
             ->where('proveedor_id', $data['proveedor_id'])
             ->where('tipo_documento', $tipo)
             ->where('numero', $data['numero'])
+            ->where('estado', '!=', CxpDocumento::ESTADO_ANULADO)
             ->when($exceptoId, fn ($q, $id) => $q->where('id', '!=', $id))
             ->exists();
 
@@ -1275,6 +1282,253 @@ class CxpFacturaController extends Controller
         ]);
     }
 
+    /**
+     * Descarga la plantilla .xlsx para importar compras propias (no DGI), con
+     * un par de cuentas de gasto reales de la compañía como ejemplo.
+     */
+    public function importarGenericoPlantilla(Request $request): Response
+    {
+        abort_unless($request->user()->can('cxp.gestionar'), 403);
+
+        $companiaId = $this->companiaActivaId($request);
+
+        $cuentas = CuentaContable::where('compania_id', $companiaId)
+            ->where('permite_movimiento', true)
+            ->where('activa', true)
+            ->where('codigo', 'like', '6%') // cuentas de gasto/costo como muestra
+            ->orderBy('codigo')
+            ->limit(2)
+            ->get(['codigo', 'nombre'])
+            ->map(fn ($c) => [$c->codigo, $c->nombre])
+            ->all();
+
+        return Excel::download(new CxpComprasPlantillaExport($cuentas), 'plantilla_compras.xlsx');
+    }
+
+    /**
+     * Importa compras propias (no DGI) desde un Excel/CSV. Crea cada documento
+     * como BORRADOR para que el contador lo revise y contabilice; nunca postea
+     * automáticamente. Síncrono: una lista manual de compras es chica.
+     */
+    public function importarGenerico(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()->can('cxp.gestionar'), 403);
+
+        $companiaId = $this->companiaActivaId($request);
+        $usuario = $request->user();
+
+        $request->validate([
+            'archivo' => ['required', 'file', 'mimes:xlsx,xls,csv,txt', 'max:5120'],
+        ]);
+
+        $import = new CxpComprasGenericoImport;
+        Excel::import($import, $request->file('archivo'));
+
+        if ($import->filas === []) {
+            return back()->withErrors(['archivo_generico' => 'El archivo no tiene filas con datos. La primera fila deben ser los encabezados (proveedor, numero, fecha, subtotal…).']);
+        }
+
+        $cuentaGastoDefault = CuentaDefault::idPara($companiaId, 'GASTO_DEFAULT');
+        $catalogo = CuentaContable::where('compania_id', $companiaId)
+            ->where('permite_movimiento', true)
+            ->get(['id', 'codigo'])
+            ->keyBy(fn ($c) => trim((string) $c->codigo));
+
+        $errores = [];
+        $documentos = []; // clave proveedor|tipo|numero => cabecera + líneas
+
+        foreach ($import->filas as $f) {
+            $fila = $f['fila'];
+
+            if ($f['proveedor'] === '' && $f['ruc'] === '') {
+                $errores[] = "Fila {$fila}: falta el proveedor (nombre o RUC).";
+
+                continue;
+            }
+            if ($f['numero'] === '') {
+                $errores[] = "Fila {$fila}: falta el número de documento.";
+
+                continue;
+            }
+            if (! $f['fecha']) {
+                $errores[] = "Fila {$fila}: falta la fecha o tiene un formato no reconocido (usa dd/mm/aaaa).";
+
+                continue;
+            }
+            if ($f['subtotal'] <= 0) {
+                $errores[] = "Fila {$fila}: el subtotal debe ser mayor que cero.";
+
+                continue;
+            }
+
+            $proveedor = $this->resolverOCrearProveedorGenerico($f, $companiaId, $cuentaGastoDefault, $usuario);
+
+            // Cuenta de gasto: por código del Excel, o la del proveedor, o la default.
+            $cuentaId = null;
+            if ($f['cuenta'] !== '') {
+                $cuentaId = $catalogo[$f['cuenta']]->id ?? null;
+                if (! $cuentaId) {
+                    $errores[] = "Fila {$fila}: la cuenta '{$f['cuenta']}' no existe o no permite movimiento; se usó la cuenta de gasto por defecto.";
+                }
+            }
+            $cuentaId ??= $proveedor->cuenta_gasto_id ?? $cuentaGastoDefault;
+
+            if (! $cuentaId) {
+                $errores[] = "Fila {$fila}: no hay cuenta de gasto (ni en el Excel, ni en el proveedor, ni la default GASTO_DEFAULT). Configura GASTO_DEFAULT.";
+
+                continue;
+            }
+
+            $tipo = $this->normalizarTipoCompra($f['tipo']);
+            $base = round($f['subtotal'], 2);
+            $itbms = $f['itbms'] > 0
+                ? round($f['itbms'], 2)
+                : ($f['tasa'] > 0 ? round($base * $f['tasa'] / 100, 2) : 0.0);
+
+            $clave = $proveedor->id.'|'.$tipo.'|'.$f['numero'];
+            $documentos[$clave] ??= [
+                'proveedor'   => $proveedor,
+                'tipo'        => $tipo,
+                'numero'      => $f['numero'],
+                'fecha'       => $f['fecha'],
+                'vencimiento' => $f['vencimiento'],
+                'lineas'      => [],
+            ];
+            $documentos[$clave]['lineas'][] = [
+                'descripcion'    => $f['concepto'] !== '' ? substr($f['concepto'], 0, 500) : 'Compra '.$f['numero'],
+                'cantidad'       => 1,
+                'precio'         => $base,
+                'itbms'          => $itbms,
+                'total'          => round($base + $itbms, 2),
+                'cuenta_id'      => (int) $cuentaId,
+            ];
+        }
+
+        $creadas = 0;
+        $omitidas = 0;
+
+        foreach ($documentos as $doc) {
+            $existe = CxpDocumento::where('compania_id', $companiaId)
+                ->where('proveedor_id', $doc['proveedor']->id)
+                ->where('tipo_documento', $doc['tipo'])
+                ->where('numero', $doc['numero'])
+                ->where('estado', '!=', CxpDocumento::ESTADO_ANULADO)
+                ->exists();
+
+            if ($existe) {
+                $omitidas++;
+                $errores[] = "Documento {$doc['numero']} de {$doc['proveedor']->nombre}: ya existe; se omitió.";
+
+                continue;
+            }
+
+            $subtotal = round(array_sum(array_column($doc['lineas'], 'precio')), 2);
+            $impuesto = round(array_sum(array_column($doc['lineas'], 'itbms')), 2);
+            $total = round($subtotal + $impuesto, 2);
+
+            DB::transaction(function () use ($companiaId, $doc, $subtotal, $impuesto, $total, $usuario) {
+                $factura = CxpDocumento::create([
+                    'compania_id'       => $companiaId,
+                    'proveedor_id'      => $doc['proveedor']->id,
+                    'tipo_documento'    => $doc['tipo'],
+                    'numero'            => $doc['numero'],
+                    'fecha'             => $doc['fecha'],
+                    'fecha_vencimiento' => $doc['vencimiento'],
+                    'subtotal'          => $subtotal,
+                    'descuento'         => 0,
+                    'impuesto'          => $impuesto,
+                    'total'             => $total,
+                    'saldo'             => $total,
+                    'estado'            => CxpDocumento::ESTADO_BORRADOR,
+                    'created_by'        => $usuario->email,
+                ]);
+
+                foreach ($doc['lineas'] as $n => $linea) {
+                    CxpDocumentoDetalle::create([
+                        'documento_id'    => $factura->id,
+                        'linea'           => $n + 1,
+                        'descripcion'     => $linea['descripcion'],
+                        'cantidad'        => $linea['cantidad'],
+                        'precio_unitario' => $linea['precio'],
+                        'descuento'       => 0,
+                        'impuesto_monto'  => $linea['itbms'],
+                        'total_linea'     => $linea['total'],
+                        'cuenta_id'       => $linea['cuenta_id'],
+                        'created_by'      => $usuario->email,
+                    ]);
+                }
+            });
+
+            $creadas++;
+        }
+
+        $resumen = "Importación de compras: {$creadas} documento(s) creado(s) como borrador";
+        if ($omitidas > 0) {
+            $resumen .= ", {$omitidas} omitido(s) por estar ya registrados";
+        }
+        $resumen .= '. Revísalos y contabilízalos.';
+
+        return redirect()->route('admin.cxp.facturas.index')
+            ->with('status', $resumen)
+            ->with('import_compras_errores', array_slice($errores, 0, 50));
+    }
+
+    /** Resuelve el proveedor por RUC → código → nombre; si no existe lo crea. */
+    private function resolverOCrearProveedorGenerico(array $f, int $companiaId, ?int $cuentaGastoDefault, $usuario): Contacto
+    {
+        $ruc = $f['ruc'] !== '' ? substr($f['ruc'], 0, 50) : null;
+        $nombre = $f['proveedor'];
+
+        $proveedor = null;
+        if ($ruc) {
+            $proveedor = Contacto::where('compania_id', $companiaId)->where('identificacion', $ruc)->first();
+        }
+        if (! $proveedor && $nombre !== '') {
+            $proveedor = Contacto::where('compania_id', $companiaId)
+                ->where(fn ($q) => $q->where('codigo', $nombre)->orWhere('nombre', $nombre))
+                ->first();
+        }
+        if ($proveedor) {
+            return $proveedor;
+        }
+
+        $codigo = $ruc;
+        if ($codigo && Contacto::where('compania_id', $companiaId)->where('codigo', $codigo)->exists()) {
+            $codigo = null;
+        }
+
+        $proveedor = Contacto::create([
+            'compania_id'     => $companiaId,
+            'codigo'          => $codigo,
+            'nombre'          => substr($nombre !== '' ? $nombre : ($ruc ?? 'Proveedor'), 0, 200),
+            'tipo_persona'    => 'JURIDICA',
+            'identificacion'  => $ruc,
+            'activo'          => true,
+            'cuenta_gasto_id' => $cuentaGastoDefault,
+            'created_by'      => $usuario->email,
+        ]);
+
+        if ($tipoProveedor = TipoContacto::where('codigo', 'PROVEEDOR')->first()) {
+            $proveedor->tipos()->attach($tipoProveedor->id);
+        }
+
+        return $proveedor;
+    }
+
+    /** Normaliza el tipo del Excel (FACTURA/NC/ND y sinónimos). */
+    private function normalizarTipoCompra(string $tipo): string
+    {
+        $t = strtoupper(trim($tipo));
+        $t = str_replace(['Á', 'É', 'Í', 'Ó', 'Ú'], ['A', 'E', 'I', 'O', 'U'], $t);
+
+        return match (true) {
+            $t === '' || str_contains($t, 'FACTURA')                    => CxpDocumento::TIPO_FACTURA,
+            $t === 'NC' || str_contains($t, 'CREDITO')                  => CxpDocumento::TIPO_NOTA_CREDITO,
+            $t === 'ND' || str_contains($t, 'DEBITO')                   => CxpDocumento::TIPO_NOTA_DEBITO,
+            default                                                     => CxpDocumento::TIPO_FACTURA,
+        };
+    }
+
     public function anular(Request $request, CxpDocumento $documento): RedirectResponse
     {
         $this->autorizarFactura($request, $documento);
@@ -1296,6 +1550,9 @@ class CxpFacturaController extends Controller
         DB::transaction(function () use ($documento, $usuario) {
             app(AsientoAutomatico::class)->anular($documento->asiento, $usuario);
 
+            // Si la factura subió inventario (compra de productos), bajarlo.
+            app(InventarioCompras::class)->reversarPorDocumento('cxp_documentos', $documento->id, $usuario);
+
             $documento->update([
                 'estado' => CxpDocumento::ESTADO_ANULADO,
                 'saldo' => 0,
@@ -1305,6 +1562,71 @@ class CxpFacturaController extends Controller
 
         return redirect()->route('admin.cxp.facturas.show', $documento)
             ->with('status', "Factura {$documento->numero} anulada.");
+    }
+
+    /**
+     * Corregir una factura contabilizada: en una sola transacción la anula
+     * (revirtiendo su asiento, igual que anular()) y crea un BORRADOR idéntico
+     * —mismas líneas y número, que el índice único parcial permite porque
+     * excluye los ANULADO— para que el usuario lo edite y vuelva a contabilizar.
+     * Nada se borra: la factura original queda ANULADA en el historial.
+     */
+    public function corregir(Request $request, CxpDocumento $documento): RedirectResponse
+    {
+        $this->autorizarFactura($request, $documento);
+
+        if ($documento->esBorrador()) {
+            return redirect()->route('admin.cxp.facturas.edit', $documento);
+        }
+
+        if ($documento->esAnulado()) {
+            return back()->withErrors(['documento' => 'La factura ya está anulada.']);
+        }
+
+        if ($documento->aplicacionesComoDestino()->exists()) {
+            return back()->withErrors(['documento' => 'La factura tiene pagos aplicados; anula primero los pagos, luego corrígela.']);
+        }
+
+        $usuario = $request->user();
+        $documento->load('detalle');
+
+        $borrador = DB::transaction(function () use ($documento, $usuario) {
+            // 1) Reversar contabilidad y marcar el original como ANULADO.
+            if ($documento->asiento) {
+                app(AsientoAutomatico::class)->anular($documento->asiento, $usuario);
+            }
+
+            // Si subió inventario (compra de productos), bajarlo también.
+            app(InventarioCompras::class)->reversarPorDocumento('cxp_documentos', $documento->id, $usuario);
+
+            $documento->update([
+                'estado' => CxpDocumento::ESTADO_ANULADO,
+                'saldo' => 0,
+                'updated_by' => $usuario->email,
+            ]);
+
+            // 2) Clonar la cabecera como borrador (sin asiento, saldo = total).
+            $borrador = $documento->replicate(['estado', 'asiento_id', 'saldo', 'created_by', 'updated_by']);
+            $borrador->estado = CxpDocumento::ESTADO_BORRADOR;
+            $borrador->asiento_id = null;
+            $borrador->saldo = $documento->total;
+            $borrador->created_by = $usuario->email;
+            $borrador->updated_by = $usuario->email;
+            $borrador->save();
+
+            // 3) Clonar las líneas.
+            foreach ($documento->detalle as $linea) {
+                $copia = $linea->replicate(['documento_id', 'created_by']);
+                $copia->documento_id = $borrador->id;
+                $copia->created_by = $usuario->email;
+                $copia->save();
+            }
+
+            return $borrador;
+        });
+
+        return redirect()->route('admin.cxp.facturas.edit', $borrador)
+            ->with('status', "Editando {$borrador->numero} en una nueva versión borrador (la anterior quedó anulada). Aplica tus cambios y vuelve a contabilizar.");
     }
 
     /**

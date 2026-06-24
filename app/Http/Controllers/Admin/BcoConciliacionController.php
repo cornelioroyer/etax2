@@ -72,14 +72,14 @@ class BcoConciliacionController extends Controller
             return back()->withErrors(['fecha_corte' => 'Ya existe una conciliación abierta para esta cuenta y fecha.'])->withInput();
         }
 
-        // Calcular saldo en libros: movimientos hasta la fecha de corte
-        $saldoLibros = $cuenta->saldo_inicial
-            + BcoMovimiento::where('cuenta_bancaria_id', $cuenta->id)
-                ->whereDate('fecha', '<=', $data['fecha_corte'])
-                ->selectRaw('COALESCE(SUM(credito),0) - COALESCE(SUM(debito),0) as neto')
-                ->value('neto');
+        // Calcular saldo en libros: movimientos hasta la fecha de corte.
+        // saldoDesdeNeto aplica el signo correcto (activo banco vs pasivo tarjeta).
+        $neto = (float) BcoMovimiento::where('cuenta_bancaria_id', $cuenta->id)
+            ->whereDate('fecha', '<=', $data['fecha_corte'])
+            ->selectRaw('COALESCE(SUM(credito),0) - COALESCE(SUM(debito),0) as neto')
+            ->value('neto');
 
-        $saldoLibros = round((float) $saldoLibros, 2);
+        $saldoLibros = $cuenta->saldoDesdeNeto($neto);
         $saldoBanco  = round((float) $data['saldo_banco'], 2);
 
         $conciliacion = BcoConciliacion::create([
@@ -161,7 +161,7 @@ class BcoConciliacionController extends Controller
                 ->value('neto');
 
             $cuenta      = $conciliacion->cuentaBancaria;
-            $saldoLibros = round((float) $cuenta->saldo_inicial + (float) $saldoConciliado, 2);
+            $saldoLibros = $cuenta->saldoDesdeNeto((float) $saldoConciliado);
 
             $conciliacion->update([
                 'saldo_libros' => $saldoLibros,

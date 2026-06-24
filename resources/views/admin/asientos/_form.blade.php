@@ -115,12 +115,14 @@
         <button type="submit" name="accion" value="postear"
                 class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
                 :disabled="! cuadrado()">
-            Guardar y postear
+            {{ ($reemitir ?? false) ? 'Anular y re-emitir posteado' : 'Guardar y postear' }}
         </button>
-        <button type="submit" name="accion" value="borrador"
-                class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-            Guardar borrador
-        </button>
+        @unless ($reemitir ?? false)
+            <button type="submit" name="accion" value="borrador"
+                    class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                Guardar borrador
+            </button>
+        @endunless
         <a href="{{ route('admin.asientos.index') }}" class="text-sm text-gray-600 hover:text-gray-900">Cancelar</a>
         <p class="w-full text-xs text-gray-500 sm:w-auto sm:ml-auto" x-show="! cuadrado()">El asiento debe cuadrar (débito = crédito) para postear.</p>
     </div>

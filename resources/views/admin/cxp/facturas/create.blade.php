@@ -146,15 +146,23 @@
                                                 </select>
                                             </td>
                                             <td class="py-2 pr-2 min-w-[16rem]">
-                                                <input type="text" class="cuenta-buscar block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-indigo-500 focus:ring-indigo-500 mb-1"
-                                                       placeholder="Buscar cuenta..." autocomplete="off" style="padding:.25rem .5rem">
-                                                <select :name="`lineas[${idx}][cuenta_id]`" x-model="linea.cuenta_id" required
-                                                        class="cuenta-select block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                                    <option value="">— Cuenta —</option>
-                                                    @foreach ($cuentas as $cuenta)
-                                                        <option value="{{ $cuenta->id }}">{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
-                                                    @endforeach
-                                                </select>
+                                                {{-- Combobox de un solo campo: se escribe y se elige en el mismo input --}}
+                                                <div class="relative" x-data="comboCuenta(linea)" @click.outside="cerrar()">
+                                                    <input type="text" x-model="texto" autocomplete="off"
+                                                           @focus="open = true; $event.target.select()" @input="open = true"
+                                                           @keydown.escape="cerrar()" placeholder="Buscar cuenta..."
+                                                           class="block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                                           style="padding:.35rem .5rem">
+                                                    <input type="hidden" :name="`lineas[${idx}][cuenta_id]`" :value="linea.cuenta_id">
+                                                    <ul x-show="open" x-cloak
+                                                        class="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg">
+                                                        <template x-for="c in opciones()" :key="c.id">
+                                                            <li @mousedown.prevent="elegir(c)"
+                                                                class="cursor-pointer px-3 py-1.5 hover:bg-indigo-50" x-text="c.label"></li>
+                                                        </template>
+                                                        <li x-show="opciones().length === 0" class="px-3 py-1.5 text-gray-400">Sin resultados</li>
+                                                    </ul>
+                                                </div>
                                             </td>
                                             <td class="py-2 pr-2 text-right whitespace-nowrap" x-text="fmt(totalLinea(linea))"></td>
                                             <td class="py-2 text-right">
@@ -204,35 +212,32 @@
     </div>
 
     <script>
-    (function () {
-        document.addEventListener('input', function (e) {
-            if (!e.target.classList.contains('cuenta-buscar')) return;
-            var q = e.target.value.trim().toLowerCase();
-            var sel = e.target.closest('td').querySelector('.cuenta-select');
-            var vis = 0;
-            Array.from(sel.options).forEach(function (o) {
-                var show = !q || !o.value || o.text.toLowerCase().indexOf(q) !== -1;
-                o.hidden = !show;
-                if (show) vis++;
-            });
-            sel.size = q ? Math.min(8, vis) : 1;
-        });
-        document.addEventListener('change', function (e) {
-            if (!e.target.classList.contains('cuenta-select')) return;
-            var td = e.target.closest('td');
-            var inp = td.querySelector('.cuenta-buscar');
-            if (inp) inp.value = '';
-            e.target.size = 1;
-            Array.from(e.target.options).forEach(function (o) { o.hidden = false; });
-        });
-        document.addEventListener('blur', function (e) {
-            if (!e.target.classList.contains('cuenta-select')) return;
-            e.target.size = 1;
-            var inp = e.target.closest('td').querySelector('.cuenta-buscar');
-            if (inp) inp.value = '';
-            Array.from(e.target.options).forEach(function (o) { o.hidden = false; });
-        }, true);
-    })();
+        // Catálogo de cuentas para el combobox de cada línea.
+        const CUENTAS_CXP = @json($cuentas->map(fn ($c) => ['id' => (string) $c->id, 'label' => $c->codigo.' — '.$c->nombre])->values());
+
+        // Combobox de un solo campo: escribe para filtrar, clic para elegir.
+        function comboCuenta(linea) {
+            return {
+                open: false,
+                texto: '',
+                init() {
+                    this.sync();
+                    this.$watch('linea.cuenta_id', () => { if (!this.open) this.sync(); });
+                },
+                sync() {
+                    const c = CUENTAS_CXP.find(x => x.id === String(linea.cuenta_id));
+                    this.texto = c ? c.label : '';
+                },
+                opciones() {
+                    const sel = CUENTAS_CXP.find(x => x.id === String(linea.cuenta_id));
+                    const q = this.texto.trim().toLowerCase();
+                    if (!q || (sel && this.texto === sel.label)) return CUENTAS_CXP.slice(0, 50);
+                    return CUENTAS_CXP.filter(c => c.label.toLowerCase().includes(q)).slice(0, 50);
+                },
+                elegir(c) { linea.cuenta_id = c.id; this.texto = c.label; this.open = false; },
+                cerrar() { this.open = false; this.sync(); },
+            };
+        }
     </script>
 
     <script>

@@ -11,10 +11,20 @@ class BcoCuenta extends Model
     protected $table = 'bco_cuentas';
 
     public const TIPOS = [
-        'CORRIENTE'  => 'Corriente',
-        'AHORROS'    => 'Ahorros',
-        'INVERSION'  => 'Inversión',
+        'CORRIENTE'        => 'Corriente',
+        'AHORROS'          => 'Ahorros',
+        'INVERSION'        => 'Inversión',
+        'TARJETA_CREDITO'  => 'Tarjeta de crédito',
+        'LINEA_CREDITO'    => 'Línea de crédito',
     ];
+
+    /**
+     * Tipos cuya cuenta contable es de PASIVO (saldo acreedor): la deuda crece
+     * con los cargos (crédito en el mayor → débito/egreso en bancos). El saldo
+     * del módulo se calcula con signo invertido para mostrar la deuda en
+     * positivo y que cuadre contra el estado de cuenta de la tarjeta.
+     */
+    public const TIPOS_PASIVO = ['TARJETA_CREDITO', 'LINEA_CREDITO'];
 
     protected $fillable = [
         'compania_id', 'banco_id', 'cuenta_contable_id', 'numero_cuenta',
@@ -45,11 +55,32 @@ class BcoCuenta extends Model
         return $this->hasMany(BcoMovimiento::class, 'cuenta_bancaria_id');
     }
 
-    /** Saldo calculado: saldo inicial + créditos - débitos */
+    /** ¿La cuenta representa un pasivo (tarjeta / línea de crédito)? */
+    public function esPasivo(): bool
+    {
+        return in_array($this->tipo_cuenta, self::TIPOS_PASIVO, true);
+    }
+
+    /**
+     * Saldo a partir del neto de movimientos (créditos - débitos), aplicando el
+     * signo según la naturaleza de la cuenta. Activo (banco): saldo sube con los
+     * ingresos. Pasivo (tarjeta): la deuda sube con los cargos, así que se
+     * invierte el neto para mostrarla en positivo.
+     */
+    public function saldoDesdeNeto(float $neto): float
+    {
+        $neto = $this->esPasivo() ? -$neto : $neto;
+
+        return round((float) $this->saldo_inicial + $neto, 2);
+    }
+
+    /** Saldo calculado a la fecha actual (con signo según naturaleza). */
     public function getSaldoActualAttribute(): float
     {
-        $movs = $this->movimientos()->selectRaw('COALESCE(SUM(credito),0) - COALESCE(SUM(debito),0) as neto')->first();
+        $neto = (float) $this->movimientos()
+            ->selectRaw('COALESCE(SUM(credito),0) - COALESCE(SUM(debito),0) as neto')
+            ->value('neto');
 
-        return round((float) $this->saldo_inicial + (float) ($movs->neto ?? 0), 2);
+        return $this->saldoDesdeNeto($neto);
     }
 }

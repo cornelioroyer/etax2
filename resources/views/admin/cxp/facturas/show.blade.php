@@ -120,6 +120,17 @@
                                     </button>
                                 </form>
                             @elseif (! $factura->esAnulado())
+                                @unless ($factura->aplicacionesComoDestino()->exists())
+                                    {{-- "Editar" en una factura contabilizada: por dentro crea una versión
+                                         borrador (anula la actual y revierte su asiento) para poder modificarla. --}}
+                                    <form method="POST" action="{{ route('admin.cxp.facturas.corregir', $factura) }}"
+                                          onsubmit="return confirm('Para editar {{ $tipoLabelLow }} {{ $factura->numero }} se creará una versión en borrador y la actual se reemplazará (se revierte su asiento). ¿Continuar?');">
+                                        @csrf
+                                        <button class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                                            Editar
+                                        </button>
+                                    </form>
+                                @endunless
                                 <form method="POST" action="{{ route('admin.cxp.facturas.anular', $factura) }}"
                                       onsubmit="return confirm('¿Anular {{ $tipoLabelLow }} {{ $factura->numero }}? También se anulará su asiento contable.');">
                                     @csrf
@@ -176,11 +187,14 @@
                                                        class="text-xs font-medium text-green-700 hover:underline">
                                                         ✓ {{ $activo->codigo }}
                                                     </a>
-                                                @else
+                                                @elseif ($linea->cuenta && optional($linea->cuenta->tipo)->codigo === 'ACTIVO')
+                                                    {{-- Solo cuentas de ACTIVO son capitalizables como activo fijo --}}
                                                     <a href="{{ route('admin.activos.create', ['desde_cxp_detalle' => $linea->id]) }}"
                                                        class="text-xs font-medium text-blue-600 hover:underline">
                                                         + Activo fijo
                                                     </a>
+                                                @else
+                                                    <span class="text-xs text-gray-300">—</span>
                                                 @endif
                                             </td>
                                         @endif

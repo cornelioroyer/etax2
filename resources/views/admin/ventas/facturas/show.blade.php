@@ -128,6 +128,17 @@
                                     </button>
                                 </form>
                             @elseif (! $factura->esAnulada() && ! $factura->fel_documento_id)
+                                @unless ($factura->cxcDocumento && $factura->cxcDocumento->aplicacionesComoDestino()->exists())
+                                    {{-- "Editar" una factura emitida: por dentro crea una versión borrador
+                                         (anula la actual y revierte su asiento) para poder modificarla. --}}
+                                    <form method="POST" action="{{ route('admin.ventas.facturas.corregir', $factura) }}"
+                                          onsubmit="return confirm('Para editar la factura {{ $factura->numero }} se creará una versión en borrador y la actual se anulará (se revierte su asiento). Al volver a emitir se asignará un número nuevo. ¿Continuar?')">
+                                        @csrf
+                                        <button class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                                            Editar
+                                        </button>
+                                    </form>
+                                @endunless
                                 <form method="POST" action="{{ route('admin.ventas.facturas.anular', $factura) }}"
                                       onsubmit="return confirm('¿Anular la factura {{ $factura->numero }}? También se anulará el asiento contable.')">
                                     @csrf

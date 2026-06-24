@@ -8,7 +8,11 @@
                 @can('cxp.gestionar')
                     <button type="button" onclick="document.getElementById('modal-importar').classList.remove('hidden')"
                             class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        Importar Compras
+                        Importar Compras DGI
+                    </button>
+                    <button type="button" onclick="document.getElementById('modal-importar-generico').classList.remove('hidden')"
+                            class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                        Importar Excel
                     </button>
                     <a href="{{ route('admin.cxp.facturas.desde-cufe.form') }}"
                        style="display:inline-flex;align-items:center;border-radius:0.375rem;border:1px solid #d1d5db;background:#fff;padding:0.5rem 1rem;font-size:0.875rem;font-weight:600;color:#374151;">
@@ -27,6 +31,12 @@
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-4">
             @if (session('status'))
                 <div class="rounded-md bg-green-50 p-4 text-sm text-green-800">{{ session('status') }}</div>
+            @endif
+            @if (session('import_compras_errores') && count(session('import_compras_errores')))
+                <div class="rounded-md bg-amber-50 p-4 text-sm text-amber-800">
+                    <p class="font-semibold mb-1">Avisos de la importación:</p>
+                    @foreach (session('import_compras_errores') as $aviso)<div>• {{ $aviso }}</div>@endforeach
+                </div>
             @endif
             @if ($errors->any())
                 <div class="rounded-md bg-red-50 p-4 text-sm text-red-800">
@@ -169,14 +179,14 @@
                                     </th>
                                 @endif
                                 <th class="{{ $thSort }}" onclick="location.href='{{ $sf('numero') }}'">Número{{ $ico('numero') }}</th>
-                                <th class="{{ $thSort }}" onclick="location.href='{{ $sf('tipo_documento') }}'">Tipo{{ $ico('tipo_documento') }}</th>
+                                <th class="{{ $thSort }}" onclick="location.href='{{ $sf('tipo_documento') }}'">Origen{{ $ico('tipo_documento') }}</th>
                                 <th class="{{ $thSort }}" onclick="location.href='{{ $sf('fecha') }}'">Fecha{{ $ico('fecha') }}</th>
                                 <th class="{{ $thSort }}" onclick="location.href='{{ $sf('proveedor') }}'">Proveedor{{ $ico('proveedor') }}</th>
                                 <th class="{{ $thSort }} text-right" onclick="location.href='{{ $sf('subtotal') }}'">Subtotal{{ $ico('subtotal') }}</th>
                                 <th class="{{ $thSort }} text-right" onclick="location.href='{{ $sf('impuesto') }}'">ITBMS{{ $ico('impuesto') }}</th>
                                 <th class="{{ $thSort }} text-right" onclick="location.href='{{ $sf('total') }}'">Total{{ $ico('total') }}</th>
                                 <th class="{{ $thSort }} text-right" onclick="location.href='{{ $sf('saldo') }}'">Saldo{{ $ico('saldo') }}</th>
-                                <th class="{{ $thSort }}" onclick="location.href='{{ $sf('estado') }}'">Estado{{ $ico('estado') }}</th>
+                                <th class="{{ $thSort }}" style="position:sticky;right:0;z-index:10;background:#f9fafb;box-shadow:-8px 0 8px -6px rgba(0,0,0,.12)" onclick="location.href='{{ $sf('estado') }}'">Estado{{ $ico('estado') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
@@ -217,7 +227,7 @@
                                     <td class="px-4 py-3 text-right whitespace-nowrap {{ $esNc ? 'text-red-600' : '' }}">B/. {{ number_format($signo * (float) $factura->impuesto, 2) }}</td>
                                     <td class="px-4 py-3 text-right whitespace-nowrap {{ $esNc ? 'text-red-600' : '' }}">B/. {{ number_format($signo * (float) $factura->total, 2) }}</td>
                                     <td class="px-4 py-3 text-right whitespace-nowrap font-medium {{ $esNc ? 'text-red-600' : '' }}">B/. {{ number_format($signo * (float) $factura->saldo, 2) }}</td>
-                                    <td class="px-4 py-3">
+                                    <td class="px-4 py-3 whitespace-nowrap" style="position:sticky;right:0;background:#fff;box-shadow:-8px 0 8px -6px rgba(0,0,0,.12)">
                                         @include('admin.cxc._estado', ['estado' => $factura->estado])
                                     </td>
                                 </tr>
@@ -240,7 +250,7 @@
                                     <td class="px-4 py-3 text-right whitespace-nowrap">B/. {{ number_format((float) $totales->impuesto, 2) }}</td>
                                     <td class="px-4 py-3 text-right whitespace-nowrap">B/. {{ number_format((float) $totales->total, 2) }}</td>
                                     <td class="px-4 py-3 text-right whitespace-nowrap">B/. {{ number_format((float) $totales->saldo, 2) }}</td>
-                                    <td class="px-4 py-3"></td>
+                                    <td class="px-4 py-3" style="position:sticky;right:0;background:#f9fafb;box-shadow:-8px 0 8px -6px rgba(0,0,0,.12)"></td>
                                 </tr>
                             </tfoot>
                         @endif
@@ -288,7 +298,7 @@
 <div id="modal-importar" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 p-6">
         <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold text-gray-900">Importar Compras</h3>
+            <h3 class="text-lg font-semibold text-gray-900">Importar Compras DGI</h3>
             <button type="button" onclick="document.getElementById('modal-importar').classList.add('hidden')"
                     class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
         </div>
@@ -305,6 +315,48 @@
             </div>
             <div class="flex justify-end gap-3">
                 <button type="button" onclick="document.getElementById('modal-importar').classList.add('hidden')"
+                        class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                    Cancelar
+                </button>
+                <button type="submit"
+                        class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
+                    Importar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="modal-importar-generico" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-gray-900">Importar Compras (Excel propio)</h3>
+            <button type="button" onclick="document.getElementById('modal-importar-generico').classList.add('hidden')"
+                    class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+        </div>
+        <p class="text-sm text-gray-600 mb-3">
+            Para compras que <em>no</em> vienen del portal de la DGI. Sube un Excel con tus documentos.
+            Cada fila es una línea; varias filas con el mismo proveedor y número forman un solo documento.
+            Todo se crea como <strong>borrador</strong> para que lo revises y contabilices; si el proveedor no existe, se crea automáticamente.
+        </p>
+        <p class="text-sm mb-4">
+            <a href="{{ route('admin.cxp.facturas.importar-generico.plantilla') }}" class="text-blue-600 hover:underline font-medium">
+                ↓ Descargar plantilla de ejemplo
+            </a>
+        </p>
+        <p class="text-xs text-gray-500 mb-4">
+            Columnas: <code>proveedor</code>, <code>ruc</code>, <code>numero</code>, <code>fecha</code>, <code>tipo</code> (FACTURA/NC/ND),
+            <code>concepto</code>, <code>cuenta</code> (código de gasto), <code>subtotal</code>, <code>itbms</code>, <code>tasa</code> (%), <code>vencimiento</code>.
+        </p>
+        <form method="POST" action="{{ route('admin.cxp.facturas.importar-generico') }}" enctype="multipart/form-data">
+            @csrf
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Archivo Excel/CSV</label>
+                <input type="file" name="archivo" accept=".xlsx,.xls,.csv" required
+                       class="block w-full text-sm text-gray-700 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            </div>
+            <div class="flex justify-end gap-3">
+                <button type="button" onclick="document.getElementById('modal-importar-generico').classList.add('hidden')"
                         class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
                     Cancelar
                 </button>

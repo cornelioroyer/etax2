@@ -776,6 +776,78 @@ class VentaFacturaController extends Controller
     }
 
     /**
+     * "Editar" una factura emitida: por dentro la anula (reversa asiento + CxC +
+     * cotización, igual que anular()) y crea un BORRADOR idéntico para que el
+     * usuario lo ajuste y vuelva a emitir. El número se reasigna al emitir: a
+     * diferencia de CxP, ventas_facturas no tiene índice único parcial, así que
+     * no se puede reusar el número de la factura anulada. Nada se borra.
+     */
+    public function corregir(Request $request, VentaFactura $factura): RedirectResponse
+    {
+        abort_unless($factura->compania_id === $this->companiaActivaId($request), 404);
+
+        if ($factura->estado === VentaFactura::ESTADO_BORRADOR) {
+            return redirect()->route('admin.ventas.facturas.edit', $factura);
+        }
+
+        if ($factura->esAnulada()) {
+            return back()->withErrors(['factura' => 'La factura ya está anulada.']);
+        }
+
+        if ($factura->cxcDocumento && $factura->cxcDocumento->aplicacionesComoDestino()->exists()) {
+            return back()->withErrors(['factura' => 'La factura tiene cobros aplicados; anula primero los cobros en CxC.']);
+        }
+
+        if (VentaFactura::where('compania_id', $factura->compania_id)->where('estado', VentaFactura::ESTADO_BORRADOR)->exists()) {
+            return back()->withErrors(['factura' => 'Ya existe una factura en borrador; emítela o elimínala antes de editar otra.']);
+        }
+
+        $usuario = $request->user();
+        $factura->load('detalle');
+
+        $borrador = DB::transaction(function () use ($factura, $usuario) {
+            // 1) Anular la actual (mismos pasos que anular()).
+            if ($factura->asiento) {
+                app(AsientoAutomatico::class)->anular($factura->asiento, $usuario);
+            }
+            if ($factura->cxcDocumento) {
+                $factura->cxcDocumento->update(['estado' => 'ANULADO', 'saldo' => 0, 'updated_by' => $usuario->email]);
+            }
+            $factura->update(['estado' => VentaFactura::ESTADO_ANULADA, 'saldo' => 0, 'updated_by' => $usuario->email]);
+            if ($factura->cotizacion_id) {
+                $factura->cotizacion->update(['estado' => VentaCotizacion::ESTADO_ACEPTADA, 'updated_by' => $usuario->email]);
+            }
+
+            // 2) Clonar como BORRADOR (número placeholder; se asigna al emitir).
+            $borrador = $factura->replicate([
+                'estado', 'numero', 'cufe', 'cxc_documento_id', 'asiento_id',
+                'fel_documento_id', 'cotizacion_id', 'saldo', 'extra', 'created_by', 'updated_by',
+            ]);
+            $borrador->estado = VentaFactura::ESTADO_BORRADOR;
+            // Placeholder único hasta emitir (el índice (compania,numero) es global,
+            // así no choca con otro borrador). El número real se asigna al emitir.
+            $borrador->numero = 'BORRADOR-'.$factura->id;
+            $borrador->saldo = $factura->total;
+            $borrador->extra = [];
+            $borrador->created_by = $borrador->updated_by = $usuario->email;
+            $borrador->save();
+
+            // 3) Clonar las líneas.
+            foreach ($factura->detalle as $linea) {
+                $copia = $linea->replicate(['factura_id', 'created_by']);
+                $copia->factura_id = $borrador->id;
+                $copia->created_by = $usuario->email;
+                $copia->save();
+            }
+
+            return $borrador;
+        });
+
+        return redirect()->route('admin.ventas.facturas.edit', $borrador)
+            ->with('status', "Editando una nueva versión borrador de {$factura->numero} (la anterior quedó anulada). Ajústala y emítela; se asignará un número nuevo.");
+    }
+
+    /**
      * ¿El número manual ya está en uso (en facturas de venta o en CxC) para la compañía?
      */
     private function numeroExiste(int $companiaId, string $numero): bool

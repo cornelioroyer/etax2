@@ -43,7 +43,7 @@ class BcoCuentaController extends Controller
             'banco_id'          => ['required', 'integer', 'exists:bco_bancos,id'],
             'numero_cuenta'     => ['required', 'string', 'max:100'],
             'nombre'            => ['required', 'string', 'max:150'],
-            'tipo_cuenta'       => ['required', 'string', 'in:CORRIENTE,AHORROS,INVERSION'],
+            'tipo_cuenta'       => ['required', 'string', 'in:'.implode(',', array_keys(BcoCuenta::TIPOS))],
             'cuenta_contable_id' => ['nullable', 'integer', 'exists:cgl_cuentas,id'],
             'saldo_inicial'     => ['nullable', 'numeric', 'min:0'],
         ]);
@@ -79,7 +79,7 @@ class BcoCuentaController extends Controller
         $data = $request->validate([
             'banco_id'           => ['required', 'integer', 'exists:bco_bancos,id'],
             'nombre'             => ['required', 'string', 'max:150'],
-            'tipo_cuenta'        => ['required', 'string', 'in:CORRIENTE,AHORROS,INVERSION'],
+            'tipo_cuenta'        => ['required', 'string', 'in:'.implode(',', array_keys(BcoCuenta::TIPOS))],
             'cuenta_contable_id' => ['nullable', 'integer', 'exists:cgl_cuentas,id'],
             'saldo_inicial'      => ['nullable', 'numeric', 'min:0'],
         ]);

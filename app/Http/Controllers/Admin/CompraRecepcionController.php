@@ -106,6 +106,7 @@ class CompraRecepcionController extends Controller
                 CompraRecepcionDetalle::create([
                     'recepcion_id'     => $recepcion->id,
                     'orden_detalle_id' => $item['det']->id,
+                    'item_id'          => $item['det']->item_id,
                     'descripcion'      => $item['det']->descripcion,
                     'cantidad'         => $item['cantidad'],
                     'costo'            => $item['det']->precio_unitario,

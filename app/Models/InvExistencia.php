@@ -9,7 +9,7 @@ class InvExistencia extends Model
 {
     protected $table = 'inv_existencias';
 
-    protected $fillable = ['almacen_id', 'item_id', 'cantidad', 'costo_promedio', 'updated_by'];
+    protected $fillable = ['compania_id', 'almacen_id', 'item_id', 'cantidad', 'costo_promedio', 'updated_by'];
 
     protected function casts(): array
     {
