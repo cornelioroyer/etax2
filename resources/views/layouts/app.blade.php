@@ -53,8 +53,7 @@
                             str_contains($ruta, 'cxc.')          => 'cxc',
                             str_contains($ruta, 'cxp.')          => 'cxp',
                             str_contains($ruta, 'compras.')      => 'compras',
-                            str_contains($ruta, 'bco.') ||
-                            str_contains($ruta, 'bancos.')       => 'bancos',
+                            str_contains($ruta, 'bco.')          => 'bancos',
                             str_contains($ruta, 'inventario.')   => 'inventario',
                             str_contains($ruta, 'activos.')      => 'activos',
                             str_contains($ruta, 'caja.')         => 'caja',
