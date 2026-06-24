@@ -377,6 +377,8 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('ventas/facturas/importar', [VentaFacturaController::class, 'importar'])->name('ventas.facturas.importar');
         Route::get('ventas/facturas/importar/{importacion}/progreso', [VentaFacturaController::class, 'importarProgreso'])->name('ventas.facturas.importar.progreso');
         Route::get('ventas/facturas/importar/{importacion}/estado', [VentaFacturaController::class, 'importarEstado'])->name('ventas.facturas.importar.estado');
+        Route::get('ventas/facturas/importar-generico/plantilla', [VentaFacturaController::class, 'importarGenericoPlantilla'])->name('ventas.facturas.importar-generico.plantilla');
+        Route::post('ventas/facturas/importar-generico', [VentaFacturaController::class, 'importarGenerico'])->name('ventas.facturas.importar-generico');
         Route::get('ventas/facturas/{factura}/editar', [VentaFacturaController::class, 'edit'])->whereNumber('factura')->name('ventas.facturas.edit');
         Route::put('ventas/facturas/{factura}', [VentaFacturaController::class, 'update'])->whereNumber('factura')->name('ventas.facturas.update');
         Route::post('ventas/facturas/{factura}/emitir', [VentaFacturaController::class, 'emitir'])->whereNumber('factura')->name('ventas.facturas.emitir');

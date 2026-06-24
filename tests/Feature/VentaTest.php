@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Models\VentaCotizacion;
 use App\Models\VentaFactura;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
 
 class VentaTest extends TestCase
@@ -265,5 +266,68 @@ class VentaTest extends TestCase
         $this->assertSame(0, VentaFactura::count());
         $this->assertSame(0, Asiento::count());
         $this->assertSame('BORRADOR', $cot->fresh()->estado);
+    }
+
+    public function test_importar_ventas_generico_emite_y_contabiliza(): void
+    {
+        // Excel "propio" (no DGI): cliente nuevo (se crea por RUC), 2 líneas del
+        // mismo documento (se agrupan), itbms por monto y por tasa%.
+        $csv = implode("\n", [
+            'cliente,ruc,numero,fecha,concepto,cuenta,subtotal,itbms,tasa,vencimiento',
+            'NUEVO CLIENTE SA,9-999-9999,VX-100,15/06/2026,Mercancia,40101,100,7,,15/07/2026',
+            'NUEVO CLIENTE SA,9-999-9999,VX-100,15/06/2026,Flete,40101,50,,7,',
+        ]);
+
+        $archivo = UploadedFile::fake()->createWithContent('ventas.csv', $csv);
+
+        $this->actuar()->post(route('admin.ventas.facturas.importar-generico'), ['archivo' => $archivo])
+            ->assertRedirect(route('admin.ventas.facturas.index'))
+            ->assertSessionHas('status');
+
+        // Cliente creado automáticamente por RUC.
+        $cliente = Contacto::where('compania_id', $this->compania->id)
+            ->where('identificacion', '9-999-9999')->first();
+        $this->assertNotNull($cliente);
+
+        // Factura EMITIDA con 2 líneas agrupadas: subtotal 150, itbms 10.50, total 160.50.
+        $factura = VentaFactura::where('numero', 'VX-100')->first();
+        $this->assertNotNull($factura);
+        $this->assertSame('EMITIDA', $factura->estado);
+        $this->assertSame('150.00', (string) $factura->subtotal);
+        $this->assertSame('10.50', (string) $factura->itbms);
+        $this->assertSame('160.50', (string) $factura->total);
+        $this->assertCount(2, $factura->detalle);
+
+        // Se generó el documento CxC pendiente y el asiento cuadrado.
+        $cxc = CxcDocumento::where('numero', 'VX-100')->where('tipo_documento', 'FACTURA')->first();
+        $this->assertNotNull($cxc);
+        $this->assertSame('PENDIENTE', $cxc->estado);
+        $this->assertNotNull($factura->asiento_id);
+
+        $asiento = Asiento::find($factura->asiento_id);
+        $this->assertNotNull($asiento);
+        $this->assertEqualsWithDelta(
+            (float) $asiento->detalle->sum('debito'),
+            (float) $asiento->detalle->sum('credito'),
+            0.001,
+        );
+        $this->assertEqualsWithDelta(160.50, (float) $asiento->detalle->sum('debito'), 0.001);
+    }
+
+    public function test_importar_ventas_generico_es_idempotente(): void
+    {
+        $csv = "cliente,ruc,numero,fecha,concepto,cuenta,subtotal,itbms\n"
+             ."CLIENTE PRUEBA,,DUP-1,15/06/2026,Algo,40101,100,7";
+
+        $this->actuar()->post(route('admin.ventas.facturas.importar-generico'), [
+            'archivo' => UploadedFile::fake()->createWithContent('v1.csv', $csv),
+        ]);
+        $this->actuar()->post(route('admin.ventas.facturas.importar-generico'), [
+            'archivo' => UploadedFile::fake()->createWithContent('v2.csv', $csv),
+        ]);
+
+        // El segundo import omite el documento ya existente (no duplica).
+        $this->assertSame(1, VentaFactura::where('numero', 'DUP-1')->count());
+        $this->assertSame(1, CxcDocumento::where('numero', 'DUP-1')->where('tipo_documento', 'FACTURA')->count());
     }
 }

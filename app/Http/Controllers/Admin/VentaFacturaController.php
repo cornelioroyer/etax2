@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Concerns\ConCompaniaActiva;
 use App\Http\Controllers\Concerns\ExportaReporte;
 use App\Http\Controllers\Controller;
+use App\Exports\VentasPlantillaExport;
 use App\Imports\VentasFacturasImport;
+use App\Imports\VentasGenericoImport;
 use App\Jobs\ProcesarImportacionVentasFel;
 use App\Models\Compania;
 use App\Models\Contacto;
@@ -725,7 +727,319 @@ class VentaFacturaController extends Controller
         ]);
     }
 
+    /**
+     * Descarga la plantilla .xlsx para importar ventas propias (no DGI), con un
+     * par de cuentas de ingreso reales de la compañía como ejemplo.
+     */
+    public function importarGenericoPlantilla(Request $request): Response
+    {
+        abort_unless($request->user()->can('ventas.gestionar'), 403);
 
+        $companiaId = $this->companiaActivaId($request);
+
+        $cuentas = CuentaContable::where('compania_id', $companiaId)
+            ->where('permite_movimiento', true)
+            ->where('activa', true)
+            ->where('naturaleza', 'ACREEDORA')
+            ->where('codigo', 'like', '4%') // cuentas de ingreso como muestra
+            ->orderBy('codigo')
+            ->limit(2)
+            ->get(['codigo', 'nombre'])
+            ->map(fn ($c) => [$c->codigo, $c->nombre])
+            ->all();
+
+        return Excel::download(new VentasPlantillaExport($cuentas), 'plantilla_ventas.xlsx');
+    }
+
+    /**
+     * Importa ventas propias (no DGI) desde un Excel/CSV. A diferencia de Compras
+     * —que puede dejar borradores— Ventas solo admite un borrador por compañía,
+     * así que cada factura se crea EMITIDA con su número del Excel y se contabiliza
+     * (Dr CXC / Cr Ventas / Cr ITBMS) vía AsientoAutomatico. Idempotente por número.
+     * Síncrono y tolerante: un documento que falle (período cerrado, etc.) se reporta
+     * y NO aborta el resto del lote.
+     */
+    public function importarGenerico(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()->can('ventas.gestionar'), 403);
+
+        $companiaId = $this->companiaActivaId($request);
+        $usuario = $request->user();
+
+        $request->validate([
+            'archivo' => ['required', 'file', 'mimes:xlsx,xls,csv,txt', 'max:5120'],
+        ]);
+
+        $import = new VentasGenericoImport;
+        Excel::import($import, $request->file('archivo'));
+
+        if ($import->filas === []) {
+            return back()->withErrors(['archivo_generico' => 'El archivo no tiene filas con datos. La primera fila deben ser los encabezados (cliente, numero, fecha, subtotal…).']);
+        }
+
+        $cuentaCxcId    = CuentaDefault::idPara($companiaId, 'CXC');
+        $cuentaItbmsId  = CuentaDefault::idPara($companiaId, 'ITBMS_POR_PAGAR');
+        $cuentaVentasId = CuentaDefault::idPara($companiaId, 'VENTAS');
+
+        if (! $cuentaCxcId || ! $cuentaVentasId) {
+            return back()->withErrors(['archivo_generico' => 'La compañía no tiene configuradas las cuentas default CXC y/o VENTAS. Configúralas antes de importar.']);
+        }
+
+        $catalogo = CuentaContable::where('compania_id', $companiaId)
+            ->where('permite_movimiento', true)
+            ->get(['id', 'codigo'])
+            ->keyBy(fn ($c) => trim((string) $c->codigo));
+
+        $impuestosGlobales = TaxImpuesto::itbmsGlobales();
+
+        $errores = [];
+        $documentos = []; // clave cliente|numero => cabecera + líneas
+
+        foreach ($import->filas as $f) {
+            $fila = $f['fila'];
+
+            if ($f['cliente'] === '' && $f['ruc'] === '') {
+                $errores[] = "Fila {$fila}: falta el cliente (nombre o RUC).";
+
+                continue;
+            }
+            if ($f['numero'] === '') {
+                $errores[] = "Fila {$fila}: falta el número de documento.";
+
+                continue;
+            }
+            if (! $f['fecha']) {
+                $errores[] = "Fila {$fila}: falta la fecha o tiene un formato no reconocido (usa dd/mm/aaaa).";
+
+                continue;
+            }
+            if ($f['subtotal'] <= 0) {
+                $errores[] = "Fila {$fila}: el subtotal debe ser mayor que cero.";
+
+                continue;
+            }
+
+            $cliente = $this->resolverOCrearClienteGenerico($f, $companiaId, $usuario);
+
+            // Cuenta de ingreso: por código del Excel, o la default VENTAS.
+            $cuentaId = null;
+            if ($f['cuenta'] !== '') {
+                $cuentaId = $catalogo[$f['cuenta']]->id ?? null;
+                if (! $cuentaId) {
+                    $errores[] = "Fila {$fila}: la cuenta '{$f['cuenta']}' no existe o no permite movimiento; se usó la cuenta de ventas por defecto.";
+                }
+            }
+            $cuentaId ??= $cuentaVentasId;
+
+            $base = round($f['subtotal'], 2);
+            $itbms = $f['itbms'] > 0
+                ? round($f['itbms'], 2)
+                : ($f['tasa'] > 0 ? round($base * $f['tasa'] / 100, 2) : 0.0);
+            $tasaEfectiva = $f['tasa'] > 0
+                ? (int) round($f['tasa'])
+                : ($base > 0 && $itbms > 0 ? (int) round($itbms / $base * 100) : 0);
+            $impuesto = $this->resolverImpuestoVenta($tasaEfectiva, $impuestosGlobales);
+
+            $clave = $cliente->id.'|'.$f['numero'];
+            $documentos[$clave] ??= [
+                'cliente'     => $cliente,
+                'numero'      => $f['numero'],
+                'fecha'       => $f['fecha'],
+                'vencimiento' => $f['vencimiento'],
+                'lineas'      => [],
+            ];
+            $documentos[$clave]['lineas'][] = [
+                'descripcion'       => $f['concepto'] !== '' ? substr($f['concepto'], 0, 500) : 'Venta '.$f['numero'],
+                'cantidad'          => 1,
+                'precio'            => $base,
+                'itbms'             => $itbms,
+                'total'             => round($base + $itbms, 2),
+                'cuenta_ingreso_id' => (int) $cuentaId,
+                'impuesto_id'       => $impuesto?->id,
+            ];
+        }
+
+        $creadas = 0;
+        $omitidas = 0;
+
+        foreach ($documentos as $doc) {
+            if ($this->numeroExiste($companiaId, $doc['numero'])) {
+                $omitidas++;
+                $errores[] = "Documento {$doc['numero']} de {$doc['cliente']->nombre}: ya existe; se omitió.";
+
+                continue;
+            }
+
+            $subtotal = round(array_sum(array_column($doc['lineas'], 'precio')), 2);
+            $itbms = round(array_sum(array_column($doc['lineas'], 'itbms')), 2);
+            $total = round($subtotal + $itbms, 2);
+
+            try {
+                DB::transaction(function () use ($companiaId, $doc, $subtotal, $itbms, $total, $usuario, $cuentaCxcId, $cuentaItbmsId) {
+                    $numero = $doc['numero'];
+
+                    $factura = VentaFactura::create([
+                        'compania_id'       => $companiaId,
+                        'cliente_id'        => $doc['cliente']->id,
+                        'numero'            => $numero,
+                        'fecha'             => $doc['fecha'],
+                        'fecha_vencimiento' => $doc['vencimiento'],
+                        'subtotal'          => $subtotal,
+                        'descuento'         => 0,
+                        'itbms'             => $itbms,
+                        'total'             => $total,
+                        'saldo'             => $total,
+                        'estado'            => VentaFactura::ESTADO_EMITIDA,
+                        'created_by'        => $usuario->email,
+                    ]);
+
+                    foreach ($doc['lineas'] as $n => $linea) {
+                        VentaFacturaDetalle::create([
+                            'factura_id'        => $factura->id,
+                            'linea'             => $n + 1,
+                            'item_id'           => null,
+                            'descripcion'       => $linea['descripcion'],
+                            'cantidad'          => $linea['cantidad'],
+                            'precio_unitario'   => $linea['precio'],
+                            'descuento'         => 0,
+                            'impuesto_id'       => $linea['impuesto_id'],
+                            'impuesto_monto'    => $linea['itbms'],
+                            'total_linea'       => $linea['total'],
+                            'cuenta_ingreso_id' => $linea['cuenta_ingreso_id'],
+                            'created_by'        => $usuario->email,
+                        ]);
+                    }
+
+                    $cxc = CxcDocumento::create([
+                        'compania_id'       => $companiaId,
+                        'cliente_id'        => $doc['cliente']->id,
+                        'tipo_documento'    => CxcDocumento::TIPO_FACTURA,
+                        'numero'            => $numero,
+                        'fecha'             => $doc['fecha'],
+                        'fecha_vencimiento' => $doc['vencimiento'],
+                        'subtotal'          => $subtotal,
+                        'descuento'         => 0,
+                        'impuesto'          => $itbms,
+                        'total'             => $total,
+                        'saldo'             => $total,
+                        'estado'            => CxcDocumento::ESTADO_PENDIENTE,
+                        'created_by'        => $usuario->email,
+                    ]);
+
+                    foreach ($doc['lineas'] as $n => $linea) {
+                        CxcDocumentoDetalle::create([
+                            'documento_id'    => $cxc->id,
+                            'linea'           => $n + 1,
+                            'descripcion'     => $linea['descripcion'],
+                            'cantidad'        => $linea['cantidad'],
+                            'precio_unitario' => $linea['precio'],
+                            'descuento'       => 0,
+                            'impuesto_monto'  => $linea['itbms'],
+                            'total_linea'     => $linea['total'],
+                            'cuenta_id'       => $linea['cuenta_ingreso_id'],
+                            'created_by'      => $usuario->email,
+                        ]);
+                    }
+
+                    $lineasAsiento = [[
+                        'cuenta_id'   => $cuentaCxcId,
+                        'contacto_id' => $doc['cliente']->id,
+                        'descripcion' => "Factura {$numero}",
+                        'debito'      => $total,
+                        'credito'     => 0,
+                    ]];
+                    foreach ($doc['lineas'] as $linea) {
+                        $lineasAsiento[] = [
+                            'cuenta_id'   => $linea['cuenta_ingreso_id'],
+                            'descripcion' => $linea['descripcion'],
+                            'debito'      => 0,
+                            'credito'     => $linea['precio'],
+                        ];
+                    }
+                    if ($itbms > 0 && $cuentaItbmsId) {
+                        $lineasAsiento[] = [
+                            'cuenta_id'   => $cuentaItbmsId,
+                            'descripcion' => "ITBMS factura {$numero}",
+                            'debito'      => 0,
+                            'credito'     => $itbms,
+                        ];
+                    }
+
+                    $asiento = app(AsientoAutomatico::class)->postear(
+                        $companiaId, $doc['fecha'],
+                        "Factura de venta {$numero} — ".($doc['cliente']->nombre ?? ''),
+                        $numero, $lineasAsiento, 'CXC', 'ventas_facturas', $factura->id, $usuario,
+                    );
+
+                    $factura->update(['cxc_documento_id' => $cxc->id, 'asiento_id' => $asiento->id]);
+                    $cxc->update(['asiento_id' => $asiento->id]);
+                });
+
+                $creadas++;
+            } catch (\Throwable $e) {
+                $errores[] = "Documento {$doc['numero']} de {$doc['cliente']->nombre}: no se pudo registrar ({$e->getMessage()}).";
+            }
+        }
+
+        $resumen = "Importación de ventas: {$creadas} factura(s) emitida(s) y contabilizada(s)";
+        if ($omitidas > 0) {
+            $resumen .= ", {$omitidas} omitida(s) por estar ya registradas";
+        }
+        $resumen .= '.';
+
+        return redirect()->route('admin.ventas.facturas.index')
+            ->with('status', $resumen)
+            ->with('import_ventas_errores', array_slice($errores, 0, 50));
+    }
+
+    /** Resuelve el cliente por RUC → código → nombre; si no existe lo crea. */
+    private function resolverOCrearClienteGenerico(array $f, int $companiaId, $usuario): Contacto
+    {
+        $ruc = $f['ruc'] !== '' ? substr($f['ruc'], 0, 50) : null;
+        $nombre = $f['cliente'];
+
+        $cliente = null;
+        if ($ruc) {
+            $cliente = Contacto::where('compania_id', $companiaId)->where('identificacion', $ruc)->first();
+        }
+        if (! $cliente && $nombre !== '') {
+            $cliente = Contacto::where('compania_id', $companiaId)
+                ->where(fn ($q) => $q->where('codigo', $nombre)->orWhere('nombre', $nombre))
+                ->first();
+        }
+        if ($cliente) {
+            return $cliente;
+        }
+
+        $codigo = $ruc;
+        if ($codigo && Contacto::where('compania_id', $companiaId)->where('codigo', $codigo)->exists()) {
+            $codigo = null;
+        }
+
+        $cliente = Contacto::create([
+            'compania_id'    => $companiaId,
+            'codigo'         => $codigo,
+            'nombre'         => substr($nombre !== '' ? $nombre : ($ruc ?? 'Cliente'), 0, 200),
+            'tipo_persona'   => 'JURIDICA',
+            'identificacion' => $ruc,
+            'activo'         => true,
+            'created_by'     => $usuario->email,
+        ]);
+
+        if ($tipoCliente = TipoContacto::where('codigo', 'CLIENTE')->first()) {
+            $cliente->tipos()->attach($tipoCliente->id);
+        }
+
+        return $cliente;
+    }
+
+    /** Elige la tasa ITBMS global cuyo porcentaje coincide con $tasa (cae a 0% / primera). */
+    private function resolverImpuestoVenta(int $tasa, $impuestosGlobales): ?TaxImpuesto
+    {
+        return $impuestosGlobales->first(fn ($i) => (int) round($i->porcentaje) === $tasa)
+            ?? $impuestosGlobales->first(fn ($i) => (int) round($i->porcentaje) === 0)
+            ?? $impuestosGlobales->first();
+    }
 
     public function anular(Request $request, VentaFactura $factura): RedirectResponse
     {
