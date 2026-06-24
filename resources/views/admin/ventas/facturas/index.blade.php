@@ -6,7 +6,7 @@
                 <a href="{{ route('admin.ventas.facturas.index', array_merge(request()->query(), ['export' => 'xlsx'])) }}" class="rounded-md border border-green-300 bg-white px-3 py-2 text-sm text-green-700 hover:bg-green-50">Excel</a>
                 <a href="{{ route('admin.ventas.facturas.index', array_merge(request()->query(), ['export' => 'pdf'])) }}" class="rounded-md border border-red-300 bg-white px-3 py-2 text-sm text-red-700 hover:bg-red-50">PDF</a>
                 @can('ventas.gestionar')
-                <button type="button" onclick="document.getElementById('modal-importar').classList.remove('hidden')" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">Documentos Emitidos DGI</button>
+                <button type="button" onclick="document.getElementById('modal-importar').classList.remove('hidden')" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">Importar Ventas DGI</button>
                 <a href="{{ route('admin.ventas.facturas.create') }}" class="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500">+ Nueva factura</a>
                 @endcan
             </div>
