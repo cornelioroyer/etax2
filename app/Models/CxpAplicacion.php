@@ -14,6 +14,7 @@ class CxpAplicacion extends Model
         'proveedor_id',
         'documento_origen_id',
         'documento_destino_id',
+        'pago_id',
         'fecha',
         'monto_aplicado',
         'asiento_id',
@@ -37,5 +38,11 @@ class CxpAplicacion extends Model
     public function destino(): BelongsTo
     {
         return $this->belongsTo(CxpDocumento::class, 'documento_destino_id');
+    }
+
+    /** Pago que orquestó esta aplicación de crédito (null si fue independiente). */
+    public function pago(): BelongsTo
+    {
+        return $this->belongsTo(CxpDocumento::class, 'pago_id');
     }
 }

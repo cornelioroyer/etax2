@@ -293,6 +293,8 @@ class CxpPagoController extends Controller
             }
 
             // Aplica cada crédito FIFO sobre las facturas en orden.
+            $creditoAplicIds = [];
+
             foreach ($creditos as $cr) {
                 $credito = $creditoDocs->get($cr['documento_id']);
                 $restante = $cr['monto'];
@@ -314,7 +316,10 @@ class CxpPagoController extends Controller
                     $restante = round($restante - $aplica, 2);
                 }
 
-                $this->aplicarCredito($companiaId, $credito, $asignaciones, $data['fecha'], $cuentaCxpId, $usuario);
+                $creditoAplicIds = array_merge(
+                    $creditoAplicIds,
+                    $this->aplicarCredito($companiaId, $credito, $asignaciones, $data['fecha'], $cuentaCxpId, $usuario)
+                );
             }
 
             // Remanente real tras asignar los créditos (a prueba de centavos): es
@@ -423,6 +428,12 @@ class CxpPagoController extends Controller
 
                 $pago->update(['asiento_id' => $asiento->id]);
 
+                // Etiqueta las aplicaciones de crédito con este pago para poder
+                // anularlo/corregirlo (efectivo + créditos) como una sola operación.
+                if ($creditoAplicIds) {
+                    CxpAplicacion::whereIn('id', $creditoAplicIds)->update(['pago_id' => $pago->id]);
+                }
+
                 // Integración con Bancos: si la cuenta de pago es una cuenta
                 // bancaria registrada, refleja el egreso para la conciliación.
                 if ($efectivo > 0) {
@@ -480,13 +491,14 @@ class CxpPagoController extends Controller
      * por el total liquidado (créditos + efectivo).
      *
      * @param  array<int, float>  $asignaciones  facturaId => monto
+     * @return list<int>  ids de las aplicaciones creadas (para etiquetarlas con el pago)
      */
-    private function aplicarCredito(int $companiaId, CxpDocumento $credito, array $asignaciones, string $fecha, int $cuentaCxpId, $usuario): void
+    private function aplicarCredito(int $companiaId, CxpDocumento $credito, array $asignaciones, string $fecha, int $cuentaCxpId, $usuario): array
     {
         $totalAsignado = round(array_sum($asignaciones), 2);
 
         if ($totalAsignado <= 0) {
-            return;
+            return [];
         }
 
         $asientoId = null;
@@ -527,12 +539,14 @@ class CxpPagoController extends Controller
             $asientoId = $asiento->id;
         }
 
+        $ids = [];
+
         foreach ($asignaciones as $facturaId => $monto) {
             if (round((float) $monto, 2) <= 0) {
                 continue;
             }
 
-            CxpAplicacion::create([
+            $aplicacion = CxpAplicacion::create([
                 'compania_id' => $companiaId,
                 'proveedor_id' => $credito->proveedor_id,
                 'documento_origen_id' => $credito->id,
@@ -542,14 +556,16 @@ class CxpPagoController extends Controller
                 'asiento_id' => $asientoId,
                 'created_by' => $usuario->email,
             ]);
+
+            $ids[] = $aplicacion->id;
         }
 
         $credito->saldo = round((float) $credito->saldo - $totalAsignado, 2);
-        $credito->estado = $credito->saldo <= 0.0
-            ? CxpDocumento::ESTADO_PAGADO
-            : CxpDocumento::ESTADO_PARCIAL;
+        $credito->estado = $credito->estadoSegunSaldo();
         $credito->updated_by = $usuario->email;
         $credito->save();
+
+        return $ids;
     }
 
     /**
@@ -624,14 +640,11 @@ class CxpPagoController extends Controller
     }
 
     /**
-     * "Corregir" un pago ya registrado: lo anula (restaura los saldos de las
-     * facturas, reversa el asiento y elimina el movimiento bancario) y reabre el
-     * formulario de captura prellenado para registrar la corrección como un pago
-     * nuevo. El original queda ANULADO en el historial.
-     *
-     * Los créditos a favor aplicados en el pago original (anticipos / notas de
-     * crédito) NO se reabren: el efectivo del pago se reconstruye; si la
-     * corrección requiere créditos, se vuelven a seleccionar.
+     * "Corregir" un pago ya registrado: lo anula como una sola operación
+     * (restaura los saldos de las facturas, revierte los créditos aplicados,
+     * reversa los asientos y elimina el movimiento bancario) y reabre el
+     * formulario de captura prellenado —incluyendo los créditos a favor— para
+     * registrar la corrección como un pago nuevo. El original queda ANULADO.
      */
     public function corregir(Request $request, CxpDocumento $documento): RedirectResponse
     {
@@ -642,12 +655,34 @@ class CxpPagoController extends Controller
             return back()->withErrors(['documento' => 'El pago ya está anulado.']);
         }
 
-        // Datos para reabrir el formulario (antes de borrar las aplicaciones).
-        $aplicaciones = $documento->aplicacionesComoOrigen()
+        // Datos para reabrir el formulario (antes de que revertir borre todo).
+        // Monto por factura = porción en efectivo (origen = pago) + porción
+        // cubierta por créditos (aplicaciones etiquetadas con este pago).
+        $efectivoPorFactura = $documento->aplicacionesComoOrigen()
             ->get(['documento_destino_id', 'monto_aplicado'])
-            ->map(fn ($a) => [
-                'documento_id' => (int) $a->documento_destino_id,
-                'monto' => number_format((float) $a->monto_aplicado, 2, '.', ''),
+            ->groupBy('documento_destino_id')
+            ->map(fn ($g) => (float) $g->sum('monto_aplicado'));
+
+        $aplicacionesCredito = CxpAplicacion::where('pago_id', $documento->id)
+            ->get(['documento_destino_id', 'documento_origen_id', 'monto_aplicado']);
+
+        $creditoPorFactura = $aplicacionesCredito
+            ->groupBy('documento_destino_id')
+            ->map(fn ($g) => (float) $g->sum('monto_aplicado'));
+
+        $aplicaciones = $efectivoPorFactura->keys()
+            ->merge($creditoPorFactura->keys())
+            ->unique()
+            ->map(fn ($facturaId) => [
+                'documento_id' => (int) $facturaId,
+                'monto' => number_format((float) ($efectivoPorFactura->get($facturaId, 0) + $creditoPorFactura->get($facturaId, 0)), 2, '.', ''),
+            ])->values()->all();
+
+        $creditos = $aplicacionesCredito
+            ->groupBy('documento_origen_id')
+            ->map(fn ($g, $creditoId) => [
+                'documento_id' => (int) $creditoId,
+                'monto' => number_format((float) $g->sum('monto_aplicado'), 2, '.', ''),
             ])->values()->all();
 
         if ($error = $this->revertir($documento, $request->user())) {
@@ -664,15 +699,19 @@ class CxpPagoController extends Controller
                 'retencion_isr' => (float) $documento->retencion_isr > 0 ? number_format((float) $documento->retencion_isr, 2, '.', '') : null,
                 'descuento' => (float) $documento->descuento > 0 ? number_format((float) $documento->descuento, 2, '.', '') : null,
                 'aplicaciones' => $aplicaciones,
+                'creditos' => $creditos,
             ])
             ->with('status', "Pago {$documento->numero} anulado para corrección y saldos restaurados. Ajusta los montos y registra de nuevo (se asignará un número nuevo).");
     }
 
     /**
-     * Reversa un pago: valida que no tenga movimiento bancario conciliado,
-     * restaura los saldos de las facturas, reversa el asiento, elimina el
-     * movimiento bancario y deja el pago ANULADO. Devuelve un mensaje de error
-     * si no se puede revertir, o null si se revirtió correctamente.
+     * Reversa un pago como una sola operación: valida que no tenga movimiento
+     * bancario conciliado; restaura los saldos de las facturas; revierte los
+     * créditos aplicados dentro del pago (restaura el disponible del anticipo /
+     * nota de crédito y reversa el asiento de aplicación del anticipo); reversa
+     * el asiento del pago; elimina el movimiento bancario y deja el pago
+     * ANULADO. Devuelve un mensaje de error si no se puede revertir, o null si
+     * se revirtió correctamente.
      */
     private function revertir(CxpDocumento $documento, $usuario): ?string
     {
@@ -686,6 +725,7 @@ class CxpPagoController extends Controller
         }
 
         DB::transaction(function () use ($documento, $usuario, $movimientos) {
+            // 1) Reversa la porción en efectivo (aplicaciones cuyo origen es el pago).
             foreach ($documento->aplicacionesComoOrigen()->with('destino')->lockForUpdate()->get() as $aplicacion) {
                 $factura = $aplicacion->destino;
                 $factura->saldo = round((float) $factura->saldo + (float) $aplicacion->monto_aplicado, 2);
@@ -696,6 +736,49 @@ class CxpPagoController extends Controller
                 $aplicacion->delete();
             }
 
+            // 2) Reversa los créditos aplicados dentro de este pago. Se acumulan
+            //    los montos por factura y por crédito para no perder escrituras
+            //    cuando un mismo documento aparece en varias aplicaciones.
+            $deltaFactura = [];
+            $deltaCredito = [];
+            $asientosCredito = [];
+
+            foreach (CxpAplicacion::where('pago_id', $documento->id)->lockForUpdate()->get() as $aplicacion) {
+                $deltaFactura[$aplicacion->documento_destino_id] = round(($deltaFactura[$aplicacion->documento_destino_id] ?? 0) + (float) $aplicacion->monto_aplicado, 2);
+                $deltaCredito[$aplicacion->documento_origen_id] = round(($deltaCredito[$aplicacion->documento_origen_id] ?? 0) + (float) $aplicacion->monto_aplicado, 2);
+
+                if ($aplicacion->asiento_id) {
+                    $asientosCredito[$aplicacion->asiento_id] = true;
+                }
+
+                $aplicacion->delete();
+            }
+
+            foreach ($deltaFactura as $facturaId => $monto) {
+                $factura = CxpDocumento::lockForUpdate()->find($facturaId);
+                if ($factura) {
+                    $factura->saldo = round((float) $factura->saldo + $monto, 2);
+                    $factura->estado = $factura->estadoSegunSaldo();
+                    $factura->updated_by = $usuario->email;
+                    $factura->save();
+                }
+            }
+
+            foreach ($deltaCredito as $creditoId => $monto) {
+                $credito = CxpDocumento::lockForUpdate()->find($creditoId);
+                if ($credito) {
+                    $credito->saldo = round((float) $credito->saldo + $monto, 2);
+                    $credito->estado = $credito->estadoSegunSaldo();
+                    $credito->updated_by = $usuario->email;
+                    $credito->save();
+                }
+            }
+
+            foreach (array_keys($asientosCredito) as $asientoId) {
+                app(AsientoAutomatico::class)->anular(Asiento::find($asientoId), $usuario);
+            }
+
+            // 3) Reversa el asiento del pago y el movimiento bancario.
             foreach ($movimientos as $movimiento) {
                 $movimiento->delete();
             }

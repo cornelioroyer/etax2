@@ -36,6 +36,8 @@
                         // Montos previos (corrección o validación fallida) por factura.
                         $oldAplic = collect(old('aplicaciones', []))
                             ->mapWithKeys(fn ($a) => [(int) ($a['documento_id'] ?? 0) => (float) ($a['monto'] ?? 0)]);
+                        $oldCred = collect(old('creditos', []))
+                            ->mapWithKeys(fn ($c) => [(int) ($c['documento_id'] ?? 0) => (float) ($c['monto'] ?? 0)]);
                         $facturasJson = $facturas->map(fn ($f) => [
                             'id' => $f->id,
                             'numero' => $f->numero,
@@ -50,7 +52,7 @@
                             'tipo' => $c->tipo_documento === \App\Models\CxpDocumento::TIPO_ANTICIPO ? 'Anticipo' : 'Nota de crédito',
                             'fecha' => $c->fecha->format('d/m/Y'),
                             'saldo' => (float) $c->saldo,
-                            'monto' => 0,
+                            'monto' => round((float) $oldCred->get($c->id, 0), 2),
                         ]);
                     @endphp
                     <form method="POST" action="{{ route('admin.cxp.pagos.store') }}"

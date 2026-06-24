@@ -875,6 +875,77 @@ class CxpTest extends TestCase
         $this->assertSame('107.00', (string) $factura->saldo);
     }
 
+    public function test_anular_pago_con_anticipo_restaura_el_anticipo(): void
+    {
+        $factura = $this->crearFactura(100, 7); // total 107
+        $anticipo = $this->registrarAnticipo(500);
+
+        $this->actuar()->post(route('admin.cxp.pagos.store'), [
+            'proveedor_id' => $this->proveedor->id,
+            'fecha' => '2026-06-13',
+            'cuenta_pago_id' => $this->banco->id,
+            'aplicaciones' => [['documento_id' => $factura->id, 'monto' => 107]],
+            'creditos' => [['documento_id' => $anticipo->id, 'monto' => 50]],
+        ])->assertSessionHasNoErrors();
+
+        $pago = CxpDocumento::where('tipo_documento', 'PAGO')->firstOrFail();
+
+        // Asiento de la aplicación del anticipo (distinto del de su registro).
+        $asientoAplicId = \App\Models\CxpAplicacion::where('pago_id', $pago->id)
+            ->where('documento_origen_id', $anticipo->id)
+            ->value('asiento_id');
+        $this->assertNotNull($asientoAplicId);
+
+        // Anular revierte el pago completo: efectivo + crédito aplicado.
+        $this->actuar()->post(route('admin.cxp.pagos.anular', $pago))
+            ->assertSessionHasNoErrors();
+
+        $factura->refresh();
+        $anticipo->refresh();
+
+        $this->assertSame('ANULADO', $pago->fresh()->estado);
+        $this->assertSame('PENDIENTE', $factura->estado);
+        $this->assertSame('107.00', (string) $factura->saldo);
+
+        // El anticipo recupera todo su disponible y la aplicación se borra.
+        $this->assertSame('PENDIENTE', $anticipo->estado);
+        $this->assertSame('500.00', (string) $anticipo->saldo);
+        $this->assertSame(0, \App\Models\CxpAplicacion::where('pago_id', $pago->id)->count());
+        $this->assertSame(0, \App\Models\CxpAplicacion::where('documento_origen_id', $anticipo->id)->count());
+
+        // El asiento de aplicación del anticipo queda anulado (el de registro no).
+        $this->assertSame('ANULADO', \App\Models\Asiento::find($asientoAplicId)->estado);
+    }
+
+    public function test_corregir_pago_con_credito_reabre_con_credito(): void
+    {
+        $factura = $this->crearFactura(100, 7); // total 107
+        $anticipo = $this->registrarAnticipo(500);
+
+        $this->actuar()->post(route('admin.cxp.pagos.store'), [
+            'proveedor_id' => $this->proveedor->id,
+            'fecha' => '2026-06-13',
+            'cuenta_pago_id' => $this->banco->id,
+            'aplicaciones' => [['documento_id' => $factura->id, 'monto' => 107]],
+            'creditos' => [['documento_id' => $anticipo->id, 'monto' => 50]],
+        ])->assertSessionHasNoErrors();
+
+        $pago = CxpDocumento::where('tipo_documento', 'PAGO')->firstOrFail();
+
+        // Corregir reabre el formulario con la factura completa (107) y el
+        // crédito aplicado (50) preseleccionados.
+        $this->actuar()->post(route('admin.cxp.pagos.corregir', $pago))
+            ->assertRedirect(route('admin.cxp.pagos.create', ['proveedor_id' => $this->proveedor->id]))
+            ->assertSessionHasInput('aplicaciones.0.monto', '107.00')
+            ->assertSessionHasInput('creditos.0.documento_id', $anticipo->id)
+            ->assertSessionHasInput('creditos.0.monto', '50.00');
+
+        // Todo revertido: factura y anticipo restaurados.
+        $this->assertSame('ANULADO', $pago->fresh()->estado);
+        $this->assertSame('107.00', (string) $factura->fresh()->saldo);
+        $this->assertSame('500.00', (string) $anticipo->fresh()->saldo);
+    }
+
     private function crearCuentaBancaria(): \App\Models\BcoCuenta
     {
         $banco = \App\Models\BcoBanco::create(['codigo' => 'BG', 'nombre' => 'Banco General', 'activo' => true]);
