@@ -152,7 +152,7 @@
             'key' => 'bancos',
             'label' => 'Bancos',
             'icon' => 'M3 10.5h18M4.5 10.5V18M8.25 10.5V18M12 10.5V18m3.75-7.5V18M19.5 10.5V18M3.75 21h16.5M12 3l8.25 4.5H3.75L12 3Z',
-            'active' => request()->routeIs('admin.bancos.*') || request()->routeIs('admin.caja.*') || request()->routeIs('admin.bco.*'),
+            'active' => request()->routeIs('admin.caja.*') || request()->routeIs('admin.bco.*'),
             'show' => $can('bancos.ver') || $can('caja.ver'),
             'children' => [
                 ['label' => 'Cuentas bancarias', 'href' => route('admin.bco.cuentas.index'), 'active' => request()->routeIs('admin.bco.cuentas.*'), 'show' => $can('bancos.ver')],
@@ -287,7 +287,8 @@
             'children' => [
                 ['label' => 'Usuarios', 'href' => route('admin.users.index'), 'active' => request()->routeIs('admin.users.*'), 'show' => Auth::user()->is_admin],
                 ['label' => 'Accesos por compañía', 'href' => route('admin.usuarios-compania.index'), 'active' => request()->routeIs('admin.usuarios-compania.*'), 'show' => Auth::user()->is_admin || $can('usuarios_compania.gestionar')],
-                ['label' => 'Auditoría', 'href' => route('admin.auditoria.index'), 'active' => request()->routeIs('admin.auditoria.*'), 'show' => Auth::user()->is_admin],
+                ['label' => 'Auditoría', 'href' => route('admin.auditoria.index'), 'active' => request()->routeIs('admin.auditoria.index') || request()->routeIs('admin.auditoria.show'), 'show' => Auth::user()->is_admin],
+                ['label' => 'Auditoría global', 'href' => route('admin.auditoria.global'), 'active' => request()->routeIs('admin.auditoria.global'), 'show' => Auth::user()->is_admin],
             ],
         ],
         [

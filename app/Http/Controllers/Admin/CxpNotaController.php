@@ -11,6 +11,7 @@ use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
 use App\Models\CxpAplicacion;
 use App\Models\CxpDocumento;
+use App\Models\TaxImpuesto;
 use App\Services\AsientoAutomatico;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -36,7 +37,7 @@ class CxpNotaController extends Controller
     use ConCompaniaActiva;
     use ExportaReporte;
 
-    public const TASAS_ITBMS = [0, 7, 10, 15];
+    public const TASAS_ITBMS = TaxImpuesto::PORCENTAJES_ITBMS;
 
     private const TIPOS = [
         'credito' => CxpDocumento::TIPO_NOTA_CREDITO,
