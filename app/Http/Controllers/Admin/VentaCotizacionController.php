@@ -40,7 +40,6 @@ class VentaCotizacionController extends Controller
             'cliente_id' => ['nullable', 'integer'],
             'desde'      => ['nullable', 'date'],
             'hasta'      => ['nullable', 'date'],
-            'q'          => ['nullable', 'string', 'max:100'],
         ]);
 
         $consulta = VentaCotizacion::query()
@@ -50,13 +49,6 @@ class VentaCotizacionController extends Controller
             ->when($filtros['cliente_id'] ?? null, fn ($q, $v) => $q->where('cliente_id', $v))
             ->when($filtros['desde'] ?? null, fn ($q, $v) => $q->whereDate('fecha', '>=', $v))
             ->when($filtros['hasta'] ?? null, fn ($q, $v) => $q->whereDate('fecha', '<=', $v))
-            ->when($filtros['q'] ?? null, function ($q, $texto) {
-                $b = '%'.mb_strtolower($texto).'%';
-                $q->where(fn ($q) => $q
-                    ->whereRaw('LOWER(numero) LIKE ?', [$b])
-                    ->orWhereHas('cliente', fn ($c) => $c->whereRaw('LOWER(nombre) LIKE ?', [$b]))
-                );
-            })
             ->orderByDesc('fecha')
             ->orderByDesc('numero');
 

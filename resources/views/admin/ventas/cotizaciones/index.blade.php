@@ -29,11 +29,7 @@
             {{-- Filtros --}}
             <form method="GET" class="bg-white p-4 shadow-sm sm:rounded-lg">
                 <div class="grid grid-cols-2 gap-3 sm:grid-cols-6">
-                    <div class="col-span-2">
-                        <x-input-label for="q" value="Buscar" />
-                        <x-text-input id="q" name="q" type="text" class="mt-1 block w-full" :value="$filtros['q'] ?? ''" placeholder="Número o cliente" />
-                    </div>
-                    <x-buscador-contacto name="cliente_id" label="Cliente" :opciones="$clientes" :selected="$filtros['cliente_id'] ?? null" />
+                    <x-buscador-contacto name="cliente_id" label="Cliente" :opciones="$clientes" :selected="$filtros['cliente_id'] ?? null" class="col-span-2" />
                     <div>
                         <x-input-label for="estado" value="Estado" />
                         <select id="estado" name="estado" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
