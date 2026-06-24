@@ -71,7 +71,7 @@ class CxpPagoController extends Controller
         $proveedores = Contacto::where('compania_id', $companiaId)
             ->whereHas('tipos', fn ($q) => $q->where('codigo', 'PROVEEDOR'))
             ->orderBy('nombre')
-            ->get(['id', 'nombre']);
+            ->get(['id', 'codigo', 'nombre']);
 
         return view('admin.cxp.pagos.index', compact('pagos', 'filtros', 'proveedores'));
     }

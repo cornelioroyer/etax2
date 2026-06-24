@@ -15,14 +15,9 @@
             <form method="GET" action="{{ route('admin.cxp.pagos.create') }}" class="bg-white p-6 shadow-sm sm:rounded-lg">
                 <div class="flex flex-wrap items-end gap-3">
                     <div class="min-w-64 flex-1">
-                        <x-input-label for="proveedor_id" value="Proveedor *" />
-                        <select id="proveedor_id" name="proveedor_id" onchange="this.form.submit()"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="">— Selecciona el proveedor —</option>
-                            @foreach ($proveedores as $proveedor)
-                                <option value="{{ $proveedor->id }}" @selected($proveedorId == $proveedor->id)>{{ $proveedor->codigo }} — {{ $proveedor->nombre }}</option>
-                            @endforeach
-                        </select>
+                        <x-buscador-contacto name="proveedor_id" label="Proveedor *" submit-on-select
+                            placeholder="— Selecciona el proveedor —"
+                            :opciones="$proveedores" :selected="$proveedorId" />
                     </div>
                     <p class="pb-2 text-xs text-gray-500">Al elegir el proveedor se cargan sus facturas con saldo.</p>
                 </div>

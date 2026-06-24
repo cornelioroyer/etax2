@@ -29,15 +29,7 @@
                             <option value="debito" @selected(($filtros['tipo'] ?? '') === 'debito')>Débito</option>
                         </select>
                     </div>
-                    <div>
-                        <x-input-label for="cliente_id" value="Cliente" />
-                        <select id="cliente_id" name="cliente_id" class="mt-1 block w-64 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="">Todos</option>
-                            @foreach ($clientes as $c)
-                                <option value="{{ $c->id }}" @selected(($filtros['cliente_id'] ?? '') == $c->id)>{{ $c->nombre }}</option>
-                            @endforeach
-                        </select>
-                    </div>
+                    <x-buscador-contacto name="cliente_id" label="Cliente" width="w-64" :opciones="$clientes" :selected="$filtros['cliente_id'] ?? null" />
                     <button class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Filtrar</button>
                 </div>
             </form>

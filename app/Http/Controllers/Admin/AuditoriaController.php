@@ -96,6 +96,83 @@ class AuditoriaController extends Controller
         ]);
     }
 
+    /**
+     * Auditoría GLOBAL: actividad de TODAS las compañías, solo super_admin
+     * (mismo middleware 'admin'). A diferencia de index() no acota por compañía;
+     * agrega filtro y columna de Compañía. Pensada para que el dueño de la
+     * plataforma vea qué se hizo en cada cliente.
+     */
+    public function globalIndex(Request $request): View|Response
+    {
+        $filtros = $request->validate([
+            'usuario_id' => ['nullable', 'integer'],
+            'usuario_excluir_id' => ['nullable', 'array'],
+            'usuario_excluir_id.*' => ['integer'],
+            'compania_id' => ['nullable', 'integer'],
+            'evento' => ['nullable', 'string', 'max:30'],
+            'entidad' => ['nullable', 'string', 'max:120'],
+            'desde' => ['nullable', 'date'],
+            'hasta' => ['nullable', 'date'],
+            'q' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $desde = ! empty($filtros['desde'])
+            ? Carbon::parse($filtros['desde'])->startOfDay()
+            : now()->startOfMonth();
+        $hasta = ! empty($filtros['hasta'])
+            ? Carbon::parse($filtros['hasta'])->endOfDay()
+            : now()->endOfDay();
+
+        if ($desde->gt($hasta)) {
+            [$desde, $hasta] = [$hasta->copy()->startOfDay(), $desde->copy()->endOfDay()];
+        }
+
+        $query = AuditActividad::query()
+            ->with('usuario')
+            // Sin acotar por compañía: TODAS las compañías.
+            ->whereBetween('created_at', [$desde, $hasta])
+            ->when($filtros['compania_id'] ?? null, fn ($q, $v) => $q->where('compania_id', $v))
+            ->when($filtros['usuario_id'] ?? null, fn ($q, $v) => $q->where('usuario_id', $v))
+            // Excluir uno o varios usuarios: conserva también los eventos sin
+            // usuario (logins fallidos), que también son "distintos a X".
+            ->when($filtros['usuario_excluir_id'] ?? null, fn ($q, $v) => $q->where(
+                fn ($w) => $w->whereNotIn('usuario_id', array_map('intval', $v))->orWhereNull('usuario_id')
+            ))
+            ->when($filtros['evento'] ?? null, fn ($q, $v) => $q->where('evento', $v))
+            ->when($filtros['entidad'] ?? null, fn ($q, $v) => $q->where('entidad', $v))
+            ->when($filtros['q'] ?? null, fn ($q, $v) => $q->where(function ($w) use ($v) {
+                $w->where('descripcion', 'like', "%{$v}%")
+                    ->orWhere('usuario_nombre', 'like', "%{$v}%");
+            }))
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
+
+        $companias = Compania::orderBy('nombre')->get(['id', 'nombre']);
+
+        $datos = [
+            'desde' => $desde,
+            'hasta' => $hasta,
+            'filtros' => $filtros,
+            'usuarios' => User::orderBy('name')->get(['id', 'name', 'email']),
+            'entidades' => AuditActividad::whereNotNull('entidad')->distinct()->orderBy('entidad')->pluck('entidad'),
+            'companias' => $companias,
+            'companiasMap' => $companias->pluck('nombre', 'id'),
+            'etiquetas' => AuditActividad::ETIQUETAS,
+            'generado' => now(),
+            'usuario' => $request->user()->name ?: $request->user()->email,
+        ];
+
+        if ($export = $this->exportarReporte($request, 'admin.exports.auditoria-global',
+            $datos + ['registros' => (clone $query)->limit(5000)->get()],
+            'auditoria_global_'.$desde->format('Ymd').'_'.$hasta->format('Ymd'))) {
+            return $export;
+        }
+
+        return view('admin.auditoria.global', $datos + [
+            'registros' => $query->paginate(50)->withQueryString(),
+        ]);
+    }
+
     public function show(Request $request, AuditActividad $actividad): View
     {
         $actividad->load('usuario');

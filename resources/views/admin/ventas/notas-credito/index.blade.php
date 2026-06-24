@@ -17,15 +17,7 @@
             @endif
 
             <form method="GET" class="bg-white p-4 shadow-sm sm:rounded-lg flex flex-wrap gap-3 items-end">
-                <div>
-                    <label class="block text-xs text-gray-500 mb-1">Cliente</label>
-                    <select name="cliente_id" class="rounded-md border-gray-300 text-sm shadow-sm">
-                        <option value="">Todos</option>
-                        @foreach ($clientes as $c)
-                            <option value="{{ $c->id }}" @selected(($filtros['cliente_id'] ?? '') == $c->id)>{{ $c->nombre }}</option>
-                        @endforeach
-                    </select>
-                </div>
+                <x-buscador-contacto name="cliente_id" label="Cliente" compact width="w-56" :opciones="$clientes" :selected="$filtros['cliente_id'] ?? null" />
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">Estado</label>
                     <select name="estado" class="rounded-md border-gray-300 text-sm shadow-sm">

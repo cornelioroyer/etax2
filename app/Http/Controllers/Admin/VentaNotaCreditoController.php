@@ -45,7 +45,7 @@ class VentaNotaCreditoController extends Controller
             ->where('activo', true)
             ->whereHas('tipos', fn ($q) => $q->where('codigo', 'CLIENTE'))
             ->orderBy('nombre')
-            ->get(['id', 'nombre']);
+            ->get(['id', 'codigo', 'nombre']);
 
         return view('admin.ventas.notas-credito.index', compact('notas', 'filtros', 'clientes'));
     }

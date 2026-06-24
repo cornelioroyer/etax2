@@ -6,7 +6,7 @@
                 <a href="{{ route('admin.ventas.facturas.index', array_merge(request()->query(), ['export' => 'xlsx'])) }}" class="rounded-md border border-green-300 bg-white px-3 py-2 text-sm text-green-700 hover:bg-green-50">Excel</a>
                 <a href="{{ route('admin.ventas.facturas.index', array_merge(request()->query(), ['export' => 'pdf'])) }}" class="rounded-md border border-red-300 bg-white px-3 py-2 text-sm text-red-700 hover:bg-red-50">PDF</a>
                 @can('ventas.gestionar')
-                <button type="button" onclick="document.getElementById('modal-importar').classList.remove('hidden')" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">Importar Excel</button>
+                <button type="button" onclick="document.getElementById('modal-importar').classList.remove('hidden')" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">Documentos Emitidos DGI</button>
                 <a href="{{ route('admin.ventas.facturas.create') }}" class="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500">+ Nueva factura</a>
                 @endcan
             </div>
@@ -37,15 +37,7 @@
                             <option value="REEMBOLSO" @selected(($filtros['tipo'] ?? '') === 'REEMBOLSO')>Reembolso</option>
                         </select>
                     </div>
-                    <div>
-                        <x-input-label for="cliente_id" value="Cliente" />
-                        <select id="cliente_id" name="cliente_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="">Todos</option>
-                            @foreach ($clientes as $cliente)
-                                <option value="{{ $cliente->id }}" @selected(($filtros['cliente_id'] ?? null) == $cliente->id)>{{ $cliente->nombre }}</option>
-                            @endforeach
-                        </select>
-                    </div>
+                    <x-buscador-contacto name="cliente_id" label="Cliente" :opciones="$clientes" :selected="$filtros['cliente_id'] ?? null" />
                     <div>
                         <x-input-label for="estado" value="Estado" />
                         <select id="estado" name="estado" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">

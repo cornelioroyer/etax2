@@ -20,13 +20,9 @@
                     <h3 class="text-sm font-semibold text-gray-700 mb-4">Seleccionar cliente</h3>
                     <form method="GET" class="flex gap-3 items-end">
                         <div class="flex-1">
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
-                            <select name="cliente_id" required class="block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 text-sm">
-                                <option value="">Seleccionar…</option>
-                                @foreach ($clientes as $c)
-                                    <option value="{{ $c->id }}">{{ $c->codigo }} — {{ $c->nombre }}</option>
-                                @endforeach
-                            </select>
+                            <x-buscador-contacto name="cliente_id" label="Cliente" required
+                                placeholder="Seleccionar cliente…"
+                                :opciones="$clientes" :selected="null" />
                         </div>
                         <button type="submit" class="rounded-md bg-[#0d2d5e] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">Cargar facturas</button>
                     </form>
