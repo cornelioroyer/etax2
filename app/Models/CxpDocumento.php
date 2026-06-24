@@ -52,6 +52,7 @@ class CxpDocumento extends Model
         'proveedor_id',
         'tipo_documento',
         'numero',
+        'referencia',
         'cufe',
         'archivo_path',
         'archivo_disk',
@@ -62,10 +63,13 @@ class CxpDocumento extends Model
         'descuento',
         'impuesto',
         'retencion',
+        'retencion_itbms',
+        'retencion_isr',
         'total',
         'saldo',
         'estado',
         'asiento_id',
+        'cuenta_pago_id',
         'adjunto_id',
         'created_by',
         'updated_by',
@@ -80,6 +84,8 @@ class CxpDocumento extends Model
             'descuento' => 'decimal:2',
             'impuesto' => 'decimal:2',
             'retencion' => 'decimal:2',
+            'retencion_itbms' => 'decimal:2',
+            'retencion_isr' => 'decimal:2',
             'total' => 'decimal:2',
             'saldo' => 'decimal:2',
         ];
@@ -98,6 +104,12 @@ class CxpDocumento extends Model
     public function asiento(): BelongsTo
     {
         return $this->belongsTo(Asiento::class, 'asiento_id');
+    }
+
+    /** Cuenta contable (banco/caja) desde la que se pagó (solo documentos PAGO). */
+    public function cuentaPago(): BelongsTo
+    {
+        return $this->belongsTo(CuentaContable::class, 'cuenta_pago_id');
     }
 
     /** Aplicaciones donde este documento es el pago (origen). */
@@ -165,6 +177,19 @@ class CxpDocumento extends Model
     public static function tiposFacturaCargo(): array
     {
         return [self::TIPO_FACTURA, self::TIPO_REEMBOLSO, self::TIPO_IMPORTACION];
+    }
+
+    /**
+     * Tipos de documento que representan un crédito a favor del cliente frente al
+     * proveedor (saldo disponible para aplicar a facturas dentro de un pago):
+     * anticipos pagados por adelantado y notas de crédito contabilizadas que
+     * todavía no se han consumido contra una factura.
+     *
+     * @return list<string>
+     */
+    public static function tiposCredito(): array
+    {
+        return [self::TIPO_ANTICIPO, self::TIPO_NOTA_CREDITO];
     }
 
     /** Descripción legible del tipo, tomada del maestro core_tipos_documento. */

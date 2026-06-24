@@ -629,4 +629,265 @@ class CxpTest extends TestCase
 
         return CxpDocumento::where('tipo_documento', 'ANTICIPO')->latest('id')->firstOrFail();
     }
+
+    public function test_pago_aplica_anticipo_y_reduce_efectivo_y_disponible(): void
+    {
+        $factura = $this->crearFactura(100, 7); // total 107
+        $anticipo = $this->registrarAnticipo(500);
+
+        $this->actuar()->post(route('admin.cxp.pagos.store'), [
+            'proveedor_id' => $this->proveedor->id,
+            'fecha' => '2026-06-13',
+            'cuenta_pago_id' => $this->banco->id,
+            'aplicaciones' => [['documento_id' => $factura->id, 'monto' => 107]],
+            'creditos' => [['documento_id' => $anticipo->id, 'monto' => 50]],
+        ])->assertSessionHasNoErrors();
+
+        $factura->refresh();
+        $anticipo->refresh();
+
+        // La factura queda saldada (50 de anticipo + 57 de efectivo).
+        $this->assertSame('PAGADO', $factura->estado);
+        $this->assertSame('0.00', (string) $factura->saldo);
+
+        // El anticipo consume 50 de su disponible.
+        $this->assertSame('PARCIAL', $anticipo->estado);
+        $this->assertSame('450.00', (string) $anticipo->saldo);
+
+        // El pago solo cubre el remanente en efectivo (57).
+        $pago = CxpDocumento::where('tipo_documento', 'PAGO')->firstOrFail();
+        $this->assertSame('57.00', (string) $pago->total);
+        $this->assertSame($this->cxp->id, $pago->asiento->detalle[0]->cuenta_id);
+        $this->assertSame('57.00', (string) $pago->asiento->detalle[0]->debito);
+        $this->assertSame($this->banco->id, $pago->asiento->detalle[1]->cuenta_id);
+        $this->assertSame('57.00', (string) $pago->asiento->detalle[1]->credito);
+
+        // La aplicación del anticipo postea Dr CXP / Cr Anticipos por 50.
+        $aplAnticipo = \App\Models\CxpAplicacion::where('documento_origen_id', $anticipo->id)->firstOrFail();
+        $this->assertSame('50.00', (string) $aplAnticipo->monto_aplicado);
+        $this->assertNotNull($aplAnticipo->asiento_id);
+        $asAnt = \App\Models\Asiento::find($aplAnticipo->asiento_id);
+        $this->assertSame($this->cxp->id, $asAnt->detalle[0]->cuenta_id);
+        $this->assertSame('50.00', (string) $asAnt->detalle[0]->debito);
+        $this->assertSame($this->anticipo->id, $asAnt->detalle[1]->cuenta_id);
+        $this->assertSame('50.00', (string) $asAnt->detalle[1]->credito);
+    }
+
+    public function test_pago_aplica_nota_credito_disponible_sin_asiento_nuevo(): void
+    {
+        $factura = $this->crearFactura(100, 7); // total 107
+
+        // Nota de crédito contabilizada con saldo disponible (su Dr CXP ya ocurrió).
+        $nc = CxpDocumento::create([
+            'compania_id' => $this->compania->id,
+            'proveedor_id' => $this->proveedor->id,
+            'tipo_documento' => CxpDocumento::TIPO_NOTA_CREDITO,
+            'numero' => 'NC-000001',
+            'fecha' => '2026-06-12',
+            'subtotal' => 30,
+            'impuesto' => 0,
+            'total' => 30,
+            'saldo' => 30,
+            'estado' => CxpDocumento::ESTADO_PENDIENTE,
+            'created_by' => $this->admin->email,
+        ]);
+
+        $this->actuar()->post(route('admin.cxp.pagos.store'), [
+            'proveedor_id' => $this->proveedor->id,
+            'fecha' => '2026-06-13',
+            'cuenta_pago_id' => $this->banco->id,
+            'aplicaciones' => [['documento_id' => $factura->id, 'monto' => 107]],
+            'creditos' => [['documento_id' => $nc->id, 'monto' => 30]],
+        ])->assertSessionHasNoErrors();
+
+        $factura->refresh();
+        $nc->refresh();
+
+        $this->assertSame('PAGADO', $factura->estado);
+        $this->assertSame('0.00', (string) $factura->saldo);
+        $this->assertSame('PAGADO', $nc->estado);
+        $this->assertSame('0.00', (string) $nc->saldo);
+
+        // El pago cubre el remanente (77) en efectivo.
+        $pago = CxpDocumento::where('tipo_documento', 'PAGO')->firstOrFail();
+        $this->assertSame('77.00', (string) $pago->total);
+
+        // Aplicar la NC es solo submayor: la aplicación no genera asiento nuevo.
+        $aplNc = \App\Models\CxpAplicacion::where('documento_origen_id', $nc->id)->firstOrFail();
+        $this->assertSame('30.00', (string) $aplNc->monto_aplicado);
+        $this->assertNull($aplNc->asiento_id);
+    }
+
+    public function test_creditos_no_pueden_exceder_total_a_liquidar(): void
+    {
+        $factura = $this->crearFactura(100, 7); // total 107
+        $anticipo = $this->registrarAnticipo(500);
+
+        $this->actuar()->post(route('admin.cxp.pagos.store'), [
+            'proveedor_id' => $this->proveedor->id,
+            'fecha' => '2026-06-13',
+            'cuenta_pago_id' => $this->banco->id,
+            'aplicaciones' => [['documento_id' => $factura->id, 'monto' => 107]],
+            'creditos' => [['documento_id' => $anticipo->id, 'monto' => 200]],
+        ])->assertSessionHasErrors('creditos');
+
+        $this->assertSame(0, CxpDocumento::where('tipo_documento', 'PAGO')->count());
+        $this->assertSame('500.00', (string) $anticipo->fresh()->saldo);
+    }
+
+    public function test_pago_con_descuento_pronto_pago_acredita_ingreso(): void
+    {
+        $factura = $this->crearFactura(100, 7); // total 107
+
+        $this->actuar()->post(route('admin.cxp.pagos.store'), [
+            'proveedor_id' => $this->proveedor->id,
+            'fecha' => '2026-06-13',
+            'cuenta_pago_id' => $this->banco->id,
+            'descuento' => 7,
+            'descuento_cuenta_id' => $this->gasto->id,
+            'aplicaciones' => [['documento_id' => $factura->id, 'monto' => 107]],
+        ])->assertSessionHasNoErrors();
+
+        $factura->refresh();
+        $this->assertSame('PAGADO', $factura->estado);
+
+        $pago = CxpDocumento::where('tipo_documento', 'PAGO')->firstOrFail();
+        $this->assertSame('107.00', (string) $pago->total);
+        $this->assertSame('7.00', (string) $pago->descuento);
+
+        // Dr CXP 107; Cr Banco 100; Cr Descuento (ingreso) 7.
+        $det = $pago->asiento->detalle;
+        $this->assertCount(3, $det);
+        $this->assertSame($this->cxp->id, $det[0]->cuenta_id);
+        $this->assertSame('107.00', (string) $det[0]->debito);
+        $this->assertSame($this->banco->id, $det[1]->cuenta_id);
+        $this->assertSame('100.00', (string) $det[1]->credito);
+        $this->assertSame($this->gasto->id, $det[2]->cuenta_id);
+        $this->assertSame('7.00', (string) $det[2]->credito);
+    }
+
+    public function test_pago_con_retencion_itbms_e_isr_separadas(): void
+    {
+        $factura = $this->crearFactura(100, 7); // total 107
+
+        $this->actuar()->post(route('admin.cxp.pagos.store'), [
+            'proveedor_id' => $this->proveedor->id,
+            'fecha' => '2026-06-13',
+            'cuenta_pago_id' => $this->banco->id,
+            'retencion' => 5,
+            'retencion_cuenta_id' => $this->retencion->id,
+            'retencion_isr' => 2,
+            'retencion_isr_cuenta_id' => $this->gasto->id,
+            'aplicaciones' => [['documento_id' => $factura->id, 'monto' => 107]],
+        ])->assertSessionHasNoErrors();
+
+        $pago = CxpDocumento::where('tipo_documento', 'PAGO')->firstOrFail();
+        $this->assertSame('7.00', (string) $pago->retencion);
+        $this->assertSame('5.00', (string) $pago->retencion_itbms);
+        $this->assertSame('2.00', (string) $pago->retencion_isr);
+
+        // Dr CXP 107; Cr Banco 100; Cr Ret ITBMS 5; Cr Ret ISR 2.
+        $det = $pago->asiento->detalle;
+        $this->assertCount(4, $det);
+        $this->assertSame($this->banco->id, $det[1]->cuenta_id);
+        $this->assertSame('100.00', (string) $det[1]->credito);
+        $this->assertSame($this->retencion->id, $det[2]->cuenta_id);
+        $this->assertSame('5.00', (string) $det[2]->credito);
+        $this->assertSame($this->gasto->id, $det[3]->cuenta_id);
+        $this->assertSame('2.00', (string) $det[3]->credito);
+    }
+
+    public function test_pago_desde_cuenta_bancaria_genera_movimiento_y_anular_lo_elimina(): void
+    {
+        $cuentaBancaria = $this->crearCuentaBancaria();
+        $factura = $this->crearFactura(100, 7);
+
+        $this->actuar()->post(route('admin.cxp.pagos.store'), [
+            'proveedor_id' => $this->proveedor->id,
+            'fecha' => '2026-06-13',
+            'cuenta_pago_id' => $this->banco->id,
+            'aplicaciones' => [['documento_id' => $factura->id, 'monto' => 107]],
+        ])->assertSessionHasNoErrors();
+
+        $pago = CxpDocumento::where('tipo_documento', 'PAGO')->firstOrFail();
+
+        $mov = \App\Models\BcoMovimiento::where('documento_origen', 'cxp_documentos')
+            ->where('documento_id', $pago->id)->first();
+        $this->assertNotNull($mov);
+        $this->assertSame($cuentaBancaria->id, $mov->cuenta_bancaria_id);
+        $this->assertSame('107.00', (string) $mov->debito);
+        $this->assertSame('PAGO', $mov->tipo_movimiento);
+        $this->assertFalse((bool) $mov->conciliado);
+
+        // Al anular el pago se elimina el movimiento bancario.
+        $this->actuar()->post(route('admin.cxp.pagos.anular', $pago))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame(0, \App\Models\BcoMovimiento::where('documento_origen', 'cxp_documentos')
+            ->where('documento_id', $pago->id)->count());
+    }
+
+    public function test_no_se_puede_anular_pago_con_movimiento_conciliado(): void
+    {
+        $this->crearCuentaBancaria();
+        $factura = $this->crearFactura(100, 7);
+
+        $this->actuar()->post(route('admin.cxp.pagos.store'), [
+            'proveedor_id' => $this->proveedor->id,
+            'fecha' => '2026-06-13',
+            'cuenta_pago_id' => $this->banco->id,
+            'aplicaciones' => [['documento_id' => $factura->id, 'monto' => 107]],
+        ])->assertSessionHasNoErrors();
+
+        $pago = CxpDocumento::where('tipo_documento', 'PAGO')->firstOrFail();
+        \App\Models\BcoMovimiento::where('documento_id', $pago->id)->update(['conciliado' => true]);
+
+        $this->actuar()->post(route('admin.cxp.pagos.anular', $pago))
+            ->assertSessionHasErrors('documento');
+
+        $this->assertSame('PAGADO', $pago->fresh()->estado);
+        $this->assertSame('0.00', (string) $factura->fresh()->saldo);
+    }
+
+    public function test_corregir_pago_lo_anula_y_reabre_prellenado(): void
+    {
+        $factura = $this->crearFactura(100, 7);
+
+        $this->actuar()->post(route('admin.cxp.pagos.store'), [
+            'proveedor_id' => $this->proveedor->id,
+            'fecha' => '2026-06-13',
+            'cuenta_pago_id' => $this->banco->id,
+            'referencia' => 'CHQ-123',
+            'aplicaciones' => [['documento_id' => $factura->id, 'monto' => 40]],
+        ])->assertSessionHasNoErrors();
+
+        $pago = CxpDocumento::where('tipo_documento', 'PAGO')->firstOrFail();
+
+        $this->actuar()->post(route('admin.cxp.pagos.corregir', $pago))
+            ->assertRedirect(route('admin.cxp.pagos.create', ['proveedor_id' => $this->proveedor->id]))
+            ->assertSessionHas('status')
+            ->assertSessionHasInput('referencia', 'CHQ-123');
+
+        $this->assertSame('ANULADO', $pago->fresh()->estado);
+
+        $factura->refresh();
+        $this->assertSame('PENDIENTE', $factura->estado);
+        $this->assertSame('107.00', (string) $factura->saldo);
+    }
+
+    private function crearCuentaBancaria(): \App\Models\BcoCuenta
+    {
+        $banco = \App\Models\BcoBanco::create(['codigo' => 'BG', 'nombre' => 'Banco General', 'activo' => true]);
+
+        return \App\Models\BcoCuenta::create([
+            'compania_id' => $this->compania->id,
+            'banco_id' => $banco->id,
+            'cuenta_contable_id' => $this->banco->id,
+            'numero_cuenta' => '04-0001',
+            'nombre' => 'Cuenta corriente',
+            'tipo_cuenta' => 'CORRIENTE',
+            'saldo_inicial' => 0,
+            'activa' => true,
+        ]);
+    }
 }

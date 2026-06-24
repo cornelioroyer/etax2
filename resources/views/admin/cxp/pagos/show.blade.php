@@ -48,33 +48,72 @@
                                 @endif
                             </dd>
                         </div>
+                        @if ($pago->cuentaPago)
+                            <div>
+                                <dt class="text-gray-500">Pagado desde</dt>
+                                <dd class="font-medium text-gray-900">{{ $pago->cuentaPago->codigo }} — {{ $pago->cuentaPago->nombre }}</dd>
+                            </div>
+                        @endif
+                        @if ($pago->referencia)
+                            <div>
+                                <dt class="text-gray-500">Referencia</dt>
+                                <dd class="font-medium text-gray-900">{{ $pago->referencia }}</dd>
+                            </div>
+                        @endif
                         <div>
                             <dt class="text-gray-500">Monto liquidado</dt>
                             <dd class="text-lg font-bold text-[#0d2d5e]">B/. {{ number_format((float) $pago->total, 2) }}</dd>
                         </div>
-                        @if ((float) $pago->retencion > 0)
+                        @if ((float) $pago->retencion_itbms > 0)
                             <div>
-                                <dt class="text-gray-500">Retención</dt>
-                                <dd class="font-medium text-amber-700">B/. {{ number_format((float) $pago->retencion, 2) }}</dd>
+                                <dt class="text-gray-500">Retención ITBMS</dt>
+                                <dd class="font-medium text-amber-700">B/. {{ number_format((float) $pago->retencion_itbms, 2) }}</dd>
                             </div>
+                        @endif
+                        @if ((float) $pago->retencion_isr > 0)
+                            <div>
+                                <dt class="text-gray-500">Retención ISR</dt>
+                                <dd class="font-medium text-amber-700">B/. {{ number_format((float) $pago->retencion_isr, 2) }}</dd>
+                            </div>
+                        @endif
+                        @if ((float) $pago->descuento > 0)
+                            <div>
+                                <dt class="text-gray-500">Descuento pronto pago</dt>
+                                <dd class="font-medium text-amber-700">B/. {{ number_format((float) $pago->descuento, 2) }}</dd>
+                            </div>
+                        @endif
+                        @if ((float) $pago->retencion > 0 || (float) $pago->descuento > 0)
                             <div>
                                 <dt class="text-gray-500">Efectivo pagado</dt>
-                                <dd class="font-medium text-gray-900">B/. {{ number_format((float) $pago->total - (float) $pago->retencion, 2) }}</dd>
+                                <dd class="font-medium text-gray-900">B/. {{ number_format((float) $pago->total - (float) $pago->retencion - (float) $pago->descuento, 2) }}</dd>
                             </div>
                         @endif
                     </dl>
 
-                    @can('cxp.gestionar')
-                        @if (! $pago->esAnulado())
-                            <form method="POST" action="{{ route('admin.cxp.pagos.anular', $pago) }}"
-                                  onsubmit="return confirm('¿Anular el pago {{ $pago->numero }}? Se restaurará el saldo de las facturas y se anulará el asiento.');">
-                                @csrf
-                                <button class="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">
-                                    Anular pago
-                                </button>
-                            </form>
-                        @endif
-                    @endcan
+                    <div class="flex flex-wrap items-center gap-2">
+                        <a href="{{ route('admin.cxp.pagos.imprimir', $pago) }}" target="_blank"
+                           class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                            Imprimir comprobante
+                        </a>
+                        @can('cxp.gestionar')
+                            @if (! $pago->esAnulado())
+                                <form method="POST" action="{{ route('admin.cxp.pagos.corregir', $pago) }}"
+                                      onsubmit="return confirm('¿Corregir el pago {{ $pago->numero }}? Se anulará (restaurando los saldos) y se reabrirá el formulario para registrarlo de nuevo.');">
+                                    @csrf
+                                    <button class="rounded-md border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50">
+                                        Corregir
+                                    </button>
+                                </form>
+                                <form method="POST" action="{{ route('admin.cxp.pagos.anular', $pago) }}"
+                                      onsubmit="return confirm('¿Anular el pago {{ $pago->numero }}? Se restaurará el saldo de las facturas y se anulará el asiento.');">
+                                    @csrf
+                                    <button class="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">
+                                        Anular pago
+                                    </button>
+                                </form>
+                            @endif
+                        @endcan
+                    </div>
                 </div>
             </div>
 
