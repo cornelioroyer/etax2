@@ -38,7 +38,6 @@ class CxcFacturaController extends Controller
             'cliente_id' => ['nullable', 'integer'],
             'desde' => ['nullable', 'date'],
             'hasta' => ['nullable', 'date'],
-            'q' => ['nullable', 'string', 'max:100'],
         ]);
 
         $consulta = CxcDocumento::query()
@@ -49,13 +48,6 @@ class CxcFacturaController extends Controller
             ->when($filtros['cliente_id'] ?? null, fn ($q, $cliente) => $q->where('cliente_id', $cliente))
             ->when($filtros['desde'] ?? null, fn ($q, $desde) => $q->whereDate('fecha', '>=', $desde))
             ->when($filtros['hasta'] ?? null, fn ($q, $hasta) => $q->whereDate('fecha', '<=', $hasta))
-            ->when($filtros['q'] ?? null, function ($q, $texto) {
-                $busqueda = '%'.mb_strtolower($texto).'%';
-                $q->where(function ($q) use ($busqueda) {
-                    $q->whereRaw('LOWER(numero) LIKE ?', [$busqueda])
-                        ->orWhereHas('cliente', fn ($c) => $c->whereRaw('LOWER(nombre) LIKE ?', [$busqueda]));
-                });
-            })
             ->orderByDesc('fecha')
             ->orderByDesc('numero');
 
