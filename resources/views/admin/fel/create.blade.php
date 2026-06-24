@@ -32,7 +32,8 @@
             @endif
 
             <form method="POST" action="{{ $esEdicion ? route('admin.fel.update', $doc) : route('admin.fel.store') }}" class="bg-white p-6 shadow-sm sm:rounded-lg space-y-5"
-                  x-data="facturaFel()">
+                  x-data="facturaFel()"
+                  @contacto-seleccionado="aplicarFormaPago($event.detail?.id)">
                 @csrf
                 @if ($esEdicion) @method('PUT') @endif
 
@@ -48,19 +49,14 @@
 
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
                     <div class="sm:col-span-2">
-                        <x-input-label for="cliente_id" value="Cliente" />
-                        <input type="text" class="cliente-buscar mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
-                               placeholder="Buscar por nombre o RUC…" autocomplete="off" style="padding:.375rem .75rem">
-                        <select id="cliente_id" name="cliente_id" class="cliente-select mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="" data-forma-pago="" @selected(! $vCliente)>Consumidor final (sin RUC)</option>
-                            @foreach ($clientes as $cli)
-                                <option value="{{ $cli->id }}"
-                                        data-forma-pago="{{ $clientesFormaPago[$cli->id] ?? '02' }}"
-                                        @selected($vCliente == $cli->id)>
-                                    {{ $cli->nombre }}{{ $cli->identificacion ? ' — RUC ' . $cli->identificacion . ($cli->dv ? ' DV ' . $cli->dv : '') : '' }}
-                                </option>
-                            @endforeach
-                        </select>
+                        <x-buscador-contacto
+                            name="cliente_id"
+                            label="Cliente"
+                            :opciones="$clientes"
+                            :selected="$vCliente"
+                            placeholder="Buscar cliente por código, nombre o RUC…"
+                            empty-label="Consumidor final (sin RUC)"
+                            :mostrar-ruc="true" />
                         <p class="mt-1 text-xs text-gray-500">Los clientes con RUC se facturan como contribuyentes; sin RUC, como consumidor final.</p>
                     </div>
                     <div>
@@ -156,47 +152,10 @@
     </div>
 
     <script>
-    (function () {
-        document.addEventListener('input', function (e) {
-            if (!e.target.classList.contains('cliente-buscar')) return;
-            var q = e.target.value.trim().toLowerCase();
-            var sel = e.target.closest('div').querySelector('.cliente-select');
-            var vis = 0;
-            Array.from(sel.options).forEach(function (o) {
-                var show = !q || !o.value || o.text.toLowerCase().indexOf(q) !== -1;
-                o.hidden = !show;
-                if (show) vis++;
-            });
-            sel.size = q ? Math.min(8, vis) : 1;
-        });
-        document.addEventListener('change', function (e) {
-            if (!e.target.classList.contains('cliente-select')) return;
-            var div = e.target.closest('div');
-            var inp = div.querySelector('.cliente-buscar');
-            if (inp) inp.value = '';
-            e.target.size = 1;
-            Array.from(e.target.options).forEach(function (o) { o.hidden = false; });
-            // Auto-seleccionar forma de pago del cliente
-            var sel = e.target.selectedOptions[0];
-            var fp = sel ? sel.dataset.formaPago : '';
-            if (fp) {
-                var fpSel = document.getElementById('forma_pago');
-                if (fpSel) fpSel.value = fp;
-            }
-        });
-        document.addEventListener('blur', function (e) {
-            if (!e.target.classList.contains('cliente-select')) return;
-            e.target.size = 1;
-            var inp = e.target.closest('div').querySelector('.cliente-buscar');
-            if (inp) inp.value = '';
-            Array.from(e.target.options).forEach(function (o) { o.hidden = false; });
-        }, true);
-    })();
-    </script>
-
-    <script>
         function facturaFel() {
             const tasas = { '00': 0, '01': 0.07, '02': 0.10, '03': 0.15 };
+            // id de cliente → código FEL de forma de pago (para autoseleccionar al elegir cliente)
+            const formaPagoCliente = @json($clientesFormaPago);
             const precargados = @json(array_values($vItems));
             const items = (precargados && precargados.length)
                 ? precargados.map(i => ({
@@ -209,6 +168,10 @@
             return {
                 items,
                 agregar() { this.items.push({ descripcion: '', cantidad: 1, precio: 0, tasa: '01' }); },
+                aplicarFormaPago(clienteId) {
+                    const fp = clienteId ? formaPagoCliente[clienteId] : '';
+                    if (fp) { const el = document.getElementById('forma_pago'); if (el) el.value = fp; }
+                },
                 neto(i) { return Math.round((i.cantidad || 0) * (i.precio || 0) * 100) / 100; },
                 imp(i) { return Math.round(this.neto(i) * tasas[i.tasa] * 100) / 100; },
                 totalLinea(i) { return this.fmt(this.neto(i) + this.imp(i)); },

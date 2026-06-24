@@ -42,7 +42,7 @@ class FacturaFelController extends Controller
         $clientes = Contacto::where('compania_id', $compania->id)
             ->where('activo', true)
             ->orderBy('nombre')
-            ->get(['id', 'nombre', 'identificacion', 'dv', 'forma_pago']);
+            ->get(['id', 'codigo', 'nombre', 'identificacion', 'dv', 'forma_pago']);
 
         // Mapa id → código FEL de forma de pago para auto-selección en el form
         $clientesFormaPago = $clientes->mapWithKeys(fn ($c) => [
@@ -175,7 +175,7 @@ class FacturaFelController extends Controller
         $clientes = Contacto::where('compania_id', $compania->id)
             ->where('activo', true)
             ->orderBy('nombre')
-            ->get(['id', 'nombre', 'identificacion', 'dv', 'forma_pago']);
+            ->get(['id', 'codigo', 'nombre', 'identificacion', 'dv', 'forma_pago']);
 
         $clientesFormaPago = $clientes->mapWithKeys(fn ($c) => [
             $c->id => match ($c->forma_pago) {

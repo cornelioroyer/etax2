@@ -8,37 +8,56 @@
     'compact' => false,
     'required' => false,
     'submitOnSelect' => false,
+    'emptyLabel' => 'Todos',
+    'mostrarRuc' => false,
 ])
 @php
     $col = collect($opciones ?? []);
     $sel = ($selected !== null && $selected !== '') ? $col->firstWhere('id', (int) $selected) : null;
-    $inicial = $sel ? trim((((string) ($sel->codigo ?? '') !== '') ? $sel->codigo.' — ' : '').($sel->nombre ?? '')) : '';
-    $cid = $name.'_buscar';
     $datos = $col->map(fn ($c) => [
         'id' => $c->id,
         'codigo' => (string) ($c->codigo ?? ''),
         'nombre' => (string) ($c->nombre ?? ''),
+        'ruc' => (string) ($c->identificacion ?? ''),
+        'dv' => (string) ($c->dv ?? ''),
     ])->values();
+    $inicial = $sel
+        ? trim((((string) ($sel->codigo ?? '') !== '') ? $sel->codigo.' — ' : '').($sel->nombre ?? '')
+            .($mostrarRuc && ($sel->identificacion ?? '') !== '' ? ' — RUC '.$sel->identificacion.(($sel->dv ?? '') !== '' ? ' DV '.$sel->dv : '') : ''))
+        : '';
+    $cid = $name.'_buscar';
 @endphp
-{{-- Combobox buscable (por nombre o código). Envía $name vía <input hidden>; el
+{{-- Combobox buscable (por nombre, código o RUC). Envía $name vía <input hidden>; el
      campo de texto no tiene name. Alpine inline → no requiere recompilar el bundle JS.
      - required:       bloquea el submit del formulario si no hay selección.
-     - submitOnSelect: al elegir, envía el formulario (reemplaza onchange="this.form.submit()"). --}}
+     - submitOnSelect: al elegir, envía el formulario (reemplaza onchange="this.form.submit()").
+     - emptyLabel:     texto de la opción vacía (ej. "Consumidor final (sin RUC)").
+     - mostrarRuc:     muestra el RUC en la lista/etiqueta (la búsqueda por RUC va siempre).
+     - evento:         despacha "contacto-seleccionado" con detail = item elegido (o null),
+                       para que el formulario reaccione (ej. autoseleccionar forma de pago). --}}
 <div x-data="{
         open: false,
         q: @js($inicial),
         sel: @js((string) ($selected ?? '')),
         items: {{ \Illuminate\Support\Js::from($datos) }},
+        mostrarRuc: {{ $mostrarRuc ? 'true' : 'false' }},
         get filtrados() {
             const b = this.q.trim().toLowerCase();
             if (! b) return this.items;
-            return this.items.filter(c => c.nombre.toLowerCase().includes(b) || c.codigo.toLowerCase().includes(b));
+            return this.items.filter(c => c.nombre.toLowerCase().includes(b)
+                || c.codigo.toLowerCase().includes(b)
+                || (c.ruc && c.ruc.toLowerCase().includes(b)));
         },
-        etiqueta(c) { return (c.codigo ? c.codigo + ' — ' : '') + c.nombre; },
+        etiqueta(c) {
+            let s = (c.codigo ? c.codigo + ' — ' : '') + c.nombre;
+            if (this.mostrarRuc && c.ruc) s += ' — RUC ' + c.ruc + (c.dv ? ' DV ' + c.dv : '');
+            return s;
+        },
         pick(c) {
             this.sel = c ? String(c.id) : '';
             this.q = c ? this.etiqueta(c) : '';
             this.open = false;
+            this.$dispatch('contacto-seleccionado', c);
             @if ($submitOnSelect)
                 if (c) this.$el.closest('form')?.submit();
             @endif
@@ -64,12 +83,13 @@
         <div x-show="open" x-cloak
              class="absolute z-20 mt-1 max-h-60 {{ $width }} overflow-auto rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg">
             @unless ($required)
-                <button type="button" @click="pick(null)" class="block w-full px-3 py-1.5 text-left text-gray-500 hover:bg-gray-50">Todos</button>
+                <button type="button" @click="pick(null)" class="block w-full px-3 py-1.5 text-left text-gray-500 hover:bg-gray-50">{{ $emptyLabel }}</button>
             @endunless
             <template x-for="c in filtrados" :key="c.id">
                 <button type="button" @click="pick(c)" class="flex w-full items-baseline gap-1 px-3 py-1.5 text-left text-gray-700 hover:bg-gray-50">
                     <span class="font-mono text-xs text-gray-400" x-text="c.codigo"></span>
                     <span class="truncate" x-text="c.nombre"></span>
+                    <span class="ml-auto whitespace-nowrap text-xs text-gray-400" x-show="mostrarRuc && c.ruc" x-text="'RUC ' + c.ruc"></span>
                 </button>
             </template>
             <p x-show="filtrados.length === 0" class="px-3 py-1.5 text-gray-400">Sin coincidencias</p>
