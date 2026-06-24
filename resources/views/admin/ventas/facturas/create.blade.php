@@ -101,7 +101,7 @@
                             <table class="min-w-full text-sm">
                                 <thead class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                                     <tr>
-                                        <th class="py-2 pr-2 min-w-[16rem]">Descripción</th>
+                                        <th class="py-2 pr-2 min-w-[16rem]">Artículo / Descripción</th>
                                         <th class="w-24 py-2 pr-2 text-right">Cant.</th>
                                         <th class="w-32 py-2 pr-2 text-right">Precio</th>
                                         <th class="w-32 py-2 pr-2">ITBMS</th>
@@ -114,16 +114,22 @@
                                         <tr class="border-t border-gray-100 align-top">
                                             <td class="py-2 pr-2">
                                                 <input type="hidden" :name="`lineas[${idx}][item_id]`" :value="linea.item_id ?? ''">
-                                                {{-- Buscador de artículo --}}
-                                                <div class="relative mb-1">
+                                                {{-- Combobox de artículo de inventario (dropdown dentro del mismo campo) --}}
+                                                <div class="relative mb-1" @click.away="linea.mostrarItems = false">
                                                     <input type="text"
                                                            x-model="linea.busqueda"
-                                                           @input="linea.mostrarItems = true"
+                                                           @input="linea.item_id = null; linea.mostrarItems = true"
                                                            @focus="linea.mostrarItems = true"
-                                                           placeholder="Buscar artículo…"
+                                                           placeholder="Buscar artículo por código o nombre…"
                                                            autocomplete="off"
-                                                           class="block w-full rounded-md border-gray-300 text-xs text-gray-500 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                                    <div x-show="linea.mostrarItems && linea.busqueda.length > 0"
+                                                           style="padding-right:1.75rem"
+                                                           class="block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                                           :class="linea.item_id ? 'text-gray-700 font-semibold' : 'text-gray-500'">
+                                                    <button type="button" x-show="linea.item_id || linea.busqueda"
+                                                            @click="limpiarItem(linea)"
+                                                            style="position:absolute;right:0.4rem;top:50%;transform:translateY(-50%)"
+                                                            class="text-xs text-gray-400 hover:text-gray-700">✕</button>
+                                                    <div x-show="linea.mostrarItems && linea.busqueda.length > 0 && !linea.item_id"
                                                          class="absolute z-20 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-44 overflow-y-auto">
                                                         <template x-for="item in itemsFiltrados(linea.busqueda)" :key="item.id">
                                                             <button type="button"
@@ -131,7 +137,8 @@
                                                                     @click="seleccionarItem(linea, item)"
                                                                     class="block w-full px-3 py-2 text-left text-xs hover:bg-indigo-50 border-b border-gray-100 last:border-0">
                                                                 <span class="font-mono text-gray-400" x-text="item.codigo + ' '"></span>
-                                                                <span x-text="item.nombre"></span>
+                                                                <span class="text-gray-700" x-text="item.nombre"></span>
+                                                                <span class="block text-gray-400 truncate" x-show="item.descripcion" x-text="item.descripcion"></span>
                                                             </button>
                                                         </template>
                                                         <div x-show="itemsFiltrados(linea.busqueda).length === 0"
@@ -140,6 +147,7 @@
                                                 </div>
                                                 <input type="hidden" :name="`lineas[${idx}][cuenta_ingreso_id]`" :value="linea.cuenta_ingreso_id ?? ''">
                                                 <input type="text" :name="`lineas[${idx}][descripcion]`" x-model="linea.descripcion" required
+                                                       placeholder="Descripción o breve explicación de la línea"
                                                        class="block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                             </td>
                                             <td class="py-2 pr-2">
@@ -424,38 +432,52 @@
         function facturaForm(lineasIniciales, impuestos, cuentasIngreso, cuentaVentasDefault, items) {
             const impuestoDefault = impuestos.find(i => i.porcentaje == 7)?.id ?? impuestos[0]?.id ?? null;
             const cuentaDefault = cuentaVentasDefault ?? null;
+            const itemsById = Object.fromEntries(items.map(i => [i.id, i]));
+            const etiquetaItem = (item) => item ? (item.codigo ? `${item.codigo} — ${item.nombre}` : item.nombre) : '';
             const nueva = () => ({ item_id: null, descripcion: '', cantidad: 1, precio_unitario: 0, impuesto_id: impuestoDefault, cuenta_ingreso_id: cuentaDefault, busqueda: '', mostrarItems: false });
             const tasaMap = Object.fromEntries(impuestos.map(i => [i.id, parseFloat(i.porcentaje)]));
             return {
                 impuestos,
                 items,
                 lineas: lineasIniciales.length
-                    ? lineasIniciales.map(l => ({
-                        item_id: parseInt(l.item_id) || null,
-                        descripcion: l.descripcion ?? '',
-                        cantidad: parseFloat(l.cantidad) || 1,
-                        precio_unitario: parseFloat(l.precio_unitario) || 0,
-                        impuesto_id: parseInt(l.impuesto_id) || impuestoDefault,
-                        cuenta_ingreso_id: parseInt(l.cuenta_ingreso_id) || cuentaDefault,
-                        busqueda: '',
-                        mostrarItems: false,
-                    }))
+                    ? lineasIniciales.map(l => {
+                        const itemId = parseInt(l.item_id) || null;
+                        return {
+                            item_id: itemId,
+                            descripcion: l.descripcion ?? '',
+                            cantidad: parseFloat(l.cantidad) || 1,
+                            precio_unitario: parseFloat(l.precio_unitario) || 0,
+                            impuesto_id: parseInt(l.impuesto_id) || impuestoDefault,
+                            cuenta_ingreso_id: parseInt(l.cuenta_ingreso_id) || cuentaDefault,
+                            busqueda: itemId ? etiquetaItem(itemsById[itemId]) : '',
+                            mostrarItems: false,
+                        };
+                    })
                     : [nueva()],
                 agregar() { this.lineas.push(nueva()); },
                 itemsFiltrados(busqueda) {
                     if (!busqueda) return [];
                     const b = busqueda.toLowerCase();
                     return this.items.filter(i =>
-                        i.nombre.toLowerCase().includes(b) ||
-                        (i.codigo && i.codigo.toLowerCase().includes(b))
+                        (i.nombre && i.nombre.toLowerCase().includes(b)) ||
+                        (i.codigo && i.codigo.toLowerCase().includes(b)) ||
+                        (i.descripcion && i.descripcion.toLowerCase().includes(b))
                     ).slice(0, 12);
                 },
                 seleccionarItem(linea, item) {
                     linea.item_id           = item.id;
-                    linea.descripcion       = item.nombre;
                     linea.precio_unitario   = parseFloat(item.precio_venta) || 0;
                     if (item.impuesto_id)       linea.impuesto_id       = item.impuesto_id;
                     if (item.cuenta_ingreso_id) linea.cuenta_ingreso_id = item.cuenta_ingreso_id;
+                    // No pisar la descripción si el usuario ya escribió una explicación
+                    if (!linea.descripcion || !linea.descripcion.trim()) {
+                        linea.descripcion = item.descripcion || item.nombre;
+                    }
+                    linea.busqueda     = etiquetaItem(item);
+                    linea.mostrarItems = false;
+                },
+                limpiarItem(linea) {
+                    linea.item_id      = null;
                     linea.busqueda     = '';
                     linea.mostrarItems = false;
                 },

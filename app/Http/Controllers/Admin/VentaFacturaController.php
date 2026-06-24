@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Concerns\ConCompaniaActiva;
+use App\Http\Controllers\Concerns\EmparejaContactos;
 use App\Http\Controllers\Concerns\ExportaReporte;
 use App\Http\Controllers\Controller;
 use App\Exports\VentasPlantillaExport;
@@ -39,6 +40,7 @@ use Symfony\Component\HttpFoundation\Response;
 class VentaFacturaController extends Controller
 {
     use ConCompaniaActiva;
+    use EmparejaContactos;
     use ExportaReporte;
 
     public function create(Request $request): View
@@ -740,7 +742,7 @@ class VentaFacturaController extends Controller
         $cuentas = CuentaContable::where('compania_id', $companiaId)
             ->where('permite_movimiento', true)
             ->where('activa', true)
-            ->where('naturaleza', 'ACREEDORA')
+            ->where('naturaleza', 'CREDITO')
             ->where('codigo', 'like', '4%') // cuentas de ingreso como muestra
             ->orderBy('codigo')
             ->limit(2)
@@ -792,6 +794,16 @@ class VentaFacturaController extends Controller
 
         $impuestosGlobales = TaxImpuesto::itbmsGlobales();
 
+        // Índice de contactos para emparejar clientes con tolerancia (sin duplicar):
+        // por RUC exacto, por código exacto y por nombre NORMALIZADO (sin tildes,
+        // mayúsculas, puntuación ni espacios extra). Se construye una sola vez y los
+        // clientes nuevos se agregan dentro del bucle para que las filas siguientes
+        // los reconozcan.
+        $indiceClientes = ['ruc' => [], 'codigo' => [], 'nombre' => []];
+        foreach (Contacto::where('compania_id', $companiaId)->get(['id', 'codigo', 'nombre', 'identificacion']) as $c) {
+            $this->indexarContacto($indiceClientes, $c);
+        }
+
         $errores = [];
         $documentos = []; // clave cliente|numero => cabecera + líneas
 
@@ -819,7 +831,7 @@ class VentaFacturaController extends Controller
                 continue;
             }
 
-            $cliente = $this->resolverOCrearClienteGenerico($f, $companiaId, $usuario);
+            $cliente = $this->resolverOCrearClienteGenerico($f, $companiaId, $usuario, $indiceClientes);
 
             // Cuenta de ingreso: por código del Excel, o la default VENTAS.
             $cuentaId = null;
@@ -992,27 +1004,32 @@ class VentaFacturaController extends Controller
             ->with('import_ventas_errores', array_slice($errores, 0, 50));
     }
 
-    /** Resuelve el cliente por RUC → código → nombre; si no existe lo crea. */
-    private function resolverOCrearClienteGenerico(array $f, int $companiaId, $usuario): Contacto
+    /**
+     * Resuelve el cliente contra el índice (RUC exacto → código exacto → nombre
+     * NORMALIZADO, tolerante a tildes/mayúsculas/puntuación/espacios); si no existe
+     * lo crea y lo agrega al índice para las filas siguientes. $indice se pasa por
+     * referencia.
+     */
+    private function resolverOCrearClienteGenerico(array $f, int $companiaId, $usuario, array &$indice): Contacto
     {
         $ruc = $f['ruc'] !== '' ? substr($f['ruc'], 0, 50) : null;
         $nombre = $f['cliente'];
 
-        $cliente = null;
-        if ($ruc) {
-            $cliente = Contacto::where('compania_id', $companiaId)->where('identificacion', $ruc)->first();
+        if ($ruc && isset($indice['ruc'][$ruc])) {
+            return $indice['ruc'][$ruc];
         }
-        if (! $cliente && $nombre !== '') {
-            $cliente = Contacto::where('compania_id', $companiaId)
-                ->where(fn ($q) => $q->where('codigo', $nombre)->orWhere('nombre', $nombre))
-                ->first();
-        }
-        if ($cliente) {
-            return $cliente;
+        if ($nombre !== '') {
+            if (isset($indice['codigo'][$nombre])) {
+                return $indice['codigo'][$nombre];
+            }
+            $norm = $this->normalizarTexto($nombre);
+            if ($norm !== '' && isset($indice['nombre'][$norm])) {
+                return $indice['nombre'][$norm];
+            }
         }
 
         $codigo = $ruc;
-        if ($codigo && Contacto::where('compania_id', $companiaId)->where('codigo', $codigo)->exists()) {
+        if ($codigo && isset($indice['codigo'][$codigo])) {
             $codigo = null;
         }
 
@@ -1029,6 +1046,8 @@ class VentaFacturaController extends Controller
         if ($tipoCliente = TipoContacto::where('codigo', 'CLIENTE')->first()) {
             $cliente->tipos()->attach($tipoCliente->id);
         }
+
+        $this->indexarContacto($indice, $cliente);
 
         return $cliente;
     }
@@ -1184,7 +1203,7 @@ class VentaFacturaController extends Controller
         return CuentaContable::where('compania_id', $companiaId)
             ->where('permite_movimiento', true)
             ->where('activa', true)
-            ->where('naturaleza', 'ACREEDORA')
+            ->where('naturaleza', 'CREDITO')
             ->orderBy('codigo')
             ->get(['id', 'codigo', 'nombre']);
     }
@@ -1194,6 +1213,6 @@ class VentaFacturaController extends Controller
         return ItemProducto::where('compania_id', $companiaId)
             ->where('activo', true)
             ->orderBy('nombre')
-            ->get(['id', 'codigo', 'nombre', 'precio_venta', 'impuesto_id', 'cuenta_ingreso_id']);
+            ->get(['id', 'codigo', 'nombre', 'descripcion', 'precio_venta', 'impuesto_id', 'cuenta_ingreso_id']);
     }
 }
