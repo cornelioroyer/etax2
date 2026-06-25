@@ -67,6 +67,15 @@
                                 </td>
                             </tr>
                         </tbody>
+                        <tfoot x-show="filtrados.length > 0" class="border-t-2 border-gray-200 font-semibold text-gray-800">
+                            <tr>
+                                <td class="py-3 pr-2 text-right">Totales (<span x-text="filtrados.length"></span> proveedores)</td>
+                                <td class="py-3 pr-2 text-center" x-text="totalFacturas()"></td>
+                                <td class="py-3 pr-2 text-right text-[#0d2d5e]" x-text="fmt(totalSaldo())"></td>
+                                <td class="py-3 pr-2 text-right text-emerald-700" x-text="fmt(totalCredito())"></td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
                     </table>
                 </div>
             </div>
@@ -90,6 +99,8 @@
                     });
                 },
                 totalSaldo() { return this.filtrados.reduce((s, p) => s + (parseFloat(p.saldo) || 0), 0); },
+                totalCredito() { return this.filtrados.reduce((s, p) => s + (parseFloat(p.credito) || 0), 0); },
+                totalFacturas() { return this.filtrados.reduce((s, p) => s + (parseInt(p.n_facturas) || 0), 0); },
                 fmt(v) { return 'B/. ' + (Math.round((parseFloat(v) || 0) * 100) / 100).toFixed(2); },
             };
         }
