@@ -12,6 +12,12 @@
                 @endif
             </h2>
             <div class="flex items-center gap-2">
+                @can('contabilidad.crear')
+                    <a href="{{ route('admin.asientos.copiar', $asiento) }}"
+                       class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Duplicar</a>
+                    <a href="{{ route('admin.asientos-recurrentes.desde-asiento', $asiento) }}"
+                       class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Hacer recurrente</a>
+                @endcan
                 @if ($asiento->esBorrador())
                     @can('contabilidad.editar')
                         <form method="POST" action="{{ route('admin.asientos.postear', $asiento) }}">

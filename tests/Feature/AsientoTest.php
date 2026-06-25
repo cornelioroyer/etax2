@@ -97,6 +97,46 @@ class AsientoTest extends TestCase
         $this->assertCount(2, $asiento->detalle);
     }
 
+    public function test_copiar_redirige_al_create_con_las_lineas_prellenadas(): void
+    {
+        $asiento = $this->crearBorrador(175);
+
+        $resp = $this->actingAs($this->admin)
+            ->withSession(['compania_activa_id' => $this->compania->id])
+            ->get(route('admin.asientos.copiar', $asiento));
+
+        $resp->assertRedirect(route('admin.asientos.create'));
+        // Las líneas del origen quedan flasheadas como old() para el formulario.
+        $resp->assertSessionHas('_old_input.descripcion', 'Asiento de prueba');
+        $lineas = session('_old_input.lineas');
+        $this->assertCount(2, $lineas);
+        $this->assertSame($this->caja->id, $lineas[0]['cuenta_id']);
+        $this->assertEquals(175, $lineas[0]['debito']);
+
+        // Copiar no crea ni postea nada por sí mismo: sigue habiendo un solo asiento.
+        $this->assertSame(1, Asiento::count());
+    }
+
+    public function test_hacer_recurrente_prellena_la_plantilla_desde_un_asiento(): void
+    {
+        $asiento = $this->crearBorrador(320);
+
+        $resp = $this->actingAs($this->admin)
+            ->withSession(['compania_activa_id' => $this->compania->id])
+            ->get(route('admin.asientos-recurrentes.desde-asiento', $asiento));
+
+        $resp->assertRedirect(route('admin.asientos-recurrentes.create'));
+        $resp->assertSessionHas('_old_input.frecuencia', 'MENSUAL');
+        $resp->assertSessionHas('_old_input.nombre', 'Asiento de prueba');
+        $lineas = session('_old_input.lineas');
+        $this->assertCount(2, $lineas);
+        $this->assertSame($this->caja->id, $lineas[0]['cuenta_id']);
+        $this->assertEquals(320, $lineas[0]['debito']);
+
+        // No crea ninguna plantilla por sí mismo: solo prellena el formulario.
+        $this->assertSame(0, \App\Models\AsientoRecurrente::count());
+    }
+
     public function test_guardar_y_postear_crea_periodo_y_postea(): void
     {
         $this->actingAs($this->admin)

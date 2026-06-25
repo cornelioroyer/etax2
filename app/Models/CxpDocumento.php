@@ -69,6 +69,7 @@ class CxpDocumento extends Model
         'saldo',
         'estado',
         'asiento_id',
+        'recurrente_id',
         'cuenta_pago_id',
         'adjunto_id',
         'created_by',

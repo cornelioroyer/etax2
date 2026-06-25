@@ -21,6 +21,7 @@ use App\Http\Controllers\Admin\CxpEstadoCuentaController;
 use App\Http\Controllers\Admin\CxpFacturaController;
 use App\Http\Controllers\Admin\CxpNotaController;
 use App\Http\Controllers\Admin\CxpPagoController;
+use App\Http\Controllers\Admin\CxpRecurrenteController;
 use App\Http\Controllers\Admin\FacturaFelController;
 use App\Http\Controllers\Admin\ReporteComprobacionController;
 use App\Http\Controllers\Admin\ReporteBalanceController;
@@ -250,9 +251,21 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::get('cxp/estado-cuenta', CxpEstadoCuentaController::class)->name('cxp.estado-cuenta');
         Route::get('cxp/notas', [CxpNotaController::class, 'index'])->name('cxp.notas.index');
         Route::get('cxp/notas/{documento}', [CxpNotaController::class, 'show'])->whereNumber('documento')->name('cxp.notas.show');
+        Route::get('cxp/recurrentes', [CxpRecurrenteController::class, 'index'])->name('cxp.recurrentes.index');
+        Route::get('cxp/recurrentes/{recurrente}', [CxpRecurrenteController::class, 'show'])->whereNumber('recurrente')->name('cxp.recurrentes.show');
     });
 
     Route::middleware('permission:cxp.gestionar')->group(function () {
+        // Facturas recurrentes (plantillas que generan facturas de compra BORRADOR por vencimiento)
+        Route::get('cxp/recurrentes/nueva', [CxpRecurrenteController::class, 'create'])->name('cxp.recurrentes.create');
+        Route::post('cxp/recurrentes/generar-todos', [CxpRecurrenteController::class, 'generarTodos'])->name('cxp.recurrentes.generar-todos');
+        Route::post('cxp/recurrentes', [CxpRecurrenteController::class, 'store'])->name('cxp.recurrentes.store');
+        Route::get('cxp/recurrentes/{recurrente}/editar', [CxpRecurrenteController::class, 'edit'])->whereNumber('recurrente')->name('cxp.recurrentes.edit');
+        Route::put('cxp/recurrentes/{recurrente}', [CxpRecurrenteController::class, 'update'])->whereNumber('recurrente')->name('cxp.recurrentes.update');
+        Route::delete('cxp/recurrentes/{recurrente}', [CxpRecurrenteController::class, 'destroy'])->whereNumber('recurrente')->name('cxp.recurrentes.destroy');
+        Route::post('cxp/recurrentes/{recurrente}/generar', [CxpRecurrenteController::class, 'generar'])->whereNumber('recurrente')->name('cxp.recurrentes.generar');
+        Route::post('cxp/recurrentes/{recurrente}/pausar', [CxpRecurrenteController::class, 'pausar'])->whereNumber('recurrente')->name('cxp.recurrentes.pausar');
+        Route::post('cxp/recurrentes/{recurrente}/reactivar', [CxpRecurrenteController::class, 'reactivar'])->whereNumber('recurrente')->name('cxp.recurrentes.reactivar');
         Route::get('cxp/notas/crear', [CxpNotaController::class, 'create'])->name('cxp.notas.create');
         Route::post('cxp/notas', [CxpNotaController::class, 'store'])->name('cxp.notas.store');
         Route::post('cxp/notas/{documento}/anular', [CxpNotaController::class, 'anular'])->whereNumber('documento')->name('cxp.notas.anular');

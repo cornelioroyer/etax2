@@ -78,6 +78,7 @@
             'children' => [
                 ['label' => 'Proveedores', 'href' => route('admin.contactos.index', ['tipo' => 'PROVEEDOR']), 'active' => request()->routeIs('admin.contactos.*') && request('tipo') === 'PROVEEDOR', 'show' => $can('contactos.ver')],
                 ['label' => 'Facturas de Compras', 'href' => route('admin.cxp.facturas.index'), 'active' => request()->routeIs('admin.cxp.facturas.*'), 'show' => $can('cxp.ver')],
+                ['label' => 'Facturas recurrentes', 'href' => route('admin.cxp.recurrentes.index'), 'active' => request()->routeIs('admin.cxp.recurrentes.*'), 'show' => $can('cxp.ver')],
                 ['label' => 'Pagos', 'href' => route('admin.cxp.pagos.index'), 'active' => request()->routeIs('admin.cxp.pagos.*'), 'show' => $can('cxp.ver')],
                 ['label' => 'Anticipos', 'href' => route('admin.cxp.anticipos.index'), 'active' => request()->routeIs('admin.cxp.anticipos.*'), 'show' => $can('cxp.ver')],
                 ['label' => 'Notas crédito/débito', 'href' => route('admin.cxp.notas.index'), 'active' => request()->routeIs('admin.cxp.notas.*'), 'show' => $can('cxp.ver')],
@@ -104,7 +105,7 @@
             'key' => 'contabilidad',
             'label' => 'Contabilidad',
             'icon' => 'M9 7.5h6M9 12h6M9 16.5h3M6.75 3h10.5A2.25 2.25 0 0 1 19.5 5.25v13.5A2.25 2.25 0 0 1 17.25 21H6.75A2.25 2.25 0 0 1 4.5 18.75V5.25A2.25 2.25 0 0 1 6.75 3Z',
-            'active' => request()->routeIs('admin.cuentas.*') || request()->routeIs('admin.asientos.*') || request()->routeIs('admin.periodos.*') || request()->routeIs('admin.cuentas-default.*') || request()->routeIs('admin.diarios.*') || request()->routeIs('admin.cierre-anual.*') || request()->routeIs('admin.dimensiones.*'),
+            'active' => request()->routeIs('admin.cuentas.*') || request()->routeIs('admin.asientos.*') || request()->routeIs('admin.asientos-recurrentes.*') || request()->routeIs('admin.periodos.*') || request()->routeIs('admin.cuentas-default.*') || request()->routeIs('admin.diarios.*') || request()->routeIs('admin.cierre-anual.*') || request()->routeIs('admin.dimensiones.*'),
             'show' => $can('contabilidad.ver'),
             'children' => [
                 ['label' => 'Estados Financieros', 'href' => route('dashboard'), 'active' => false, 'show' => $can('contabilidad.ver')],
@@ -112,6 +113,7 @@
                 ['label' => 'Cuentas por defecto', 'href' => route('admin.cuentas-default.index'), 'active' => request()->routeIs('admin.cuentas-default.*'), 'show' => $can('contabilidad.ver')],
                 ['label' => 'Diarios', 'href' => route('admin.diarios.index'), 'active' => request()->routeIs('admin.diarios.*'), 'show' => $can('contabilidad.ver')],
                 ['label' => 'Asientos', 'href' => route('admin.asientos.index'), 'active' => request()->routeIs('admin.asientos.*'), 'show' => $can('contabilidad.ver')],
+                ['label' => 'Asientos recurrentes', 'href' => route('admin.asientos-recurrentes.index'), 'active' => request()->routeIs('admin.asientos-recurrentes.*'), 'show' => $can('contabilidad.ver')],
                 ['label' => 'Períodos contables', 'href' => route('admin.periodos.index'), 'active' => request()->routeIs('admin.periodos.*'), 'show' => $can('contabilidad.ver')],
                 ['label' => 'Cierre contable', 'href' => route('admin.contabilidad.cierres.index'), 'active' => request()->routeIs('admin.contabilidad.cierres.*'), 'show' => $can('contabilidad.ver')],
                 ['label' => 'Cierre anual', 'href' => route('admin.cierre-anual.index'), 'active' => request()->routeIs('admin.cierre-anual.*'), 'show' => $can('contabilidad.ver')],

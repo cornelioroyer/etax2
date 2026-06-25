@@ -1,5 +1,5 @@
 <x-app-layout>
-    <x-slot name="header"><h2 class="font-semibold text-xl text-gray-800 leading-tight">Nuevo asiento de diario</h2></x-slot>
+    <x-slot name="header"><h2 class="font-semibold text-xl text-gray-800 leading-tight">Nueva plantilla de asiento recurrente</h2></x-slot>
 
     <div class="py-8">
         <div class="max-w-6xl mx-auto sm:px-6 lg:px-8 space-y-4">
@@ -18,9 +18,9 @@
                     <a class="font-semibold underline" href="{{ route('admin.cuentas.index') }}">Configura el plan de cuentas</a> primero.
                 </div>
             @else
-                <form method="POST" action="{{ route('admin.asientos.store') }}" class="bg-white p-6 shadow-sm sm:rounded-lg">
+                <form method="POST" action="{{ route('admin.asientos-recurrentes.store') }}" class="bg-white p-6 shadow-sm sm:rounded-lg">
                     @csrf
-                    @include('admin.asientos._form')
+                    @include('admin.asientos-recurrentes._form')
                 </form>
             @endif
         </div>
