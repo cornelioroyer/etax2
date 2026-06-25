@@ -36,7 +36,7 @@ Artisan::command('asientos:recurrentes {--fecha=}', function (GeneradorAsientosR
 
     $r = $generador->generarPendientes($hasta, null, 'cron:asientos-recurrentes');
 
-    $this->info("Asientos recurrentes: {$r['asientos']} asiento(s) en BORRADOR desde {$r['plantillas']} plantilla(s) (hasta {$hasta->toDateString()}).");
+    $this->info('['.Carbon::now()->toDateTimeString().'] '."Asientos recurrentes: {$r['asientos']} asiento(s) en BORRADOR desde {$r['plantillas']} plantilla(s) (hasta {$hasta->toDateString()}).");
 })->purpose('Genera los asientos recurrentes vencidos (BORRADOR) de todas las compañías');
 
 // Genera las facturas de proveedor recurrentes vencidas (como BORRADOR) de TODAS
@@ -48,5 +48,5 @@ Artisan::command('cxp:recurrentes {--fecha=}', function (GeneradorCxpRecurrentes
 
     $r = $generador->generarPendientes($hasta, null, 'cron:cxp-recurrentes');
 
-    $this->info("Facturas recurrentes CxP: {$r['facturas']} factura(s) en BORRADOR desde {$r['plantillas']} plantilla(s) (hasta {$hasta->toDateString()}).");
+    $this->info('['.Carbon::now()->toDateTimeString().'] '."Facturas recurrentes CxP: {$r['facturas']} factura(s) en BORRADOR desde {$r['plantillas']} plantilla(s) (hasta {$hasta->toDateString()}).");
 })->purpose('Genera las facturas de proveedor recurrentes vencidas (BORRADOR) de todas las compañías');
