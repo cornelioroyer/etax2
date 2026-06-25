@@ -8,10 +8,10 @@ use App\Imports\AsientoSaldosImport;
 use App\Models\Asiento;
 use App\Models\AsientoDetalle;
 use App\Models\CuentaContable;
-use App\Models\CuentaDefault;
 use App\Models\Diario;
 use App\Models\PeriodoContable;
 use App\Models\TipoCuenta;
+use App\Services\CuentasControlContable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -110,6 +110,32 @@ class AsientoController extends Controller
 
         return redirect()->route('admin.asientos.show', $asiento)
             ->with('status', $postear ? "Asiento {$asiento->numero} posteado." : "Asiento {$asiento->numero} guardado como borrador.");
+    }
+
+    /**
+     * Duplica un asiento existente: redirige al formulario de creación
+     * prellenado con sus mismas líneas (fecha = hoy) para registrar uno nuevo.
+     * No copia número, estado ni asiento_id; nada se postea aquí. Sirve para
+     * cualquier asiento (borrador, posteado o anulado) como punto de partida.
+     */
+    public function copiar(Request $request, Asiento $asiento): RedirectResponse
+    {
+        abort_unless($request->user()->can('contabilidad.crear'), 403);
+        $this->verificarCompania($request, $asiento);
+
+        $asiento->load('detalle');
+
+        return redirect()->route('admin.asientos.create')->withInput([
+            'fecha' => now()->format('Y-m-d'),
+            'descripcion' => $asiento->descripcion,
+            'referencia' => $asiento->referencia,
+            'lineas' => $asiento->detalle->map(fn ($l) => [
+                'cuenta_id' => $l->cuenta_id,
+                'descripcion' => $l->descripcion,
+                'debito' => (float) $l->debito,
+                'credito' => (float) $l->credito,
+            ])->values()->all(),
+        ])->with('status', "Copia de {$asiento->numero}: revisa los datos y guarda el nuevo asiento.");
     }
 
     /**
@@ -591,7 +617,7 @@ class AsientoController extends Controller
                 throw ValidationException::withMessages([
                     'lineas' => "No se puede afectar {$etiquetas} con un asiento manual. "
                         .'Estas cuentas se controlan por su libro auxiliar: registra el movimiento '
-                        .'desde el módulo correspondiente (Cuentas por Cobrar / Cuentas por Pagar / Inventario).',
+                        .'desde el módulo correspondiente ('.$etiquetas.').',
                 ]);
             }
         }
@@ -616,31 +642,16 @@ class AsientoController extends Controller
     }
 
     /**
-     * Cuentas de control de los auxiliares (CxC, CxP, Inventario). Un asiento
-     * manual no puede afectarlas: se mueven solo por sus módulos.
+     * Cuentas de control de los auxiliares (CxC, CxP, Inventario, Bancos, Caja,
+     * Activos Fijos). Un asiento manual no puede afectarlas: se mueven solo por
+     * sus módulos. Regla centralizada en CuentasControlContable (compartida con
+     * Recurrentes).
      *
      * @return array<int, string>  [cuenta_id => etiqueta]
      */
     private function cuentasControl(int $companiaId): array
     {
-        $control = [];
-
-        foreach (['CXC' => 'Cuentas por Cobrar', 'CXP' => 'Cuentas por Pagar'] as $clave => $etiqueta) {
-            if ($id = CuentaDefault::idPara($companiaId, $clave)) {
-                $control[$id] = $etiqueta;
-            }
-        }
-
-        DB::table('item_productos_servicios')
-            ->where('compania_id', $companiaId)
-            ->whereNotNull('cuenta_inventario_id')
-            ->distinct()
-            ->pluck('cuenta_inventario_id')
-            ->each(function ($id) use (&$control) {
-                $control[(int) $id] = 'Inventario';
-            });
-
-        return $control;
+        return CuentasControlContable::para($companiaId);
     }
 
     private function guardarLineas(Asiento $asiento, array $lineas, string $usuario): void
