@@ -42,15 +42,16 @@
                     @endforeach
                 </select>
             </label>
-            <label class="text-xs font-medium text-slate-600">
-                Usuario
-                <select name="usuario_id" class="mt-1 block w-full rounded-md border-slate-300 text-sm shadow-sm focus:border-[#0d2d5e] focus:ring-[#0d2d5e]">
-                    <option value="">Todos</option>
-                    @foreach ($usuarios as $u)
-                        <option value="{{ $u->id }}" @selected(($filtros['usuario_id'] ?? null) == $u->id)>{{ $u->name ?: $u->email }}</option>
-                    @endforeach
-                </select>
-            </label>
+            @php
+                $usuariosOpc = $usuarios->map(fn ($u) => (object) [
+                    'id' => $u->id,
+                    'nombre' => $u->name ?: $u->email,
+                    'codigo' => null,
+                ]);
+            @endphp
+            <x-buscador-contacto name="usuario_id" label="Usuario" compact
+                :opciones="$usuariosOpc" :selected="$filtros['usuario_id'] ?? null"
+                placeholder="Todos — buscar por nombre" emptyLabel="Todos" />
             <div class="text-xs font-medium text-slate-600"
                  x-data="{ open: false, sel: @js(array_map('strval', (array) ($filtros['usuario_excluir_id'] ?? []))) }">
                 Excluir usuario(s)

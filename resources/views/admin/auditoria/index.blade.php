@@ -33,15 +33,16 @@
 
         {{-- Filtros --}}
         <form method="GET" class="mb-5 grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-3 lg:grid-cols-6">
-            <label class="text-xs font-medium text-slate-600">
-                Usuario
-                <select name="usuario_id" class="mt-1 block w-full rounded-md border-slate-300 text-sm shadow-sm focus:border-[#0d2d5e] focus:ring-[#0d2d5e]">
-                    <option value="">Todos</option>
-                    @foreach ($usuarios as $u)
-                        <option value="{{ $u->id }}" @selected(($filtros['usuario_id'] ?? null) == $u->id)>{{ $u->name ?: $u->email }}</option>
-                    @endforeach
-                </select>
-            </label>
+            @php
+                $usuariosOpc = $usuarios->map(fn ($u) => (object) [
+                    'id' => $u->id,
+                    'nombre' => $u->name ?: $u->email,
+                    'codigo' => null,
+                ]);
+            @endphp
+            <x-buscador-contacto name="usuario_id" label="Usuario" compact
+                :opciones="$usuariosOpc" :selected="$filtros['usuario_id'] ?? null"
+                placeholder="Todos — buscar por nombre" emptyLabel="Todos" />
             <label class="text-xs font-medium text-slate-600">
                 Acción
                 <select name="evento" class="mt-1 block w-full rounded-md border-slate-300 text-sm shadow-sm focus:border-[#0d2d5e] focus:ring-[#0d2d5e]">
