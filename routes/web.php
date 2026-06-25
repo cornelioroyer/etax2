@@ -384,6 +384,9 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('items', [ItemProductoController::class, 'store'])->name('items.store');
         Route::put('items/{item}', [ItemProductoController::class, 'update'])->whereNumber('item')->name('items.update');
         Route::post('items/{item}/toggle', [ItemProductoController::class, 'toggle'])->whereNumber('item')->name('items.toggle');
+        Route::get('items-importar/plantilla-xlsx', [ItemProductoController::class, 'plantillaImportXlsx'])->name('items.importar.plantilla-xlsx');
+        Route::get('items-importar/plantilla', [ItemProductoController::class, 'plantillaImportCsv'])->name('items.importar.plantilla');
+        Route::post('items-importar', [ItemProductoController::class, 'importar'])->name('items.importar');
         Route::post('inventario/almacenes', [InvAlmacenController::class, 'store'])->name('inventario.almacenes.store');
         Route::put('inventario/almacenes/{almacen}', [InvAlmacenController::class, 'update'])->whereNumber('almacen')->name('inventario.almacenes.update');
         Route::post('inventario/almacenes/{almacen}/toggle', [InvAlmacenController::class, 'toggle'])->whereNumber('almacen')->name('inventario.almacenes.toggle');

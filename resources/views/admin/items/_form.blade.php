@@ -2,9 +2,13 @@
     {{-- Identificación --}}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div>
-            <label class="block text-sm font-medium text-gray-700">Código <span class="text-red-500">*</span></label>
+            <label class="block text-sm font-medium text-gray-700">
+                Código
+                @isset($item)<span class="text-red-500">*</span>@else<span class="text-xs font-normal text-gray-400">(automático si lo dejas vacío)</span>@endisset
+            </label>
             <input type="text" name="codigo" value="{{ old('codigo', $item->codigo ?? '') }}"
-                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm uppercase" required>
+                placeholder="{{ isset($item) ? '' : 'Automático (PROD-001 / SERV-001)' }}"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm uppercase" @isset($item)required @endisset>
             @error('codigo')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
         </div>
         <div class="sm:col-span-2">
@@ -72,7 +76,7 @@
             <select name="impuesto_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 text-sm">
                 <option value="">Exento</option>
                 @foreach ($impuestos as $imp)
-                    <option value="{{ $imp->id }}" @selected(old('impuesto_id', $item->impuesto_id ?? '') == $imp->id)>{{ $imp->nombre }}</option>
+                    <option value="{{ $imp->id }}" @selected(old('impuesto_id', isset($item) ? ($item->impuesto_id ?? '') : ($impuestoDefaultId ?? '')) == $imp->id)>{{ $imp->nombre }}</option>
                 @endforeach
             </select>
         </div>
@@ -85,7 +89,7 @@
             <select name="cuenta_ingreso_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 text-sm">
                 <option value="">Sin cuenta</option>
                 @foreach ($cuentas as $c)
-                    <option value="{{ $c->id }}" @selected(old('cuenta_ingreso_id', $item->cuenta_ingreso_id ?? '') == $c->id)>{{ $c->codigo }} — {{ $c->nombre }}</option>
+                    <option value="{{ $c->id }}" @selected(old('cuenta_ingreso_id', isset($item) ? ($item->cuenta_ingreso_id ?? '') : ($cuentaIngresoDefaultId ?? '')) == $c->id)>{{ $c->codigo }} — {{ $c->nombre }}</option>
                 @endforeach
             </select>
         </div>
@@ -94,7 +98,7 @@
             <select name="cuenta_gasto_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 text-sm">
                 <option value="">Sin cuenta</option>
                 @foreach ($cuentas as $c)
-                    <option value="{{ $c->id }}" @selected(old('cuenta_gasto_id', $item->cuenta_gasto_id ?? '') == $c->id)>{{ $c->codigo }} — {{ $c->nombre }}</option>
+                    <option value="{{ $c->id }}" @selected(old('cuenta_gasto_id', isset($item) ? ($item->cuenta_gasto_id ?? '') : ($cuentaGastoDefaultId ?? '')) == $c->id)>{{ $c->codigo }} — {{ $c->nombre }}</option>
                 @endforeach
             </select>
         </div>

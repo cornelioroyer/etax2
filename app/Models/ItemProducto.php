@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\DB;
 
 class ItemProducto extends Model
 {
@@ -11,6 +12,44 @@ class ItemProducto extends Model
 
     public const TIPO_PRODUCTO  = 'PRODUCTO';
     public const TIPO_SERVICIO  = 'SERVICIO';
+
+    /**
+     * Genera el siguiente código correlativo para la compañía y tipo dados,
+     * siguiendo la convención existente: PROD-001 / SERV-001.
+     *
+     * Debe invocarse DENTRO de una transacción: usa un advisory lock de
+     * transacción para serializar la numeración entre solicitudes
+     * concurrentes (se libera al cerrar la transacción). La restricción
+     * UNIQUE (compania_id, codigo) es la red de seguridad final.
+     */
+    public static function siguienteCodigo(int $companiaId, string $tipo): string
+    {
+        $prefijo = strtoupper($tipo) === self::TIPO_SERVICIO ? 'SERV-' : 'PROD-';
+
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            DB::statement('SELECT pg_advisory_xact_lock(hashtext(?))', [$companiaId.'-item-'.$prefijo]);
+        }
+
+        $len  = strlen($prefijo);
+        $base = static::where('compania_id', $companiaId)
+            ->where('codigo', 'like', $prefijo.'%');
+
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            // Solo correlativos con formato estricto PREFIJO+dígitos; toma el
+            // máximo NUMÉRICO (no lexical) para que un código manual con otro
+            // formato no envenene la secuencia ni cause colisiones.
+            $maxNum = (clone $base)
+                ->where('codigo', '~', '^'.$prefijo.'[0-9]+$')
+                ->selectRaw('MAX(CAST(SUBSTRING(codigo FROM '.($len + 1).') AS INTEGER)) AS n')
+                ->value('n');
+            $siguiente = ((int) $maxNum) + 1;
+        } else {
+            $ultimo    = $base->max('codigo');
+            $siguiente = $ultimo ? ((int) substr($ultimo, $len)) + 1 : 1;
+        }
+
+        return $prefijo.str_pad((string) $siguiente, 3, '0', STR_PAD_LEFT);
+    }
 
     protected $fillable = [
         'compania_id', 'codigo', 'nombre', 'descripcion', 'tipo',
