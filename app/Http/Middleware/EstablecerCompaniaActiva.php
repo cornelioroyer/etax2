@@ -24,7 +24,13 @@ class EstablecerCompaniaActiva
             $activaId = session('compania_activa_id');
 
             if (! $activaId || ! $companias->contains('id', $activaId)) {
-                $activaId = $companias->first()?->id;
+                // Preferencia persistida del usuario; si ya no tiene acceso, primera accesible.
+                $ultima = $user->ultima_compania_id;
+
+                $activaId = ($ultima && $companias->contains('id', $ultima))
+                    ? $ultima
+                    : $companias->first()?->id;
+
                 session(['compania_activa_id' => $activaId]);
             }
 

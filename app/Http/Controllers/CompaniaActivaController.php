@@ -16,12 +16,18 @@ class CompaniaActivaController extends Controller
             'compania_id' => ['required', 'integer'],
         ]);
 
+        $companiaId = (int) $data['compania_id'];
+        $user = $request->user();
+
         abort_unless(
-            $request->user()->companiasAccesibles()->contains('id', (int) $data['compania_id']),
+            $user->companiasAccesibles()->contains('id', $companiaId),
             403
         );
 
-        session(['compania_activa_id' => (int) $data['compania_id']]);
+        session(['compania_activa_id' => $companiaId]);
+
+        // Recordar la última compañía elegida para próximos inicios de sesión.
+        $user->forceFill(['ultima_compania_id' => $companiaId])->save();
 
         return redirect()->route('dashboard');
     }
