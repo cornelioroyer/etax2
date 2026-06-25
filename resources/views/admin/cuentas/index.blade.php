@@ -3,9 +3,16 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Plan de cuentas — {{ $companiaActiva->nombre ?? '' }}</h2>
             @can('contabilidad.crear')
-                @if ($cuentas->isNotEmpty())
-                    <a href="{{ route('admin.cuentas.create') }}" class="rounded-md bg-[#0d2d5e] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-900">Nueva cuenta</a>
-                @endif
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="document.getElementById('modal-importar-cuentas').classList.remove('hidden')"
+                            class="inline-flex items-center gap-1.5 rounded-md border border-[#0d2d5e] bg-white px-4 py-2 text-sm font-semibold text-[#0d2d5e] hover:bg-blue-50">
+                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+                        Importar
+                    </button>
+                    @if ($cuentas->isNotEmpty())
+                        <a href="{{ route('admin.cuentas.create') }}" class="rounded-md bg-[#0d2d5e] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-900">Nueva cuenta</a>
+                    @endif
+                </div>
             @endcan
         </div>
     </x-slot>
@@ -101,4 +108,68 @@
             @endif
         </div>
     </div>
+
+    @can('contabilidad.crear')
+    <div id="modal-importar-cuentas" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-gray-900">Importar catálogo de cuentas</h3>
+                <button type="button" onclick="document.getElementById('modal-importar-cuentas').classList.add('hidden')"
+                        class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+            </div>
+
+            <div class="mb-4 rounded-md bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
+                <p class="font-semibold text-slate-700">Formato del archivo (Excel o CSV):</p>
+                <p>Fila 1 = encabezados (se omite). Columnas en orden:</p>
+                <ol class="list-decimal list-inside space-y-0.5">
+                    <li><strong>codigo</strong> — requerido (ej: 1100)</li>
+                    <li><strong>nombre</strong> — requerido</li>
+                    <li><strong>tipo</strong> — ACTIVO / PASIVO / PATRIMONIO / INGRESO / COSTO / GASTO</li>
+                    <li>naturaleza — DEBITO / CREDITO (opcional; si se omite se deriva del tipo)</li>
+                    <li>codigo_padre — opcional; si se omite se deduce por el código (ej: padre de 1100 es 1000)</li>
+                    <li>permite_movimiento — SI / NO (opcional; por defecto NO si tiene subcuentas)</li>
+                    <li>conciliable — SI / NO (opcional; default NO)</li>
+                    <li>renglon_isr — renglón del Formulario 2 ISR (opcional)</li>
+                </ol>
+                <p class="mt-1">Solo se crean cuentas nuevas. Si el <strong>código ya existe</strong>, la fila se omite (no se modifican cuentas existentes ni con movimientos).</p>
+            </div>
+
+            <div class="mb-4 flex flex-wrap items-center gap-4">
+                <a href="{{ route('admin.cuentas.importar.plantilla-xlsx') }}"
+                   class="inline-flex items-center gap-1 text-xs font-semibold text-green-700 hover:underline">
+                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                    </svg>
+                    Descargar plantilla Excel (con ejemplos)
+                </a>
+                <a href="{{ route('admin.cuentas.importar.plantilla') }}"
+                   class="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
+                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                    </svg>
+                    Plantilla CSV
+                </a>
+            </div>
+
+            <form method="POST" action="{{ route('admin.cuentas.importar') }}" enctype="multipart/form-data">
+                @csrf
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Archivo (.xlsx, .xls, .csv)</label>
+                    <input type="file" name="archivo" accept=".xlsx,.xls,.csv" required
+                           class="block w-full text-sm text-gray-700 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+                <div class="flex justify-end gap-3">
+                    <button type="button" onclick="document.getElementById('modal-importar-cuentas').classList.add('hidden')"
+                            class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                        Cancelar
+                    </button>
+                    <button type="submit"
+                            class="rounded-md bg-[#0d2d5e] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-900">
+                        Importar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    @endcan
 </x-app-layout>

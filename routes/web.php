@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AsientoController;
+use App\Http\Controllers\Admin\AsientoRecurrenteController;
 use App\Http\Controllers\Admin\AuditoriaController;
 use App\Http\Controllers\Admin\BudgetEscenarioController;
 use App\Http\Controllers\Admin\BudgetPresupuestoController;
@@ -177,13 +178,25 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
 
     Route::middleware('permission:contabilidad.ver')->group(function () {
         Route::post('cuentas-aplicar-plantilla', [CuentaContableController::class, 'aplicarPlantilla'])->name('cuentas.aplicar-plantilla');
+        Route::get('cuentas-importar/plantilla', [CuentaContableController::class, 'plantillaImport'])->name('cuentas.importar.plantilla');
+        Route::get('cuentas-importar/plantilla-xlsx', [CuentaContableController::class, 'plantillaImportXlsx'])->name('cuentas.importar.plantilla-xlsx');
+        Route::post('cuentas-importar', [CuentaContableController::class, 'importar'])->name('cuentas.importar');
         Route::resource('cuentas', CuentaContableController::class)->except(['show'])->parameters(['cuentas' => 'cuenta']);
+        Route::get('asientos/{asiento}/copiar', [AsientoController::class, 'copiar'])->name('asientos.copiar');
         Route::post('asientos/{asiento}/postear', [AsientoController::class, 'postear'])->name('asientos.postear');
         Route::post('asientos/{asiento}/anular', [AsientoController::class, 'anular'])->name('asientos.anular');
         Route::get('asientos-importar', [AsientoController::class, 'importarForm'])->name('asientos.importar.form');
         Route::get('asientos-importar/plantilla', [AsientoController::class, 'plantillaImport'])->name('asientos.importar.plantilla');
         Route::post('asientos-importar', [AsientoController::class, 'importar'])->name('asientos.importar');
         Route::resource('asientos', AsientoController::class)->parameters(['asientos' => 'asiento']);
+        // Asientos recurrentes (plantillas que generan asientos BORRADOR por vencimiento)
+        Route::get('asientos-recurrentes/desde-asiento/{asiento}', [AsientoRecurrenteController::class, 'desdeAsiento'])->name('asientos-recurrentes.desde-asiento');
+        Route::post('asientos-recurrentes/generar-todos', [AsientoRecurrenteController::class, 'generarTodos'])->name('asientos-recurrentes.generar-todos');
+        Route::post('asientos-recurrentes/{asientos_recurrente}/generar', [AsientoRecurrenteController::class, 'generar'])->name('asientos-recurrentes.generar');
+        Route::post('asientos-recurrentes/{asientos_recurrente}/pausar', [AsientoRecurrenteController::class, 'pausar'])->name('asientos-recurrentes.pausar');
+        Route::post('asientos-recurrentes/{asientos_recurrente}/reactivar', [AsientoRecurrenteController::class, 'reactivar'])->name('asientos-recurrentes.reactivar');
+        Route::resource('asientos-recurrentes', AsientoRecurrenteController::class)
+            ->parameters(['asientos-recurrentes' => 'asientos_recurrente']);
         Route::get('cuentas-default', [CuentaDefaultController::class, 'index'])->name('cuentas-default.index');
         Route::put('cuentas-default', [CuentaDefaultController::class, 'update'])->name('cuentas-default.update');
         Route::get('diarios', [DiarioController::class, 'index'])->name('diarios.index');
