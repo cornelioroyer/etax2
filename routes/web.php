@@ -282,6 +282,8 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::get('cxp/facturas/importar/{importacion}/estado', [CxpFacturaController::class, 'importarEstado'])->whereNumber('importacion')->name('cxp.facturas.importar.estado');
         Route::get('cxp/facturas/importar-generico/plantilla', [CxpFacturaController::class, 'importarGenericoPlantilla'])->name('cxp.facturas.importar-generico.plantilla');
         Route::post('cxp/facturas/importar-generico', [CxpFacturaController::class, 'importarGenerico'])->name('cxp.facturas.importar-generico');
+        Route::get('cxp/facturas/importar-saldos/plantilla', [CxpFacturaController::class, 'importarSaldosInicialesPlantilla'])->name('cxp.facturas.importar-saldos.plantilla');
+        Route::post('cxp/facturas/importar-saldos', [CxpFacturaController::class, 'importarSaldosIniciales'])->name('cxp.facturas.importar-saldos');
         Route::post('cxp/facturas', [CxpFacturaController::class, 'store'])->name('cxp.facturas.store');
         Route::get('cxp/facturas/{documento}/editar', [CxpFacturaController::class, 'edit'])->whereNumber('documento')->name('cxp.facturas.edit');
         Route::put('cxp/facturas/{documento}', [CxpFacturaController::class, 'update'])->whereNumber('documento')->name('cxp.facturas.update');

@@ -14,6 +14,10 @@
                             class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
                         Importar Excel
                     </button>
+                    <button type="button" onclick="document.getElementById('modal-importar-saldos').classList.remove('hidden')"
+                            class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                        Importar saldos iniciales
+                    </button>
                     <a href="{{ route('admin.cxp.facturas.desde-cufe.form') }}"
                        style="display:inline-flex;align-items:center;border-radius:0.375rem;border:1px solid #d1d5db;background:#fff;padding:0.5rem 1rem;font-size:0.875rem;font-weight:600;color:#374151;">
                         Registrar por QR
@@ -363,6 +367,66 @@
                 <button type="submit"
                         class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
                     Importar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="modal-importar-saldos" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-gray-900">Importar saldos iniciales de proveedores</h3>
+            <button type="button" onclick="document.getElementById('modal-importar-saldos').classList.add('hidden')"
+                    class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+        </div>
+        <p class="text-sm text-gray-600 mb-3">
+            Para abrir en CxP las facturas pendientes que vienes arrastrando de tu sistema anterior, <strong>factura por factura</strong>.
+            El <code>monto</code> es el <em>saldo pendiente</em> (no se desglosa ITBMS: el crédito fiscal ya se tomó antes).
+            Cada documento se crea <strong>contabilizado</strong> (Dr cuenta de apertura / Cr Cuentas por Pagar) a la fecha de corte que indiques;
+            conserva su fecha y vencimiento originales para la antigüedad. Si el proveedor no existe, se crea automáticamente.
+        </p>
+        <p class="text-sm mb-3">
+            <a href="{{ route('admin.cxp.facturas.importar-saldos.plantilla') }}" class="text-blue-600 hover:underline font-medium">
+                ↓ Descargar plantilla de ejemplo
+            </a>
+        </p>
+        <p class="text-xs text-gray-500 mb-4">
+            Columnas: <code>proveedor</code>, <code>ruc</code>, <code>numero</code>, <code>fecha</code>,
+            <code>vencimiento</code>, <code>monto</code>, <code>tipo</code> (FACTURA/NC/ND), <code>concepto</code>.
+        </p>
+        <form method="POST" action="{{ route('admin.cxp.facturas.importar-saldos') }}" enctype="multipart/form-data">
+            @csrf
+            <div class="grid grid-cols-2 gap-3 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Fecha de corte</label>
+                    <input type="date" name="fecha_corte" value="{{ old('fecha_corte', now()->toDateString()) }}" required
+                           class="block w-full text-sm text-gray-700 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Cuenta de contrapartida (apertura)</label>
+                    <select name="cuenta_apertura_id" required
+                            class="block w-full text-sm text-gray-700 border border-gray-300 rounded-md px-2 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        <option value="">— Elegir cuenta —</option>
+                        @foreach ($cuentasApertura as $c)
+                            <option value="{{ $c->id }}" @selected(old('cuenta_apertura_id') == $c->id)>{{ $c->codigo }} — {{ $c->nombre }}</option>
+                        @endforeach
+                    </select>
+                </div>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Archivo Excel/CSV</label>
+                <input type="file" name="archivo" accept=".xlsx,.xls,.csv" required
+                       class="block w-full text-sm text-gray-700 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            </div>
+            <div class="flex justify-end gap-3">
+                <button type="button" onclick="document.getElementById('modal-importar-saldos').classList.add('hidden')"
+                        class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                    Cancelar
+                </button>
+                <button type="submit"
+                        class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
+                    Importar saldos
                 </button>
             </div>
         </form>

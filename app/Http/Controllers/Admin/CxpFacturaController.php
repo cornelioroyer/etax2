@@ -7,7 +7,9 @@ use App\Http\Controllers\Concerns\EmparejaContactos;
 use App\Http\Controllers\Concerns\ExportaReporte;
 use App\Http\Controllers\Controller;
 use App\Exports\CxpComprasPlantillaExport;
+use App\Exports\CxpSaldosInicialesPlantillaExport;
 use App\Imports\CxpComprasGenericoImport;
+use App\Imports\CxpSaldosInicialesImport;
 use App\Imports\CxpFacturasImport;
 use App\Jobs\ProcesarImportacionCxpFel;
 use App\Models\Compania;
@@ -146,6 +148,11 @@ class CxpFacturaController extends Controller
             'totales' => $totales,
             'sort' => $sort,
             'dir'  => $dir,
+            'cuentasApertura' => CuentaContable::where('compania_id', $companiaId)
+                ->where('permite_movimiento', true)
+                ->where('activa', true)
+                ->orderBy('codigo')
+                ->get(['id', 'codigo', 'nombre']),
         ]);
     }
 
@@ -1582,6 +1589,246 @@ class CxpFacturaController extends Controller
         return redirect()->route('admin.cxp.facturas.index')
             ->with('status', $resumen)
             ->with('import_compras_errores', array_slice($errores, 0, 50));
+    }
+
+    /** Descarga la plantilla de ejemplo para importar saldos iniciales de proveedores. */
+    public function importarSaldosInicialesPlantilla(Request $request): Response
+    {
+        abort_unless($request->user()->can('cxp.gestionar'), 403);
+
+        return Excel::download(new CxpSaldosInicialesPlantillaExport, 'plantilla_saldos_iniciales_cxp.xlsx');
+    }
+
+    /**
+     * Importa los SALDOS INICIALES de proveedores, factura por factura, desde un
+     * Excel/CSV. A diferencia del import de compras del período, cada documento se
+     * crea ya CONTABILIZADO (estado PENDIENTE) con un asiento de apertura:
+     *
+     *   Dr [cuenta de apertura elegida]  /  Cr [CxP de control]   (cargo: factura/ND)
+     *   Dr [CxP de control]  /  Cr [cuenta de apertura elegida]   (abono: NC)
+     *
+     * NO se reconoce gasto ni ITBMS de nuevo (el crédito fiscal ya se tomó en el
+     * sistema anterior); el monto es el saldo pendiente. El asiento se postea a la
+     * fecha de corte indicada; el documento conserva su fecha y vencimiento
+     * originales para que la antigüedad cuadre. Síncrono: una lista de saldos
+     * iniciales es acotada. Idempotente por proveedor+tipo+número.
+     */
+    public function importarSaldosIniciales(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()->can('cxp.gestionar'), 403);
+
+        $companiaId = $this->companiaActivaId($request);
+        $usuario = $request->user();
+
+        $request->validate([
+            'archivo'           => ['required', 'file', 'mimes:xlsx,xls,csv,txt', 'max:5120'],
+            'fecha_corte'       => ['required', 'date'],
+            'cuenta_apertura_id' => ['required', 'integer'],
+        ]);
+
+        $cuentaApertura = CuentaContable::where('compania_id', $companiaId)
+            ->where('id', $request->integer('cuenta_apertura_id'))
+            ->where('permite_movimiento', true)
+            ->first();
+
+        if (! $cuentaApertura) {
+            return back()->withErrors(['cuenta_apertura_id' => 'La cuenta de contrapartida (apertura) no existe en esta compañía o no permite movimiento.']);
+        }
+
+        $cuentaCxpId = CuentaDefault::idPara($companiaId, 'CXP');
+        if (! $cuentaCxpId) {
+            return back()->withErrors(['archivo_saldos' => 'La compañía no tiene configurada la cuenta default CXP (Cuentas por Pagar). Aplica una plantilla de plan de cuentas o configúrala.']);
+        }
+        $cuentaCxpId = (int) $cuentaCxpId;
+
+        $fechaCorte = $request->date('fecha_corte')->format('Y-m-d');
+
+        $import = new CxpSaldosInicialesImport;
+        Excel::import($import, $request->file('archivo'));
+
+        if ($import->filas === []) {
+            return back()->withErrors(['archivo_saldos' => 'El archivo no tiene filas con datos. La primera fila deben ser los encabezados (proveedor, numero, fecha, monto…).']);
+        }
+
+        $cuentaGastoDefault = CuentaDefault::idPara($companiaId, 'GASTO_DEFAULT');
+
+        // Índice de contactos para emparejar proveedores con tolerancia (sin duplicar).
+        $indiceProveedores = ['ruc' => [], 'codigo' => [], 'nombre' => []];
+        foreach (Contacto::where('compania_id', $companiaId)->get(['id', 'codigo', 'nombre', 'identificacion', 'cuenta_gasto_id']) as $c) {
+            $this->indexarContacto($indiceProveedores, $c);
+        }
+
+        $errores = [];
+        $documentos = []; // clave proveedor|tipo|numero => cabecera (un saldo = un documento)
+
+        foreach ($import->filas as $f) {
+            $fila = $f['fila'];
+
+            if ($f['proveedor'] === '' && $f['ruc'] === '') {
+                $errores[] = "Fila {$fila}: falta el proveedor (nombre o RUC).";
+
+                continue;
+            }
+            if ($f['numero'] === '') {
+                $errores[] = "Fila {$fila}: falta el número de documento.";
+
+                continue;
+            }
+            if (! $f['fecha']) {
+                $errores[] = "Fila {$fila}: falta la fecha o tiene un formato no reconocido (usa dd/mm/aaaa).";
+
+                continue;
+            }
+            if ($f['monto'] <= 0) {
+                $errores[] = "Fila {$fila}: el monto (saldo pendiente) debe ser mayor que cero.";
+
+                continue;
+            }
+
+            $proveedor = $this->resolverOCrearProveedorGenerico($f, $companiaId, $cuentaGastoDefault, $usuario, $indiceProveedores);
+            $tipo = $this->normalizarTipoCompra($f['tipo']);
+
+            $clave = $proveedor->id.'|'.$tipo.'|'.$f['numero'];
+            if (isset($documentos[$clave])) {
+                // Mismo documento repetido en el Excel: suma el monto en lugar de duplicar.
+                $documentos[$clave]['monto'] = round($documentos[$clave]['monto'] + $f['monto'], 2);
+
+                continue;
+            }
+            $documentos[$clave] = [
+                'proveedor'   => $proveedor,
+                'tipo'        => $tipo,
+                'numero'      => $f['numero'],
+                'fecha'       => $f['fecha'],
+                'vencimiento' => $f['vencimiento'] ?: $f['fecha'],
+                'concepto'    => $f['concepto'] !== '' ? substr($f['concepto'], 0, 500) : 'Saldo inicial '.$f['numero'],
+                'monto'       => round($f['monto'], 2),
+            ];
+        }
+
+        $creadas = 0;
+        $omitidas = 0;
+
+        foreach ($documentos as $doc) {
+            $existe = CxpDocumento::where('compania_id', $companiaId)
+                ->where('proveedor_id', $doc['proveedor']->id)
+                ->where('tipo_documento', $doc['tipo'])
+                ->where('numero', $doc['numero'])
+                ->where('estado', '!=', CxpDocumento::ESTADO_ANULADO)
+                ->exists();
+
+            if ($existe) {
+                $omitidas++;
+                $errores[] = "Documento {$doc['numero']} de {$doc['proveedor']->nombre}: ya existe; se omitió.";
+
+                continue;
+            }
+
+            try {
+                DB::transaction(function () use ($companiaId, $doc, $fechaCorte, $cuentaCxpId, $cuentaApertura, $usuario) {
+                    $factura = CxpDocumento::create([
+                        'compania_id'       => $companiaId,
+                        'proveedor_id'      => $doc['proveedor']->id,
+                        'tipo_documento'    => $doc['tipo'],
+                        'numero'            => $doc['numero'],
+                        'fecha'             => $doc['fecha'],
+                        'fecha_vencimiento' => $doc['vencimiento'],
+                        'subtotal'          => $doc['monto'],
+                        'descuento'         => 0,
+                        'impuesto'          => 0,
+                        'total'             => $doc['monto'],
+                        'saldo'             => $doc['monto'],
+                        'estado'            => CxpDocumento::ESTADO_PENDIENTE,
+                        'created_by'        => $usuario->email,
+                    ]);
+
+                    CxpDocumentoDetalle::create([
+                        'documento_id'    => $factura->id,
+                        'linea'           => 1,
+                        'descripcion'     => $doc['concepto'],
+                        'cantidad'        => 1,
+                        'precio_unitario' => $doc['monto'],
+                        'descuento'       => 0,
+                        'impuesto_monto'  => 0,
+                        'total_linea'     => $doc['monto'],
+                        'cuenta_id'       => $cuentaApertura->id,
+                        'created_by'      => $usuario->email,
+                    ]);
+
+                    $this->contabilizarSaldoInicial($factura, $cuentaCxpId, $cuentaApertura->id, $fechaCorte, $usuario);
+                });
+
+                $creadas++;
+            } catch (ValidationException $e) {
+                $msg = collect($e->errors())->flatten()->first() ?? 'no se pudo contabilizar';
+                $errores[] = "Documento {$doc['numero']} de {$doc['proveedor']->nombre}: {$msg}";
+            }
+        }
+
+        $resumen = "Saldos iniciales de CxP: {$creadas} documento(s) abierto(s) y contabilizado(s) al corte {$fechaCorte}";
+        if ($omitidas > 0) {
+            $resumen .= ", {$omitidas} omitido(s) por estar ya registrados";
+        }
+        $resumen .= '.';
+
+        return redirect()->route('admin.cxp.facturas.index')
+            ->with('status', $resumen)
+            ->with('import_compras_errores', array_slice($errores, 0, 50));
+    }
+
+    /**
+     * Postea el asiento de apertura de un saldo inicial de proveedor: la
+     * contrapartida del CxP de control es la cuenta de apertura elegida (no un
+     * gasto), sin ITBMS. Cargo (factura/ND) => Dr apertura / Cr CxP; abono (NC) =>
+     * Dr CxP / Cr apertura. Debe llamarse dentro de una transacción.
+     */
+    private function contabilizarSaldoInicial(CxpDocumento $factura, int $cuentaCxpId, int $cuentaAperturaId, string $fechaCorte, $usuario): void
+    {
+        $companiaId = $factura->compania_id;
+        $total = round((float) $factura->total, 2);
+        $etiqueta = $factura->etiquetaTipo();
+        $esCredito = $factura->esAbono();
+
+        $lineaCxp = [
+            'cuenta_id'   => $cuentaCxpId,
+            'contacto_id' => $factura->proveedor_id,
+            'descripcion' => "Saldo inicial {$etiqueta} {$factura->numero}",
+        ];
+        $lineaApertura = [
+            'cuenta_id'   => $cuentaAperturaId,
+            'descripcion' => "Saldo inicial {$etiqueta} {$factura->numero} — ".$factura->proveedor->nombre,
+        ];
+
+        if ($esCredito) {
+            // Nota de crédito a favor: Dr CxP / Cr apertura.
+            $lineasAsiento = [
+                $lineaCxp + ['debito' => $total, 'credito' => 0],
+                $lineaApertura + ['debito' => 0, 'credito' => $total],
+            ];
+        } else {
+            // Factura / nota de débito: Dr apertura / Cr CxP.
+            $lineasAsiento = [
+                $lineaApertura + ['debito' => $total, 'credito' => 0],
+                $lineaCxp + ['debito' => 0, 'credito' => $total],
+            ];
+        }
+
+        $asiento = app(AsientoAutomatico::class)->postear(
+            $companiaId,
+            $fechaCorte,
+            "Saldo inicial {$etiqueta} {$factura->numero} — ".$factura->proveedor->nombre,
+            $factura->numero,
+            $lineasAsiento,
+            'CXP',
+            'cxp_documentos',
+            $factura->id,
+            $usuario,
+        );
+
+        $factura->update([
+            'asiento_id' => $asiento->id,
+            'updated_by' => $usuario->email,
+        ]);
     }
 
     /** Resuelve el proveedor por RUC → código → nombre; si no existe lo crea. */

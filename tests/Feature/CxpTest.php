@@ -228,6 +228,109 @@ class CxpTest extends TestCase
         $this->assertSame(1, CxpDocumento::where('tipo_documento', 'FACTURA')->where('numero', 'DUP-1')->count());
     }
 
+    public function test_importar_saldos_iniciales_abre_documentos_contabilizados(): void
+    {
+        // Cuenta de apertura (patrimonio) que el usuario elige como contrapartida.
+        $apertura = CuentaContable::create([
+            'compania_id' => $this->compania->id,
+            'codigo' => '30199',
+            'nombre' => 'Saldos de Apertura',
+            'nivel' => 3,
+            'naturaleza' => 'CREDITO',
+            'permite_movimiento' => true,
+            'conciliable' => false,
+            'activa' => true,
+        ]);
+
+        // Una factura pendiente y una NC a favor; el monto es el saldo, sin ITBMS.
+        $csv = implode("\n", [
+            'proveedor,ruc,numero,fecha,vencimiento,monto,tipo,concepto',
+            'PROVEEDOR PRUEBA,,SI-001,15/05/2026,15/06/2026,1200,FACTURA,Saldo pendiente',
+            'PROVEEDOR PRUEBA,,SI-NC-1,20/05/2026,,80,NC,Credito a favor',
+        ]);
+
+        $this->actuar()->post(route('admin.cxp.facturas.importar-saldos'), [
+            'archivo' => UploadedFile::fake()->createWithContent('saldos.csv', $csv),
+            'fecha_corte' => '2026-06-30',
+            'cuenta_apertura_id' => $apertura->id,
+        ])->assertRedirect(route('admin.cxp.facturas.index'))->assertSessionHas('status');
+
+        // Factura: PENDIENTE, total = saldo = monto, sin ITBMS, fechas originales.
+        $factura = CxpDocumento::where('tipo_documento', 'FACTURA')->where('numero', 'SI-001')->first();
+        $this->assertNotNull($factura);
+        $this->assertSame('PENDIENTE', $factura->estado);
+        $this->assertSame('1200.00', (string) $factura->total);
+        $this->assertSame('1200.00', (string) $factura->saldo);
+        $this->assertSame('0.00', (string) $factura->impuesto);
+        $this->assertSame('2026-05-15', $factura->fecha->toDateString());
+        $this->assertSame('2026-06-15', $factura->fecha_vencimiento->toDateString());
+
+        // Asiento de apertura: posteado a la FECHA DE CORTE, Dr apertura / Cr CxP.
+        $asiento = $factura->asiento;
+        $this->assertNotNull($asiento);
+        $this->assertSame('POSTEADO', $asiento->estado);
+        $this->assertSame('CXP', $asiento->origen_modulo);
+        $this->assertSame('2026-06-30', $asiento->fecha->toDateString());
+
+        $lineas = $asiento->detalle->sortBy('linea')->values();
+        $this->assertSame($apertura->id, $lineas[0]->cuenta_id);
+        $this->assertSame('1200.00', (string) $lineas[0]->debito);
+        $this->assertSame($this->cxp->id, $lineas[1]->cuenta_id);
+        $this->assertSame('1200.00', (string) $lineas[1]->credito);
+        $this->assertSame($this->proveedor->id, $lineas[1]->contacto_id);
+
+        // No re-crea el gasto ni el ITBMS de crédito fiscal.
+        $this->assertFalse($asiento->detalle->contains('cuenta_id', $this->gasto->id));
+        $this->assertFalse($asiento->detalle->contains('cuenta_id', $this->itbmsCredito->id));
+
+        // NC a favor: asiento invertido Dr CxP / Cr apertura.
+        $nc = CxpDocumento::where('tipo_documento', 'NOTA_CREDITO')->where('numero', 'SI-NC-1')->first();
+        $this->assertNotNull($nc);
+        $this->assertSame('80.00', (string) $nc->total);
+        $lineasNc = $nc->asiento->detalle->sortBy('linea')->values();
+        $this->assertSame($this->cxp->id, $lineasNc[0]->cuenta_id);
+        $this->assertSame('80.00', (string) $lineasNc[0]->debito);
+        $this->assertSame($apertura->id, $lineasNc[1]->cuenta_id);
+        $this->assertSame('80.00', (string) $lineasNc[1]->credito);
+    }
+
+    public function test_importar_saldos_iniciales_es_idempotente(): void
+    {
+        $apertura = CuentaContable::create([
+            'compania_id' => $this->compania->id,
+            'codigo' => '30199',
+            'nombre' => 'Saldos de Apertura',
+            'nivel' => 3,
+            'naturaleza' => 'CREDITO',
+            'permite_movimiento' => true,
+            'conciliable' => false,
+            'activa' => true,
+        ]);
+
+        $csv = "proveedor,ruc,numero,fecha,vencimiento,monto\nPROVEEDOR PRUEBA,,SI-DUP,15/05/2026,15/06/2026,500";
+        $payload = fn () => [
+            'archivo' => UploadedFile::fake()->createWithContent('s.csv', $csv),
+            'fecha_corte' => '2026-06-30',
+            'cuenta_apertura_id' => $apertura->id,
+        ];
+
+        $this->actuar()->post(route('admin.cxp.facturas.importar-saldos'), $payload());
+        $this->actuar()->post(route('admin.cxp.facturas.importar-saldos'), $payload());
+
+        $this->assertSame(1, CxpDocumento::where('tipo_documento', 'FACTURA')->where('numero', 'SI-DUP')->count());
+    }
+
+    public function test_importar_saldos_iniciales_requiere_cuenta_y_fecha(): void
+    {
+        $csv = "proveedor,ruc,numero,fecha,monto\nPROVEEDOR PRUEBA,,SI-X,15/05/2026,100";
+
+        $this->actuar()->post(route('admin.cxp.facturas.importar-saldos'), [
+            'archivo' => UploadedFile::fake()->createWithContent('s.csv', $csv),
+        ])->assertSessionHasErrors(['fecha_corte', 'cuenta_apertura_id']);
+
+        $this->assertSame(0, CxpDocumento::where('numero', 'SI-X')->count());
+    }
+
     public function test_compra_al_contado_requiere_cuenta_de_pago(): void
     {
         $this->actuar()->post(route('admin.cxp.facturas.store'), [
