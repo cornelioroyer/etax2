@@ -85,6 +85,13 @@ class CxpPagoController extends Controller
 
         $proveedorId = $request->integer('proveedor_id') ?: null;
 
+        // Paso 1: sin proveedor → lista de proveedores con su saldo pendiente y
+        // crédito a favor, filtrable, para escoger a quién pagar (enlaces directos,
+        // sin auto-submit). Paso 2 (abajo): ya con proveedor, el formulario de pago.
+        if (! $proveedorId) {
+            return $this->listaProveedores($companiaId);
+        }
+
         $facturas = $proveedorId
             ? CxpDocumento::where('compania_id', $companiaId)
                 ->whereIn('tipo_documento', CxpDocumento::tiposPagables())
@@ -113,12 +120,11 @@ class CxpPagoController extends Controller
             ->orderBy('codigo')
             ->get(['id', 'codigo', 'nombre']);
 
+        $proveedor = Contacto::where('compania_id', $companiaId)->find($proveedorId);
+        abort_unless($proveedor, 404);
+
         return view('admin.cxp.pagos.create', [
-            'proveedores' => Contacto::where('compania_id', $companiaId)
-                ->where('activo', true)
-                ->whereHas('tipos', fn ($q) => $q->where('codigo', 'PROVEEDOR'))
-                ->orderBy('nombre')
-                ->get(['id', 'codigo', 'nombre']),
+            'proveedor' => $proveedor,
             'proveedorId' => $proveedorId,
             'facturas' => $facturas,
             'creditos' => $creditos,
@@ -130,6 +136,52 @@ class CxpPagoController extends Controller
             'cuentaRetencionIsrId' => CuentaDefault::idPara($companiaId, 'RETENCION_ISR_CXP'),
             'cuentaDescuentoId' => CuentaDefault::idPara($companiaId, 'DESCUENTO_PRONTO_PAGO'),
         ]);
+    }
+
+    /**
+     * Paso 1 del pago: lista de proveedores con su saldo pendiente (suma de
+     * saldos de facturas/ND/reembolsos por pagar) y su crédito a favor (anticipos
+     * + notas de crédito disponibles), filtrable en cliente. Cada fila enlaza al
+     * formulario de pago del proveedor (?proveedor_id=…), sin auto-submit.
+     */
+    private function listaProveedores(int $companiaId): View
+    {
+        $saldos = CxpDocumento::where('compania_id', $companiaId)
+            ->whereIn('tipo_documento', CxpDocumento::tiposPagables())
+            ->whereIn('estado', [CxpDocumento::ESTADO_PENDIENTE, CxpDocumento::ESTADO_PARCIAL])
+            ->where('saldo', '>', 0)
+            ->groupBy('proveedor_id')
+            ->selectRaw('proveedor_id, count(*) as n_facturas, sum(saldo) as saldo_total')
+            ->get()
+            ->keyBy('proveedor_id');
+
+        $creditos = CxpDocumento::where('compania_id', $companiaId)
+            ->whereIn('tipo_documento', CxpDocumento::tiposCredito())
+            ->whereNotIn('estado', [CxpDocumento::ESTADO_ANULADO, CxpDocumento::ESTADO_BORRADOR])
+            ->where('saldo', '>', 0)
+            ->groupBy('proveedor_id')
+            ->selectRaw('proveedor_id, sum(saldo) as credito_total')
+            ->get()
+            ->keyBy('proveedor_id');
+
+        $proveedores = Contacto::where('compania_id', $companiaId)
+            ->where('activo', true)
+            ->whereHas('tipos', fn ($q) => $q->where('codigo', 'PROVEEDOR'))
+            ->orderBy('nombre')
+            ->get(['id', 'codigo', 'nombre', 'identificacion'])
+            ->map(fn ($p) => [
+                'id' => $p->id,
+                'codigo' => (string) ($p->codigo ?? ''),
+                'nombre' => (string) ($p->nombre ?? ''),
+                'ruc' => (string) ($p->identificacion ?? ''),
+                'n_facturas' => (int) ($saldos[$p->id]->n_facturas ?? 0),
+                'saldo' => round((float) ($saldos[$p->id]->saldo_total ?? 0), 2),
+                'credito' => round((float) ($creditos[$p->id]->credito_total ?? 0), 2),
+                'url' => route('admin.cxp.pagos.create', ['proveedor_id' => $p->id]),
+            ])
+            ->values();
+
+        return view('admin.cxp.pagos.seleccionar', ['proveedores' => $proveedores]);
     }
 
     public function store(Request $request): RedirectResponse

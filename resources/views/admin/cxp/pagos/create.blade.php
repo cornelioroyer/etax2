@@ -14,17 +14,20 @@
                 </div>
             @endif
 
-            {{-- Paso 1: elegir proveedor (recarga con sus facturas pendientes) --}}
-            <form method="GET" action="{{ route('admin.cxp.pagos.create') }}" class="bg-white p-6 shadow-sm sm:rounded-lg">
-                <div class="flex flex-wrap items-end gap-3">
-                    <div class="min-w-64 flex-1">
-                        <x-buscador-contacto name="proveedor_id" label="Proveedor *" submit-on-select
-                            placeholder="— Selecciona el proveedor —"
-                            :opciones="$proveedores" :selected="$proveedorId" />
-                    </div>
-                    <p class="pb-2 text-xs text-gray-500">Al elegir el proveedor se cargan sus facturas con saldo y sus créditos a favor.</p>
+            {{-- Paso 1 ya resuelto: proveedor elegido en la lista. Mostrar quién es y permitir cambiarlo. --}}
+            <div class="flex flex-wrap items-center justify-between gap-3 bg-white p-6 shadow-sm sm:rounded-lg">
+                <div>
+                    <p class="text-xs uppercase tracking-wide text-gray-400">Proveedor</p>
+                    <p class="text-lg font-semibold text-gray-800">{{ $proveedor->nombre }}</p>
+                    <p class="text-xs text-gray-500">
+                        {{ $proveedor->codigo }}@if ($proveedor->identificacion) · RUC {{ $proveedor->identificacion }}@endif
+                    </p>
                 </div>
-            </form>
+                <a href="{{ route('admin.cxp.pagos.create') }}"
+                   class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                    &larr; Cambiar proveedor
+                </a>
+            </div>
 
             @if ($proveedorId)
                 @if ($facturas->isEmpty())
