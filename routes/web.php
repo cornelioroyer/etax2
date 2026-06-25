@@ -290,6 +290,8 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('cxp/facturas/{documento}/anular', [CxpFacturaController::class, 'anular'])->whereNumber('documento')->name('cxp.facturas.anular');
         Route::post('cxp/facturas/{documento}/corregir', [CxpFacturaController::class, 'corregir'])->whereNumber('documento')->name('cxp.facturas.corregir');
         Route::post('cxp/facturas/bulk', [CxpFacturaController::class, 'bulk'])->name('cxp.facturas.bulk');
+        Route::get('cxp/pagos/importar/plantilla', [CxpPagoController::class, 'importarPlantilla'])->name('cxp.pagos.importar.plantilla');
+        Route::post('cxp/pagos/importar', [CxpPagoController::class, 'importar'])->name('cxp.pagos.importar');
         Route::get('cxp/pagos/nuevo', [CxpPagoController::class, 'create'])->name('cxp.pagos.create');
         Route::post('cxp/pagos', [CxpPagoController::class, 'store'])->name('cxp.pagos.store');
         Route::post('cxp/pagos/{documento}/anular', [CxpPagoController::class, 'anular'])->whereNumber('documento')->name('cxp.pagos.anular');

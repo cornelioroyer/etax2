@@ -2,9 +2,12 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Exports\CxpPagosPlantillaExport;
 use App\Http\Controllers\Concerns\ConCompaniaActiva;
+use App\Http\Controllers\Concerns\EmparejaContactos;
 use App\Http\Controllers\Concerns\ExportaReporte;
 use App\Http\Controllers\Controller;
+use App\Imports\CxpPagosGenericoImport;
 use App\Models\Asiento;
 use App\Models\BcoCuenta;
 use App\Models\BcoMovimiento;
@@ -21,11 +24,13 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\Response;
 
 class CxpPagoController extends Controller
 {
     use ConCompaniaActiva;
+    use EmparejaContactos;
     use ExportaReporte;
 
     public function index(Request $request): View|Response
@@ -528,6 +533,354 @@ class CxpPagoController extends Controller
         // Sin efectivo: la liquidación se cubrió por completo con créditos a favor.
         return redirect()->route('admin.cxp.facturas.index')
             ->with('status', 'Se liquidaron B/. '.number_format($totalLiquidado, 2).' aplicando créditos a favor del proveedor'.$detalle.'.');
+    }
+
+    /**
+     * Descarga la plantilla .xlsx para importar pagos a proveedores, con un par de
+     * cuentas de banco/caja reales de la compañía como ejemplo.
+     */
+    public function importarPlantilla(Request $request): Response
+    {
+        abort_unless($request->user()->can('cxp.gestionar'), 403);
+
+        $companiaId = $this->companiaActivaId($request);
+
+        // Cuentas de banco/caja reales (preferimos las registradas en Bancos; si no,
+        // cuentas de activo disponible que permitan movimiento) para la muestra.
+        $cuentasBanco = BcoCuenta::where('compania_id', $companiaId)
+            ->where('activa', true)
+            ->with('cuentaContable:id,codigo,nombre')
+            ->limit(2)
+            ->get()
+            ->map(fn ($b) => $b->cuentaContable ? [$b->cuentaContable->codigo, $b->cuentaContable->nombre] : null)
+            ->filter()
+            ->values()
+            ->all();
+
+        if (count($cuentasBanco) < 2) {
+            $cuentasBanco = CuentaContable::where('compania_id', $companiaId)
+                ->where('permite_movimiento', true)
+                ->where('activa', true)
+                ->where('codigo', 'like', '10%') // activo disponible como muestra
+                ->orderBy('codigo')
+                ->limit(2)
+                ->get(['codigo', 'nombre'])
+                ->map(fn ($c) => [$c->codigo, $c->nombre])
+                ->all();
+        }
+
+        return Excel::download(new CxpPagosPlantillaExport($cuentasBanco), 'plantilla_pagos.xlsx');
+    }
+
+    /**
+     * Importa pagos a proveedores desde un Excel/CSV. A diferencia del importador de
+     * compras, un pago refiere a una factura existente: NO crea proveedores ni
+     * facturas; empareja el proveedor (RUC→código→nombre) y la factura por número, y
+     * aplica el pago a su saldo. v1 = pago en efectivo (Dr CxP / Cr banco-caja), sin
+     * retención/descuento/créditos; el contador puede usar "Corregir pago" después
+     * para añadir esos componentes. Síncrono y con una transacción por pago.
+     */
+    public function importar(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()->can('cxp.gestionar'), 403);
+
+        $companiaId = $this->companiaActivaId($request);
+        $usuario = $request->user();
+
+        $request->validate([
+            'archivo' => ['required', 'file', 'mimes:xlsx,xls,csv,txt', 'max:5120'],
+        ]);
+
+        $cuentaCxpId = CuentaDefault::idPara($companiaId, 'CXP');
+
+        if (! $cuentaCxpId) {
+            return back()->withErrors(['archivo_pagos' => 'La compañía no tiene configurada la cuenta default CXP (Cuentas por Pagar).']);
+        }
+
+        $import = new CxpPagosGenericoImport;
+        Excel::import($import, $request->file('archivo'));
+
+        if ($import->filas === []) {
+            return back()->withErrors(['archivo_pagos' => 'El archivo no tiene filas con datos. La primera fila deben ser los encabezados (proveedor, numero, fecha, monto…).']);
+        }
+
+        $cuentaBancoDefault = CuentaDefault::idPara($companiaId, 'BANCO_DEFAULT')
+            ?? CuentaDefault::idPara($companiaId, 'CAJA_DEFAULT');
+
+        $catalogo = CuentaContable::where('compania_id', $companiaId)
+            ->where('permite_movimiento', true)
+            ->get(['id', 'codigo'])
+            ->keyBy(fn ($c) => trim((string) $c->codigo));
+
+        // Índice de proveedores para emparejar con tolerancia (RUC/código/nombre).
+        $indiceProveedores = ['ruc' => [], 'codigo' => [], 'nombre' => []];
+        foreach (Contacto::where('compania_id', $companiaId)->get(['id', 'codigo', 'nombre', 'identificacion']) as $c) {
+            $this->indexarContacto($indiceProveedores, $c);
+        }
+
+        $errores = [];
+        $pagos = []; // clave proveedor|fecha|cuenta|referencia => cabecera + aplicaciones
+
+        foreach ($import->filas as $f) {
+            $fila = $f['fila'];
+
+            if ($f['proveedor'] === '' && $f['ruc'] === '') {
+                $errores[] = "Fila {$fila}: falta el proveedor (nombre o RUC).";
+
+                continue;
+            }
+            if ($f['numero'] === '') {
+                $errores[] = "Fila {$fila}: falta el número de la factura a pagar.";
+
+                continue;
+            }
+            if (! $f['fecha']) {
+                $errores[] = "Fila {$fila}: falta la fecha o tiene un formato no reconocido (usa dd/mm/aaaa).";
+
+                continue;
+            }
+            if ($f['monto'] <= 0) {
+                $errores[] = "Fila {$fila}: el monto debe ser mayor que cero.";
+
+                continue;
+            }
+
+            $proveedor = $this->emparejarProveedor($f, $indiceProveedores);
+
+            if (! $proveedor) {
+                $errores[] = "Fila {$fila}: no se encontró el proveedor '".($f['proveedor'] ?: $f['ruc'])."'. Regístralo primero.";
+
+                continue;
+            }
+
+            // Cuenta de pago: por código del Excel, o la default de banco/caja.
+            $cuentaPagoId = null;
+            if ($f['cuenta'] !== '') {
+                $cuentaPagoId = $catalogo[$f['cuenta']]->id ?? null;
+                if (! $cuentaPagoId) {
+                    $errores[] = "Fila {$fila}: la cuenta '{$f['cuenta']}' no existe o no permite movimiento; se usó la cuenta de banco/caja por defecto.";
+                }
+            }
+            $cuentaPagoId ??= $cuentaBancoDefault;
+
+            if (! $cuentaPagoId) {
+                $errores[] = "Fila {$fila}: no hay cuenta de pago (ni en el Excel ni la default BANCO_DEFAULT/CAJA_DEFAULT). Configúralas.";
+
+                continue;
+            }
+
+            $clave = $proveedor->id.'|'.$f['fecha'].'|'.$cuentaPagoId.'|'.$f['referencia'];
+            $pagos[$clave] ??= [
+                'proveedor'    => $proveedor,
+                'fecha'        => $f['fecha'],
+                'cuenta_pago'  => (int) $cuentaPagoId,
+                'referencia'   => $f['referencia'],
+                'aplicaciones' => [], // numero_factura => ['monto'=>, 'fila'=>]
+            ];
+            // Acumula por número de factura (varias filas de la misma factura suman).
+            if (isset($pagos[$clave]['aplicaciones'][$f['numero']])) {
+                $pagos[$clave]['aplicaciones'][$f['numero']]['monto'] = round($pagos[$clave]['aplicaciones'][$f['numero']]['monto'] + $f['monto'], 2);
+            } else {
+                $pagos[$clave]['aplicaciones'][$f['numero']] = ['monto' => round($f['monto'], 2), 'fila' => $fila];
+            }
+        }
+
+        $creados = 0;
+        $omitidos = 0;
+
+        foreach ($pagos as $pago) {
+            // Idempotencia: si hay referencia, no recreamos un pago vigente del mismo
+            // proveedor con esa misma referencia y fecha (evita doble carga del cheque).
+            if ($pago['referencia'] !== '') {
+                $yaExiste = CxpDocumento::where('compania_id', $companiaId)
+                    ->where('proveedor_id', $pago['proveedor']->id)
+                    ->where('tipo_documento', CxpDocumento::TIPO_PAGO)
+                    ->where('referencia', $pago['referencia'])
+                    ->whereDate('fecha', $pago['fecha'])
+                    ->where('estado', '!=', CxpDocumento::ESTADO_ANULADO)
+                    ->exists();
+
+                if ($yaExiste) {
+                    $omitidos++;
+                    $errores[] = "Pago ref. {$pago['referencia']} de {$pago['proveedor']->nombre}: ya existe; se omitió.";
+
+                    continue;
+                }
+            }
+
+            try {
+                $this->crearPagoImportado($companiaId, $pago, $cuentaCxpId, $usuario, $errores);
+                $creados++;
+            } catch (ValidationException $e) {
+                $msg = collect($e->errors())->flatten()->first() ?? 'error de validación';
+                $ref = $pago['referencia'] !== '' ? "ref. {$pago['referencia']}" : 'sin referencia';
+                $errores[] = "Pago {$ref} de {$pago['proveedor']->nombre}: {$msg}";
+            } catch (\Throwable $e) {
+                $ref = $pago['referencia'] !== '' ? "ref. {$pago['referencia']}" : 'sin referencia';
+                $errores[] = "Pago {$ref} de {$pago['proveedor']->nombre}: no se pudo registrar ({$e->getMessage()}).";
+            }
+        }
+
+        $resumen = "Importación de pagos: {$creados} pago(s) registrado(s)";
+        if ($omitidos > 0) {
+            $resumen .= ", {$omitidos} omitido(s) por estar ya registrados";
+        }
+        $resumen .= '.';
+
+        return redirect()->route('admin.cxp.pagos.index')
+            ->with('status', $resumen)
+            ->with('import_pagos_errores', array_slice($errores, 0, 50));
+    }
+
+    /**
+     * Empareja un proveedor existente por RUC → código → nombre NORMALIZADO contra
+     * el índice. No crea: un pago refiere a una factura que ya existe. null si no lo
+     * encuentra.
+     */
+    private function emparejarProveedor(array $f, array $indice): ?Contacto
+    {
+        $ruc = $f['ruc'] !== '' ? substr($f['ruc'], 0, 50) : null;
+
+        if ($ruc && isset($indice['ruc'][$ruc])) {
+            return $indice['ruc'][$ruc];
+        }
+        if ($f['proveedor'] !== '' && isset($indice['codigo'][$f['proveedor']])) {
+            return $indice['codigo'][$f['proveedor']];
+        }
+
+        $norm = $this->normalizarTexto($f['proveedor']);
+
+        return $norm !== '' ? ($indice['nombre'][$norm] ?? null) : null;
+    }
+
+    /**
+     * Registra un pago importado: empareja cada factura por número (con saldo) dentro
+     * del proveedor, crea el documento PG + aplicaciones + asiento (Dr CxP / Cr cuenta
+     * de pago) + el movimiento bancario, y reduce los saldos. Todo en una transacción.
+     * Las facturas que no se encuentran o no tienen saldo se reportan en $errores y se
+     * omiten; si ninguna aplica, no se crea el pago.
+     *
+     * @param  array<string, mixed>  $pago
+     * @param  array<int, string>    $errores  (por referencia, se agregan avisos)
+     */
+    private function crearPagoImportado(int $companiaId, array $pago, int $cuentaCxpId, $usuario, array &$errores): void
+    {
+        $proveedor = $pago['proveedor'];
+
+        // Empareja cada factura por número (dentro del proveedor) con saldo > 0.
+        $facturasPorNumero = CxpDocumento::where('compania_id', $companiaId)
+            ->where('proveedor_id', $proveedor->id)
+            ->whereIn('tipo_documento', CxpDocumento::tiposPagables())
+            ->whereIn('estado', [CxpDocumento::ESTADO_PENDIENTE, CxpDocumento::ESTADO_PARCIAL])
+            ->where('saldo', '>', 0)
+            ->orderBy('fecha')
+            ->get()
+            ->keyBy(fn ($d) => trim((string) $d->numero));
+
+        $aplicar = []; // [documento => monto]
+
+        foreach ($pago['aplicaciones'] as $numeroFactura => $apl) {
+            $factura = $facturasPorNumero->get(trim((string) $numeroFactura));
+
+            if (! $factura) {
+                $errores[] = "Pago de {$proveedor->nombre}: la factura '{$numeroFactura}' no existe, está anulada/pagada o no tiene saldo; se omitió.";
+
+                continue;
+            }
+
+            $monto = $apl['monto'];
+
+            if ($monto > round((float) $factura->saldo, 2) + 0.004) {
+                $errores[] = "Pago de {$proveedor->nombre}: el monto a {$factura->numero} (B/. ".number_format($monto, 2).') excede su saldo (B/. '.number_format((float) $factura->saldo, 2).'); se ajustó al saldo.';
+                $monto = round((float) $factura->saldo, 2);
+            }
+
+            if ($monto <= 0) {
+                continue;
+            }
+
+            $aplicar[] = ['factura' => $factura, 'monto' => $monto];
+        }
+
+        if ($aplicar === []) {
+            return; // nada que aplicar para este pago
+        }
+
+        $total = round(array_sum(array_column($aplicar, 'monto')), 2);
+
+        DB::transaction(function () use ($companiaId, $pago, $aplicar, $total, $cuentaCxpId, $usuario) {
+            $proveedor = $pago['proveedor'];
+
+            $documento = CxpDocumento::create([
+                'compania_id'    => $companiaId,
+                'proveedor_id'   => $proveedor->id,
+                'tipo_documento' => CxpDocumento::TIPO_PAGO,
+                'numero'         => CxpDocumento::siguienteNumeroPago($companiaId),
+                'referencia'     => $pago['referencia'] !== '' ? $pago['referencia'] : null,
+                'fecha'          => $pago['fecha'],
+                'subtotal'       => $total,
+                'descuento'      => 0,
+                'impuesto'       => 0,
+                'retencion'      => 0,
+                'retencion_itbms' => 0,
+                'retencion_isr'  => 0,
+                'total'          => $total,
+                'saldo'          => 0,
+                'estado'         => CxpDocumento::ESTADO_PAGADO,
+                'cuenta_pago_id' => $pago['cuenta_pago'],
+                'created_by'     => $usuario->email,
+            ]);
+
+            // Bloquea las facturas y reduce saldos; crea las aplicaciones.
+            foreach ($aplicar as $a) {
+                $factura = CxpDocumento::lockForUpdate()->find($a['factura']->id);
+
+                CxpAplicacion::create([
+                    'compania_id'         => $companiaId,
+                    'proveedor_id'        => $proveedor->id,
+                    'documento_origen_id' => $documento->id,
+                    'documento_destino_id' => $factura->id,
+                    'fecha'               => $pago['fecha'],
+                    'monto_aplicado'      => $a['monto'],
+                    'created_by'          => $usuario->email,
+                ]);
+
+                $factura->saldo = round((float) $factura->saldo - $a['monto'], 2);
+                $factura->estado = $factura->estadoSegunSaldo();
+                $factura->updated_by = $usuario->email;
+                $factura->save();
+            }
+
+            // Dr CXP (total); Cr cuenta de pago (total).
+            $asiento = app(AsientoAutomatico::class)->postear(
+                $companiaId,
+                $pago['fecha'],
+                "Pago {$documento->numero} — ".$proveedor->nombre,
+                $documento->referencia ?? $documento->numero,
+                [[
+                    'cuenta_id'   => $cuentaCxpId,
+                    'contacto_id' => $proveedor->id,
+                    'descripcion' => "Pago {$documento->numero}",
+                    'debito'      => $total,
+                    'credito'     => 0,
+                ], [
+                    'cuenta_id'   => $pago['cuenta_pago'],
+                    'descripcion' => "Pago {$documento->numero}",
+                    'debito'      => 0,
+                    'credito'     => $total,
+                ]],
+                'CXP',
+                'cxp_documentos',
+                $documento->id,
+                $usuario,
+            );
+
+            $documento->update(['asiento_id' => $asiento->id]);
+
+            // Integración con Bancos: si la cuenta de pago es una cuenta bancaria
+            // registrada, refleja el egreso para la conciliación.
+            $this->registrarEgresoBancario($companiaId, $documento, $pago['cuenta_pago'], $total, $asiento, $usuario);
+        });
     }
 
     /**

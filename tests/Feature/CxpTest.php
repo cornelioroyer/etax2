@@ -946,6 +946,81 @@ class CxpTest extends TestCase
         $this->assertSame('500.00', (string) $anticipo->fresh()->saldo);
     }
 
+    public function test_importar_pagos_aplica_a_facturas_y_postea(): void
+    {
+        // Dos facturas del mismo proveedor: el Excel paga ambas con la misma
+        // referencia (cheque) → un solo pago con dos aplicaciones.
+        $f1 = $this->crearFactura(100, 7, 'A-2001'); // total 107
+        $f2 = $this->crearFactura(50, 7, 'A-2002');  // total 53.50
+
+        $csv = implode("\n", [
+            'proveedor,ruc,numero,fecha,monto,cuenta,referencia',
+            'PROVEEDOR PRUEBA,,A-2001,25/06/2026,107,10102,CHQ-001',
+            'PROVEEDOR PRUEBA,,A-2002,25/06/2026,53.50,10102,CHQ-001',
+        ]);
+
+        $this->actuar()->post(route('admin.cxp.pagos.importar'), [
+            'archivo' => UploadedFile::fake()->createWithContent('pagos.csv', $csv),
+        ])->assertRedirect(route('admin.cxp.pagos.index'))->assertSessionHas('status');
+
+        // Un solo pago por 160.50, estado PAGADO.
+        $pago = CxpDocumento::where('tipo_documento', CxpDocumento::TIPO_PAGO)->latest('id')->first();
+        $this->assertNotNull($pago);
+        $this->assertSame('160.50', (string) $pago->total);
+        $this->assertSame('PAGADO', $pago->estado);
+        $this->assertSame('CHQ-001', $pago->referencia);
+
+        // Ambas facturas quedaron en cero.
+        $this->assertSame('0.00', (string) $f1->fresh()->saldo);
+        $this->assertSame('PAGADO', $f1->fresh()->estado);
+        $this->assertSame('0.00', (string) $f2->fresh()->saldo);
+
+        // Asiento cuadrado: Dr CXP 160.50 / Cr Banco 160.50.
+        $asiento = $pago->asiento;
+        $this->assertNotNull($asiento);
+        $this->assertSame('POSTEADO', $asiento->estado);
+        $lineas = $asiento->detalle;
+        $this->assertCount(2, $lineas);
+        $this->assertSame($this->cxp->id, $lineas[0]->cuenta_id);
+        $this->assertSame('160.50', (string) $lineas[0]->debito);
+        $this->assertSame($this->banco->id, $lineas[1]->cuenta_id);
+        $this->assertSame('160.50', (string) $lineas[1]->credito);
+    }
+
+    public function test_importar_pagos_es_idempotente_por_referencia(): void
+    {
+        $this->crearFactura(100, 7, 'A-3001'); // total 107
+
+        $csv = "proveedor,ruc,numero,fecha,monto,cuenta,referencia\n"
+             .'PROVEEDOR PRUEBA,,A-3001,25/06/2026,50,10102,CHQ-DUP';
+
+        $this->actuar()->post(route('admin.cxp.pagos.importar'), [
+            'archivo' => UploadedFile::fake()->createWithContent('p1.csv', $csv),
+        ]);
+        $this->actuar()->post(route('admin.cxp.pagos.importar'), [
+            'archivo' => UploadedFile::fake()->createWithContent('p2.csv', $csv),
+        ]);
+
+        // El segundo import omite el pago ya registrado (misma referencia+fecha).
+        $this->assertSame(1, CxpDocumento::where('tipo_documento', CxpDocumento::TIPO_PAGO)
+            ->where('referencia', 'CHQ-DUP')->count());
+    }
+
+    public function test_importar_pagos_no_crea_proveedor_inexistente(): void
+    {
+        $csv = "proveedor,ruc,numero,fecha,monto,cuenta,referencia\n"
+             .'FANTASMA SA,9-000-0000,X-1,25/06/2026,50,10102,R1';
+
+        $this->actuar()->post(route('admin.cxp.pagos.importar'), [
+            'archivo' => UploadedFile::fake()->createWithContent('p.csv', $csv),
+        ])->assertRedirect(route('admin.cxp.pagos.index'));
+
+        // No se creó ni el proveedor ni el pago; el error queda como aviso.
+        $this->assertNull(Contacto::where('compania_id', $this->compania->id)
+            ->where('identificacion', '9-000-0000')->first());
+        $this->assertSame(0, CxpDocumento::where('tipo_documento', CxpDocumento::TIPO_PAGO)->count());
+    }
+
     private function crearCuentaBancaria(): \App\Models\BcoCuenta
     {
         $banco = \App\Models\BcoBanco::create(['codigo' => 'BG', 'nombre' => 'Banco General', 'activo' => true]);
