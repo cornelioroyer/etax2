@@ -238,7 +238,10 @@
 
     <script>
         // Catálogo de cuentas para el combobox de cada línea.
-        const CUENTAS_CXP = @json($cuentas->map(fn ($c) => ['id' => (string) $c->id, 'label' => $c->codigo.' — '.$c->nombre])->values());
+        @php
+            $cuentasCxp = $cuentas->map(fn ($c) => ['id' => (string) $c->id, 'label' => $c->codigo.' — '.$c->nombre])->values();
+        @endphp
+        const CUENTAS_CXP = @json($cuentasCxp);
 
         // Combobox de un solo campo: escribe para filtrar, clic para elegir.
         function comboCuenta(linea) {
@@ -267,15 +270,18 @@
 
     <script>
         // Catálogo de artículos para el combobox de cada línea de compra.
-        const ARTICULOS_CXP = @json($articulos->map(fn ($a) => [
-            'id' => (string) $a->id,
-            'codigo' => $a->codigo,
-            'nombre' => $a->nombre,
-            'tipo' => $a->tipo,
-            'costo' => (float) $a->costo,
-            'cuenta_inventario_id' => $a->cuenta_inventario_id ? (string) $a->cuenta_inventario_id : '',
-            'cuenta_gasto_id' => $a->cuenta_gasto_id ? (string) $a->cuenta_gasto_id : '',
-        ])->values());
+        @php
+            $articulosCxp = $articulos->map(fn ($a) => [
+                'id' => (string) $a->id,
+                'codigo' => $a->codigo,
+                'nombre' => $a->nombre,
+                'tipo' => $a->tipo,
+                'costo' => (float) $a->costo,
+                'cuenta_inventario_id' => $a->cuenta_inventario_id ? (string) $a->cuenta_inventario_id : '',
+                'cuenta_gasto_id' => $a->cuenta_gasto_id ? (string) $a->cuenta_gasto_id : '',
+            ])->values();
+        @endphp
+        const ARTICULOS_CXP = @json($articulosCxp);
         const CUENTA_INVENTARIO_DEFAULT = '{{ (int) ($cuentaInventarioId ?? 0) ?: '' }}';
 
         function facturaCxp(lineasIniciales, cuentaGastoId, provCuentas, formaPagoInicial, cuentaPagoInicial, tipoInicial) {
