@@ -30,6 +30,8 @@ use App\Http\Controllers\Admin\ReporteResultadosController;
 use App\Http\Controllers\Admin\FelConfiguracionController;
 use App\Http\Controllers\Admin\CierreAnualController;
 use App\Http\Controllers\Admin\CuentaDefaultController;
+use App\Http\Controllers\Admin\PlantillaCuentaController;
+use App\Http\Controllers\Admin\PlantillaCuentaDetalleController;
 use App\Http\Controllers\Admin\DiarioController;
 use App\Http\Controllers\Admin\PeriodoContableController;
 use App\Http\Controllers\Admin\ReporteFlujoCajaController;
@@ -146,6 +148,24 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     // herramientas internas se auto-restringen por permiso y compañía activa.
     Route::get('asistente', [ChatController::class, 'index'])->name('asistente');
     Route::post('asistente/mensaje', [ChatController::class, 'enviar'])->name('asistente.enviar');
+
+    // Plantillas de plan de cuentas (maestro GLOBAL, se copia a compañías nuevas).
+    // Solo super_admin. La cabecera y su detalle (cuentas) se administran aquí.
+    Route::prefix('plantillas-cuentas')->name('plantillas-cuentas.')->group(function () {
+        Route::get('/', [PlantillaCuentaController::class, 'index'])->name('index');
+        Route::get('crear', [PlantillaCuentaController::class, 'create'])->name('create');
+        Route::post('/', [PlantillaCuentaController::class, 'store'])->name('store');
+        Route::get('{plantilla}', [PlantillaCuentaController::class, 'show'])->whereNumber('plantilla')->name('show');
+        Route::get('{plantilla}/editar', [PlantillaCuentaController::class, 'edit'])->whereNumber('plantilla')->name('edit');
+        Route::put('{plantilla}', [PlantillaCuentaController::class, 'update'])->whereNumber('plantilla')->name('update');
+        Route::delete('{plantilla}', [PlantillaCuentaController::class, 'destroy'])->whereNumber('plantilla')->name('destroy');
+
+        // Cuentas de la plantilla.
+        Route::post('{plantilla}/cuentas', [PlantillaCuentaDetalleController::class, 'store'])->whereNumber('plantilla')->name('detalle.store');
+        Route::get('{plantilla}/cuentas/{detalle}/editar', [PlantillaCuentaDetalleController::class, 'edit'])->whereNumber(['plantilla', 'detalle'])->name('detalle.edit');
+        Route::put('{plantilla}/cuentas/{detalle}', [PlantillaCuentaDetalleController::class, 'update'])->whereNumber(['plantilla', 'detalle'])->name('detalle.update');
+        Route::delete('{plantilla}/cuentas/{detalle}', [PlantillaCuentaDetalleController::class, 'destroy'])->whereNumber(['plantilla', 'detalle'])->name('detalle.destroy');
+    });
 });
 
 // Usuarios por compañía: super-admin o admin de la compañía (permiso usuarios_compania.gestionar).
