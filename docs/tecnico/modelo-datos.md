@@ -188,7 +188,7 @@ Documentos por cobrar/pagar (modelos `CxcDocumento(+Detalle)`, `CxcAplicacion`,
 
 Migración `2026_06_21_000001_create_inv_tablas`: `item_productos_servicios`,
 `inv_almacenes`, `inv_existencias`. El resto del módulo está en el *(esquema
-maestro)*: modelos `InvKardex`, `InvLote`, `InvSerie`, `InvMovimiento(+Detalle)`,
+maestro)*: modelos `InvLote`, `InvSerie`, `InvMovimiento(+Detalle)`,
 `InvAjuste`, `InvTransferencia`, `InvUbicacion`, más catálogo de ítems
 (`ItemProducto`, `ItemCategoria`, `ItemPrecio`, `ItemUnidadMedida`). La compañía
 define `metodo_costeo` (default `PROMEDIO`) y `permitir_stock_negativo`.
