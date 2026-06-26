@@ -274,6 +274,54 @@ class AsientoTest extends TestCase
         $this->assertSame('ANULADO', $asiento->fresh()->estado);
     }
 
+    public function test_no_se_puede_anular_asiento_en_periodo_cerrado(): void
+    {
+        $asiento = $this->crearBorrador();
+        $this->actingAs($this->admin)
+            ->withSession(['compania_activa_id' => $this->compania->id])
+            ->post(route('admin.asientos.postear', $asiento))
+            ->assertSessionHasNoErrors();
+
+        // Cerrar el período del asiento (junio 2026), forzando pese a borradores.
+        $this->actingAs($this->admin)
+            ->withSession(['compania_activa_id' => $this->compania->id])
+            ->post(route('admin.periodos.cerrar'), ['anio' => 2026, 'mes' => 6, 'forzar' => 1])
+            ->assertSessionHasNoErrors();
+
+        // Anular ahora alteraría un período cerrado: se bloquea (422). El asiento
+        // sigue POSTEADO; para anularlo habría que reabrir el período primero.
+        $this->actingAs($this->admin)
+            ->withSession(['compania_activa_id' => $this->compania->id])
+            ->post(route('admin.asientos.anular', $asiento))
+            ->assertStatus(422);
+
+        $this->assertSame('POSTEADO', $asiento->fresh()->estado);
+    }
+
+    public function test_no_se_puede_anular_asiento_de_modulo_desde_contabilidad(): void
+    {
+        // Asiento POSTEADO que refleja un documento de CxC (origen de módulo):
+        // anularlo desde Contabilidad descuadraría el submayor contra el mayor.
+        $asiento = Asiento::create([
+            'compania_id' => $this->compania->id,
+            'numero' => Asiento::siguienteNumero($this->compania->id),
+            'fecha' => '2026-06-12',
+            'estado' => Asiento::ESTADO_POSTEADO,
+            'origen_modulo' => 'CXC',
+            'origen_tabla' => 'cxc_documentos',
+            'origen_id' => null,
+            'total_debito' => 100,
+            'total_credito' => 100,
+        ]);
+
+        $this->actingAs($this->admin)
+            ->withSession(['compania_activa_id' => $this->compania->id])
+            ->post(route('admin.asientos.anular', $asiento))
+            ->assertStatus(422);
+
+        $this->assertSame('POSTEADO', $asiento->fresh()->estado);
+    }
+
     public function test_eliminar_borrador(): void
     {
         $asiento = $this->crearBorrador();

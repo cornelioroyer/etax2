@@ -571,6 +571,20 @@ class AsientoController extends Controller
             return back()->withErrors(['asiento' => 'Solo se pueden anular asientos posteados; los borradores se eliminan.']);
         }
 
+        // Asiento de módulo (CXC, CXP, VEN…): se anula desde su documento de
+        // origen, no aquí (anularlo en el mayor dejaría el submayor descuadrado
+        // contra la contabilidad). Si conocemos la fuente, redirigimos a ella;
+        // si no, asegurarManual() lo bloquea con un mensaje explicativo.
+        if (! $asiento->esManual()) {
+            if ($url = $asiento->urlOrigen()) {
+                return redirect($url)->with('status',
+                    "El asiento {$asiento->numero} proviene de {$asiento->nombreModuloOrigen()}; anúlalo en su documento de origen.");
+            }
+        }
+
+        $this->asegurarManual($asiento, 'anular');
+        $this->asegurarPeriodoAbierto($asiento, 'anular');
+
         // El AsientoObserver retira los movimientos bancarios reflejados; si
         // alguno está conciliado lanza ValidationException y la transacción
         // revierte la anulación.
@@ -781,22 +795,42 @@ class AsientoController extends Controller
             "El asiento {$asiento->numero} está anulado; no se puede editar."
         );
 
-        if (! $asiento->esManual()) {
-            $modulo = $asiento->nombreModuloOrigen();
+        $this->asegurarManual($asiento, 're-emitir');
+        $this->asegurarPeriodoAbierto($asiento, 're-emitir');
+    }
 
-            abort(422, $modulo
-                ? "El asiento {$asiento->numero} refleja un documento de {$modulo}. "
-                  .'Corrígelo en ese documento, dentro de su módulo, no desde Contabilidad.'
-                : "El asiento {$asiento->numero} no es un asiento manual; "
-                  .'solo los asientos manuales se pueden re-emitir.');
+    /**
+     * Bloquea los asientos de módulo (CXC, CXP, VEN…): se corrigen y anulan
+     * desde su documento de origen, no desde Contabilidad. Hacerlo aquí
+     * descuadraría el libro auxiliar contra el mayor.
+     */
+    private function asegurarManual(Asiento $asiento, string $accion): void
+    {
+        if ($asiento->esManual()) {
+            return;
         }
 
+        $modulo = $asiento->nombreModuloOrigen();
+
+        abort(422, $modulo
+            ? "El asiento {$asiento->numero} refleja un documento de {$modulo}. "
+              .'Corrígelo o anúlalo en ese documento, dentro de su módulo, no desde Contabilidad.'
+            : "El asiento {$asiento->numero} no es un asiento manual; "
+              ."solo los asientos manuales se pueden {$accion} desde Contabilidad.");
+    }
+
+    /**
+     * Bloquea cualquier acción que altere un asiento cuyo período esté cerrado
+     * (re-emitir, anular). Modificar un período cerrado exige reabrirlo primero.
+     */
+    private function asegurarPeriodoAbierto(Asiento $asiento, string $accion): void
+    {
         $periodo = $asiento->periodo;
 
         abort_if(
             $periodo && ! $periodo->estaAbierto(),
             422,
-            "El período {$periodo->anio}-".str_pad((string) $periodo->mes, 2, '0', STR_PAD_LEFT)." está {$periodo->estado}; no se puede re-emitir el asiento."
+            "El período {$periodo->anio}-".str_pad((string) $periodo->mes, 2, '0', STR_PAD_LEFT)." está {$periodo->estado}; no se puede {$accion} el asiento."
         );
     }
 

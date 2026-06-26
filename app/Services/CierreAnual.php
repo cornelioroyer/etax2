@@ -219,6 +219,16 @@ class CierreAnual
             ]);
         }
 
+        // Reversar un cierre asentado en un período de ajuste cerrado alteraría
+        // un período cerrado: exige reabrirlo primero (igual que cualquier otra
+        // anulación sobre período cerrado en Contabilidad).
+        $periodo = $asiento->periodo;
+        if ($periodo && ! $periodo->estaAbierto()) {
+            throw ValidationException::withMessages([
+                'anio' => "El período de ajuste de {$anio} está cerrado; reábrelo antes de reversar el cierre.",
+            ]);
+        }
+
         $asiento->update([
             'estado'     => Asiento::ESTADO_ANULADO,
             'updated_by' => $usuario->email,
