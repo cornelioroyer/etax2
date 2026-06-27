@@ -220,15 +220,10 @@
                         @csrf
                         <input type="hidden" name="tipo_fel" :value="tipo">
                         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                            <div>
-                                <x-input-label value="Cliente *" />
-                                <select name="cliente_id" x-model="clienteId" required
-                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                    <option value="">— Cliente —</option>
-                                    @foreach ($clientes as $cliente)
-                                        <option value="{{ $cliente->id }}">{{ $cliente->codigo }} — {{ $cliente->nombre }}</option>
-                                    @endforeach
-                                </select>
+                            {{-- Cliente buscable; sincroniza clienteId (filtra las facturas a aplicar). --}}
+                            <div @contacto-seleccionado="clienteId = $event.detail?.id ?? ''">
+                                <x-buscador-contacto name="cliente_id" label="Cliente *" required
+                                    :opciones="$clientes" :selected="old('cliente_id')" />
                                 <x-input-error :messages="$errors->get('cliente_id')" class="mt-1" />
                             </div>
                             <div>
@@ -294,15 +289,10 @@
                         @csrf
                         <input type="hidden" name="tipo_fel" :value="tipo">
                         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                            <div>
-                                <x-input-label value="Cliente *" />
-                                <select name="cliente_id" x-model="clienteId" required
-                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                    <option value="">— Cliente —</option>
-                                    @foreach ($clientes as $cliente)
-                                        <option value="{{ $cliente->id }}" @selected(old('cliente_id') == $cliente->id)>{{ $cliente->codigo }} — {{ $cliente->nombre }}</option>
-                                    @endforeach
-                                </select>
+                            {{-- Cliente buscable; sincroniza clienteId (filtra las facturas a aplicar). --}}
+                            <div @contacto-seleccionado="clienteId = $event.detail?.id ?? ''">
+                                <x-buscador-contacto name="cliente_id" label="Cliente *" required
+                                    :opciones="$clientes" :selected="old('cliente_id')" />
                                 <x-input-error :messages="$errors->get('cliente_id')" class="mt-1" />
                             </div>
                             <div>
@@ -369,14 +359,8 @@
                         <input type="hidden" name="tipo_fel" value="09">
                         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div>
-                                <x-input-label value="Cliente *" />
-                                <select name="cliente_id" required
-                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                    <option value="">— Cliente —</option>
-                                    @foreach ($clientes as $cliente)
-                                        <option value="{{ $cliente->id }}" @selected(old('cliente_id') == $cliente->id)>{{ $cliente->codigo }} — {{ $cliente->nombre }}</option>
-                                    @endforeach
-                                </select>
+                                <x-buscador-contacto name="cliente_id" label="Cliente *" required
+                                    :opciones="$clientes" :selected="old('cliente_id')" />
                                 <x-input-error :messages="$errors->get('cliente_id')" class="mt-1" />
                             </div>
                             <div>
