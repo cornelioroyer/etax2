@@ -23,6 +23,7 @@ use App\Http\Controllers\Admin\CxpNotaController;
 use App\Http\Controllers\Admin\CxpPagoController;
 use App\Http\Controllers\Admin\CxpRecurrenteController;
 use App\Http\Controllers\Admin\FacturaFelController;
+use App\Http\Controllers\Admin\RespaldoController;
 use App\Http\Controllers\Admin\ReporteComprobacionController;
 use App\Http\Controllers\Admin\ReporteBalanceController;
 use App\Http\Controllers\Admin\ReporteComparativoController;
@@ -176,6 +177,17 @@ Route::middleware(['auth', 'permission:usuarios_compania.gestionar'])->prefix('a
         ->parameters(['usuarios-compania' => 'user']);
     Route::get('usuarios-compania/{user}/permisos', [UsuarioCompaniaController::class, 'editarPermisos'])->name('usuarios-compania.permisos.edit');
     Route::put('usuarios-compania/{user}/permisos', [UsuarioCompaniaController::class, 'actualizarPermisos'])->name('usuarios-compania.permisos.update');
+});
+
+// Respaldos de la compañía: solo admin de la compañía (permiso respaldos.gestionar).
+// Cada respaldo es un ZIP lógico con los datos de la compañía activa; la descarga
+// re-verifica que el respaldo pertenezca a esa compañía (aislamiento, anti-IDOR).
+Route::middleware(['auth', 'permission:respaldos.gestionar'])->prefix('admin')->name('admin.')->group(function () {
+    Route::get('respaldos', [RespaldoController::class, 'index'])->name('respaldos.index');
+    Route::post('respaldos', [RespaldoController::class, 'store'])->name('respaldos.store');
+    Route::get('respaldos/{respaldo}/estado', [RespaldoController::class, 'estado'])->whereNumber('respaldo')->name('respaldos.estado');
+    Route::get('respaldos/{respaldo}/descargar', [RespaldoController::class, 'download'])->whereNumber('respaldo')->name('respaldos.download');
+    Route::delete('respaldos/{respaldo}', [RespaldoController::class, 'destroy'])->whereNumber('respaldo')->name('respaldos.destroy');
 });
 
 // Módulos protegidos por permisos (por compañía)

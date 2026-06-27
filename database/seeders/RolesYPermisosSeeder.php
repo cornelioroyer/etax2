@@ -68,6 +68,8 @@ class RolesYPermisosSeeder extends Seeder
             'fel.ver',
             'fel.gestionar',
             'usuarios_compania.ver',
+            // Respaldo lógico de los datos de la compañía (solo admin de la compañía)
+            'respaldos.gestionar',
             // Visibilidad de campos sensibles
             'companias.campo.facturacion_fiscal',
         ];
