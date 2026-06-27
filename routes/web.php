@@ -368,6 +368,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
 
     Route::middleware('permission:caja.ver')->group(function () {
         Route::get('caja', [CajaController::class, 'index'])->name('caja.index');
+        Route::get('caja/movimiento/{movimiento}/archivo', [CajaOperacionController::class, 'archivo'])->whereNumber('movimiento')->name('caja.movimiento.archivo');
         Route::get('caja/{caja}', [CajaController::class, 'show'])->whereNumber('caja')->name('caja.show');
     });
 

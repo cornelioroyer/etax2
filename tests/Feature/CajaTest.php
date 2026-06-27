@@ -11,6 +11,8 @@ use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class CajaTest extends TestCase
@@ -168,6 +170,41 @@ class CajaTest extends TestCase
             'tipo_movimiento' => 'EGRESO', 'fecha' => '2026-06-13', 'monto' => 30,
             'itbms_monto' => 30, 'cuenta_contable_id' => $this->gasto->id,
         ])->assertSessionHasErrors('itbms_monto');
+
+        $this->assertSame(0, CajaMovimiento::count());
+    }
+
+    public function test_egreso_guarda_y_sirve_comprobante(): void
+    {
+        Storage::fake('s3');
+        $caja = $this->crearCaja();
+        $this->reembolsar($caja, 100);
+
+        $this->actuar()->post(route('admin.caja.movimiento', $caja), [
+            'tipo_movimiento' => 'EGRESO', 'fecha' => '2026-06-13', 'monto' => 20,
+            'cuenta_contable_id' => $this->gasto->id,
+            'comprobante' => UploadedFile::fake()->create('recibo.pdf', 80, 'application/pdf'),
+        ])->assertSessionHasNoErrors();
+
+        $mov = CajaMovimiento::where('tipo_movimiento', 'EGRESO')->firstOrFail();
+        $this->assertTrue($mov->tieneArchivo());
+        Storage::disk('s3')->assertExists($mov->archivo_path);
+
+        // La ruta de descarga sirve el archivo a quien puede ver caja.
+        $this->actuar()->get(route('admin.caja.movimiento.archivo', $mov))->assertOk();
+    }
+
+    public function test_comprobante_rechaza_tipo_no_permitido(): void
+    {
+        Storage::fake('s3');
+        $caja = $this->crearCaja();
+        $this->reembolsar($caja, 100);
+
+        $this->actuar()->post(route('admin.caja.movimiento', $caja), [
+            'tipo_movimiento' => 'EGRESO', 'fecha' => '2026-06-13', 'monto' => 20,
+            'cuenta_contable_id' => $this->gasto->id,
+            'comprobante' => UploadedFile::fake()->create('virus.exe', 10, 'application/octet-stream'),
+        ])->assertSessionHasErrors('comprobante');
 
         $this->assertSame(0, CajaMovimiento::count());
     }

@@ -66,7 +66,7 @@
                     {{-- Movimiento --}}
                     <div class="bg-white p-6 shadow-sm sm:rounded-lg">
                         <h3 class="mb-3 text-sm font-semibold text-gray-700">Registrar movimiento</h3>
-                        <form method="POST" action="{{ route('admin.caja.movimiento', $caja) }}" class="space-y-3">
+                        <form method="POST" action="{{ route('admin.caja.movimiento', $caja) }}" class="space-y-3" enctype="multipart/form-data">
                             @csrf
                             <div class="grid grid-cols-2 gap-3">
                                 <div>
@@ -114,6 +114,12 @@
                             <div>
                                 <x-input-label value="Descripción" />
                                 <x-text-input name="descripcion" type="text" class="mt-1 block w-full" />
+                            </div>
+                            <div>
+                                <x-input-label value="Comprobante (recibo: foto o PDF)" />
+                                <input type="file" name="comprobante" accept="image/*,application/pdf"
+                                       class="mt-1 block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-gray-700 hover:file:bg-gray-200">
+                                <p class="mt-1 text-xs text-gray-500">Opcional. JPG/PNG/WebP o PDF, máx. 10 MB.</p>
                             </div>
                             <button class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">Registrar y contabilizar</button>
                         </form>
@@ -192,7 +198,7 @@
                                         <td class="py-2 pr-2">{{ $vale->beneficiario }}<div class="text-xs text-gray-500">{{ $vale->motivo }}</div></td>
                                         <td class="py-2 pr-2 text-right">{{ number_format((float) $vale->monto, 2) }}</td>
                                         <td class="py-2 pr-2">
-                                            <form method="POST" action="{{ route('admin.caja.vale.liquidar', $vale) }}" class="flex flex-wrap items-center gap-2">
+                                            <form method="POST" action="{{ route('admin.caja.vale.liquidar', $vale) }}" class="flex flex-wrap items-center gap-2" enctype="multipart/form-data">
                                                 @csrf
                                                 <input type="hidden" name="fecha" value="{{ now()->format('Y-m-d') }}">
                                                 <select name="cuenta_contable_id" class="rounded-md border-gray-300 text-xs shadow-sm" required>
@@ -203,6 +209,7 @@
                                                 </select>
                                                 <input type="number" name="itbms_monto" step="0.01" min="0" placeholder="ITBMS" title="ITBMS incluido (crédito fiscal)" class="w-20 rounded-md border-gray-300 text-xs shadow-sm">
                                                 <input type="text" name="documento_ref" maxlength="60" placeholder="N° comp." title="N° de comprobante" class="w-24 rounded-md border-gray-300 text-xs shadow-sm">
+                                                <input type="file" name="comprobante" accept="image/*,application/pdf" title="Comprobante (recibo)" class="w-40 text-xs text-gray-600 file:mr-2 file:rounded file:border-0 file:bg-gray-100 file:px-2 file:py-1 file:text-xs file:text-gray-700">
                                                 <button class="rounded-md bg-gray-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-700">Liquidar</button>
                                             </form>
                                         </td>
@@ -279,6 +286,9 @@
                                 <td class="py-2 pr-2">
                                     {{ $mov->descripcion ?? $mov->beneficiario ?? '—' }}
                                     @if ($mov->documento_ref)<span class="text-xs text-gray-400">· {{ $mov->documento_ref }}</span>@endif
+                                    @if ($mov->tieneArchivo())
+                                        <a href="{{ route('admin.caja.movimiento.archivo', $mov) }}" target="_blank" class="ml-1 text-xs text-blue-600 hover:underline">📎 recibo</a>
+                                    @endif
                                     @if ((float) $mov->itbms_monto > 0)<div class="text-xs text-gray-400">ITBMS: B/. {{ number_format((float) $mov->itbms_monto, 2) }}</div>@endif
                                 </td>
                                 <td class="py-2 pr-2 text-gray-500">{{ $mov->cuentaContable?->codigo }}</td>

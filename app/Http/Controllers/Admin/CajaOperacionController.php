@@ -14,9 +14,14 @@ use App\Models\CuentaDefault;
 use App\Services\AsientoAutomatico;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class CajaOperacionController extends Controller
 {
@@ -36,6 +41,7 @@ class CajaOperacionController extends Controller
             'monto'              => ['required', 'numeric', 'gt:0', 'max:999999999'],
             'itbms_monto'        => ['nullable', 'numeric', 'gte:0', 'max:999999999'],
             'documento_ref'      => ['nullable', 'string', 'max:60'],
+            'comprobante'        => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:10240'],
             'beneficiario'       => ['nullable', 'string', 'max:200'],
             'descripcion'        => ['nullable', 'string', 'max:500'],
             'cuenta_contable_id' => ['required', 'integer', Rule::exists('cgl_cuentas', 'id')->where('compania_id', $companiaId)],
@@ -67,7 +73,9 @@ class CajaOperacionController extends Controller
             }
         }
 
-        DB::transaction(function () use ($caja, $companiaId, $data, $monto, $itbms, $cuentaItbmsId, $esEgreso, $usuario) {
+        $comprobante = $request->file('comprobante');
+
+        DB::transaction(function () use ($caja, $companiaId, $data, $monto, $itbms, $cuentaItbmsId, $esEgreso, $usuario, $comprobante) {
             $mov = CajaMovimiento::create([
                 'compania_id'        => $companiaId,
                 'caja_id'            => $caja->id,
@@ -110,6 +118,7 @@ class CajaOperacionController extends Controller
             );
 
             $mov->update(['asiento_id' => $asiento->id]);
+            $this->guardarComprobante($mov, $comprobante, $companiaId);
         });
 
         return back()->with('status', 'Movimiento de caja registrado y contabilizado.');
@@ -206,6 +215,7 @@ class CajaOperacionController extends Controller
             'fecha'              => ['required', 'date'],
             'itbms_monto'        => ['nullable', 'numeric', 'gte:0', 'max:999999999'],
             'documento_ref'      => ['nullable', 'string', 'max:60'],
+            'comprobante'        => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:10240'],
             'cuenta_contable_id' => ['required', 'integer', Rule::exists('cgl_cuentas', 'id')->where('compania_id', $companiaId)],
         ]);
 
@@ -231,7 +241,9 @@ class CajaOperacionController extends Controller
             }
         }
 
-        DB::transaction(function () use ($vale, $caja, $companiaId, $data, $monto, $itbms, $cuentaItbmsId, $usuario) {
+        $comprobante = $request->file('comprobante');
+
+        DB::transaction(function () use ($vale, $caja, $companiaId, $data, $monto, $itbms, $cuentaItbmsId, $usuario, $comprobante) {
             $mov = CajaMovimiento::create([
                 'compania_id'        => $companiaId,
                 'caja_id'            => $caja->id,
@@ -262,6 +274,7 @@ class CajaOperacionController extends Controller
 
             $mov->update(['asiento_id' => $asiento->id]);
             $vale->update(['estado' => CajaVale::ESTADO_LIQUIDADO, 'updated_by' => $usuario->email]);
+            $this->guardarComprobante($mov, $comprobante, $companiaId);
         });
 
         return back()->with('status', 'Vale liquidado y contabilizado.');
@@ -353,5 +366,42 @@ class CajaOperacionController extends Controller
             : 'Arqueo registrado: diferencia de B/. '.number_format($diferencia, 2).' vs el sistema.';
 
         return back()->with('status', $msg);
+    }
+
+    /** Sirve el comprobante (recibo) adjunto a un movimiento de caja. */
+    public function archivo(Request $request, CajaMovimiento $movimiento): StreamedResponse
+    {
+        abort_unless($request->user()->can('caja.ver'), 403);
+        abort_unless($movimiento->compania_id === $this->companiaActivaId($request), 404);
+        abort_unless($movimiento->archivo_path, 404);
+
+        $disk = $movimiento->archivo_disk ?: config('filesystems.adjuntos', 's3');
+        abort_unless(Storage::disk($disk)->exists($movimiento->archivo_path), 404);
+
+        return Storage::disk($disk)->response($movimiento->archivo_path);
+    }
+
+    /**
+     * Guarda el comprobante adjunto en el disco de adjuntos y persiste su
+     * ruta/disco en el movimiento. Best-effort: el egreso y su asiento ya
+     * quedaron registrados; si el archivo falla solo se registra en el log.
+     */
+    private function guardarComprobante(CajaMovimiento $mov, ?UploadedFile $file, int $companiaId): void
+    {
+        if (! $file) {
+            return;
+        }
+
+        try {
+            $disk = config('filesystems.adjuntos', 's3');
+            $ext  = strtolower($file->getClientOriginalExtension() ?: 'bin');
+            $path = 'caja/'.$companiaId.'/'.Str::uuid().'.'.$ext;
+
+            if (Storage::disk($disk)->put($path, file_get_contents($file->getRealPath()))) {
+                $mov->update(['archivo_path' => $path, 'archivo_disk' => $disk]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Comprobante de caja no se pudo guardar', ['mov' => $mov->id, 'error' => $e->getMessage()]);
+        }
     }
 }

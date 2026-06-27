@@ -23,6 +23,8 @@ class CajaMovimiento extends Model
         'monto',
         'itbms_monto',
         'documento_ref',
+        'archivo_path',
+        'archivo_disk',
         'cuenta_contable_id',
         'centro_costo_id',
         'proyecto_id',
@@ -39,6 +41,11 @@ class CajaMovimiento extends Model
             'monto' => 'decimal:2',
             'itbms_monto' => 'decimal:2',
         ];
+    }
+
+    public function tieneArchivo(): bool
+    {
+        return (bool) $this->archivo_path;
     }
 
     public function caja(): BelongsTo
