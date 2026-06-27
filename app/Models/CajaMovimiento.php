@@ -21,6 +21,8 @@ class CajaMovimiento extends Model
         'beneficiario',
         'descripcion',
         'monto',
+        'itbms_monto',
+        'documento_ref',
         'cuenta_contable_id',
         'centro_costo_id',
         'proyecto_id',
@@ -35,6 +37,7 @@ class CajaMovimiento extends Model
         return [
             'fecha' => 'date',
             'monto' => 'decimal:2',
+            'itbms_monto' => 'decimal:2',
         ];
     }
 

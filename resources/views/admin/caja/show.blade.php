@@ -100,6 +100,17 @@
                                     @endforeach
                                 </select>
                             </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <x-input-label value="ITBMS incluido" />
+                                    <x-text-input name="itbms_monto" type="number" step="0.01" min="0" class="mt-1 block w-full" placeholder="0.00" />
+                                    <p class="mt-1 text-xs text-gray-500">Crédito fiscal (solo egreso). Va incluido en el monto.</p>
+                                </div>
+                                <div>
+                                    <x-input-label value="N° comprobante" />
+                                    <x-text-input name="documento_ref" type="text" class="mt-1 block w-full" placeholder="Factura / recibo" maxlength="60" />
+                                </div>
+                            </div>
                             <div>
                                 <x-input-label value="Descripción" />
                                 <x-text-input name="descripcion" type="text" class="mt-1 block w-full" />
@@ -181,7 +192,7 @@
                                         <td class="py-2 pr-2">{{ $vale->beneficiario }}<div class="text-xs text-gray-500">{{ $vale->motivo }}</div></td>
                                         <td class="py-2 pr-2 text-right">{{ number_format((float) $vale->monto, 2) }}</td>
                                         <td class="py-2 pr-2">
-                                            <form method="POST" action="{{ route('admin.caja.vale.liquidar', $vale) }}" class="flex items-center gap-2">
+                                            <form method="POST" action="{{ route('admin.caja.vale.liquidar', $vale) }}" class="flex flex-wrap items-center gap-2">
                                                 @csrf
                                                 <input type="hidden" name="fecha" value="{{ now()->format('Y-m-d') }}">
                                                 <select name="cuenta_contable_id" class="rounded-md border-gray-300 text-xs shadow-sm" required>
@@ -190,6 +201,8 @@
                                                         <option value="{{ $cuenta->id }}">{{ $cuenta->codigo }}</option>
                                                     @endforeach
                                                 </select>
+                                                <input type="number" name="itbms_monto" step="0.01" min="0" placeholder="ITBMS" title="ITBMS incluido (crédito fiscal)" class="w-20 rounded-md border-gray-300 text-xs shadow-sm">
+                                                <input type="text" name="documento_ref" maxlength="60" placeholder="N° comp." title="N° de comprobante" class="w-24 rounded-md border-gray-300 text-xs shadow-sm">
                                                 <button class="rounded-md bg-gray-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-700">Liquidar</button>
                                             </form>
                                         </td>
@@ -263,7 +276,11 @@
                                         <span class="text-green-600">Ingreso</span>
                                     @endif
                                 </td>
-                                <td class="py-2 pr-2">{{ $mov->descripcion ?? $mov->beneficiario ?? '—' }}</td>
+                                <td class="py-2 pr-2">
+                                    {{ $mov->descripcion ?? $mov->beneficiario ?? '—' }}
+                                    @if ($mov->documento_ref)<span class="text-xs text-gray-400">· {{ $mov->documento_ref }}</span>@endif
+                                    @if ((float) $mov->itbms_monto > 0)<div class="text-xs text-gray-400">ITBMS: B/. {{ number_format((float) $mov->itbms_monto, 2) }}</div>@endif
+                                </td>
                                 <td class="py-2 pr-2 text-gray-500">{{ $mov->cuentaContable?->codigo }}</td>
                                 <td class="py-2 pr-2 text-right {{ $mov->tipo_movimiento === 'EGRESO' ? 'text-red-600' : 'text-green-600' }}">
                                     {{ $mov->tipo_movimiento === 'EGRESO' ? '-' : '+' }}{{ number_format((float) $mov->monto, 2) }}

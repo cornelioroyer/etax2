@@ -8,6 +8,7 @@ use App\Models\CajaMovimiento;
 use App\Models\CajaVale;
 use App\Models\Compania;
 use App\Models\CuentaContable;
+use App\Models\CuentaDefault;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -26,6 +27,8 @@ class CajaTest extends TestCase
 
     private CuentaContable $banco;
 
+    private CuentaContable $itbmsCredito;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -41,6 +44,13 @@ class CajaTest extends TestCase
         $this->efectivo = $crear('11101', 'Caja Menuda', 'DEBITO');
         $this->gasto = $crear('60101', 'Gastos Varios', 'DEBITO');
         $this->banco = $crear('11102', 'Banco General', 'DEBITO');
+        $this->itbmsCredito = $crear('10113', 'ITBMS Credito Fiscal', 'DEBITO');
+
+        CuentaDefault::create([
+            'compania_id' => $this->compania->id,
+            'clave' => 'ITBMS_CREDITO',
+            'cuenta_id' => $this->itbmsCredito->id,
+        ]);
     }
 
     private function actuar()
@@ -117,6 +127,49 @@ class CajaTest extends TestCase
         $this->assertSame('30.00', (string) $asiento->detalle[1]->credito);
 
         $this->assertSame(70.0, $caja->fresh()->saldoSistema());
+    }
+
+    public function test_egreso_con_itbms_separa_credito_fiscal(): void
+    {
+        $caja = $this->crearCaja();
+        $this->reembolsar($caja, 100);
+
+        // Compra de B/. 53.50: base 50.00 + ITBMS 3.50
+        $this->actuar()->post(route('admin.caja.movimiento', $caja), [
+            'tipo_movimiento' => 'EGRESO', 'fecha' => '2026-06-13', 'monto' => 53.50,
+            'itbms_monto' => 3.50, 'documento_ref' => 'FAC-001',
+            'beneficiario' => 'Juan', 'descripcion' => 'Suministros',
+            'cuenta_contable_id' => $this->gasto->id,
+        ])->assertSessionHasNoErrors();
+
+        $mov = CajaMovimiento::where('tipo_movimiento', 'EGRESO')->firstOrFail();
+        $this->assertSame('3.50', (string) $mov->itbms_monto);
+        $this->assertSame('FAC-001', $mov->documento_ref);
+
+        $asiento = $mov->asiento;
+        // D gasto 50.00 / D ITBMS 3.50 / C caja 53.50
+        $this->assertSame($this->gasto->id, $asiento->detalle[0]->cuenta_id);
+        $this->assertSame('50.00', (string) $asiento->detalle[0]->debito);
+        $this->assertSame($this->itbmsCredito->id, $asiento->detalle[1]->cuenta_id);
+        $this->assertSame('3.50', (string) $asiento->detalle[1]->debito);
+        $this->assertSame($this->efectivo->id, $asiento->detalle[2]->cuenta_id);
+        $this->assertSame('53.50', (string) $asiento->detalle[2]->credito);
+
+        // El total que sale de la caja es el monto completo (base + ITBMS).
+        $this->assertSame(46.50, $caja->fresh()->saldoSistema());
+    }
+
+    public function test_itbms_no_puede_igualar_o_superar_el_monto(): void
+    {
+        $caja = $this->crearCaja();
+        $this->reembolsar($caja, 100);
+
+        $this->actuar()->post(route('admin.caja.movimiento', $caja), [
+            'tipo_movimiento' => 'EGRESO', 'fecha' => '2026-06-13', 'monto' => 30,
+            'itbms_monto' => 30, 'cuenta_contable_id' => $this->gasto->id,
+        ])->assertSessionHasErrors('itbms_monto');
+
+        $this->assertSame(0, CajaMovimiento::count());
     }
 
     public function test_ingreso_postea_asiento_y_sube_saldo(): void

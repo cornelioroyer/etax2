@@ -34,6 +34,8 @@ class CajaOperacionController extends Controller
             'tipo_movimiento'    => ['required', Rule::in([CajaMovimiento::TIPO_EGRESO, CajaMovimiento::TIPO_INGRESO])],
             'fecha'              => ['required', 'date'],
             'monto'              => ['required', 'numeric', 'gt:0', 'max:999999999'],
+            'itbms_monto'        => ['nullable', 'numeric', 'gte:0', 'max:999999999'],
+            'documento_ref'      => ['nullable', 'string', 'max:60'],
             'beneficiario'       => ['nullable', 'string', 'max:200'],
             'descripcion'        => ['nullable', 'string', 'max:500'],
             'cuenta_contable_id' => ['required', 'integer', Rule::exists('cgl_cuentas', 'id')->where('compania_id', $companiaId)],
@@ -50,7 +52,22 @@ class CajaOperacionController extends Controller
         $monto = round((float) $data['monto'], 2);
         $esEgreso = $data['tipo_movimiento'] === CajaMovimiento::TIPO_EGRESO;
 
-        DB::transaction(function () use ($caja, $companiaId, $data, $monto, $esEgreso, $usuario) {
+        // El ITBMS crédito fiscal solo aplica a compras/gastos (egreso). Es la
+        // porción de impuesto incluida en el monto total que sale de la caja.
+        $itbms = $esEgreso ? round((float) ($data['itbms_monto'] ?? 0), 2) : 0.0;
+        $cuentaItbmsId = null;
+
+        if ($itbms > 0) {
+            if (round($monto - $itbms, 2) <= 0) {
+                return back()->withErrors(['itbms_monto' => 'El ITBMS no puede ser mayor o igual al monto total del egreso.']);
+            }
+            $cuentaItbmsId = CuentaDefault::idPara($companiaId, 'ITBMS_CREDITO');
+            if (! $cuentaItbmsId) {
+                return back()->withErrors(['itbms_monto' => 'La compañía no tiene configurada la cuenta default ITBMS_CREDITO; no se puede separar el crédito fiscal.']);
+            }
+        }
+
+        DB::transaction(function () use ($caja, $companiaId, $data, $monto, $itbms, $cuentaItbmsId, $esEgreso, $usuario) {
             $mov = CajaMovimiento::create([
                 'compania_id'        => $companiaId,
                 'caja_id'            => $caja->id,
@@ -59,23 +76,32 @@ class CajaOperacionController extends Controller
                 'beneficiario'       => $data['beneficiario'] ?? null,
                 'descripcion'        => $data['descripcion'] ?? null,
                 'monto'              => $monto,
+                'itbms_monto'        => $itbms,
+                'documento_ref'      => $data['documento_ref'] ?? null,
                 'cuenta_contable_id' => (int) $data['cuenta_contable_id'],
                 'created_by'         => $usuario->email,
             ]);
 
-            // EGRESO: D gasto / C caja-efectivo. INGRESO: D caja-efectivo / C contrapartida.
+            // EGRESO: D gasto (base) [+ D ITBMS crédito] / C caja-efectivo (total).
+            // INGRESO: D caja-efectivo / C contrapartida.
             $cuentaContra = (int) $data['cuenta_contable_id'];
             $cuentaCaja = (int) $caja->cuenta_contable_id;
 
-            $lineas = $esEgreso
-                ? [
-                    ['cuenta_id' => $cuentaContra, 'descripcion' => $data['descripcion'] ?? 'Egreso de caja', 'debito' => $monto, 'credito' => 0],
-                    ['cuenta_id' => $cuentaCaja, 'descripcion' => 'Caja '.$caja->codigo, 'debito' => 0, 'credito' => $monto],
-                ]
-                : [
+            if ($esEgreso) {
+                $base = round($monto - $itbms, 2);
+                $lineas = [
+                    ['cuenta_id' => $cuentaContra, 'descripcion' => $data['descripcion'] ?? 'Egreso de caja', 'debito' => $base, 'credito' => 0],
+                ];
+                if ($itbms > 0) {
+                    $lineas[] = ['cuenta_id' => $cuentaItbmsId, 'descripcion' => 'ITBMS crédito fiscal'.(($data['documento_ref'] ?? null) ? ' '.$data['documento_ref'] : ''), 'debito' => $itbms, 'credito' => 0];
+                }
+                $lineas[] = ['cuenta_id' => $cuentaCaja, 'descripcion' => 'Caja '.$caja->codigo, 'debito' => 0, 'credito' => $monto];
+            } else {
+                $lineas = [
                     ['cuenta_id' => $cuentaCaja, 'descripcion' => 'Caja '.$caja->codigo, 'debito' => $monto, 'credito' => 0],
                     ['cuenta_id' => $cuentaContra, 'descripcion' => $data['descripcion'] ?? 'Ingreso de caja', 'debito' => 0, 'credito' => $monto],
                 ];
+            }
 
             $glosa = ($esEgreso ? 'Egreso' : 'Ingreso')." caja {$caja->codigo}".(($data['beneficiario'] ?? null) ? ' — '.$data['beneficiario'] : '');
 
@@ -178,6 +204,8 @@ class CajaOperacionController extends Controller
 
         $data = $request->validate([
             'fecha'              => ['required', 'date'],
+            'itbms_monto'        => ['nullable', 'numeric', 'gte:0', 'max:999999999'],
+            'documento_ref'      => ['nullable', 'string', 'max:60'],
             'cuenta_contable_id' => ['required', 'integer', Rule::exists('cgl_cuentas', 'id')->where('compania_id', $companiaId)],
         ]);
 
@@ -191,7 +219,19 @@ class CajaOperacionController extends Controller
         $usuario = $request->user();
         $monto = round((float) $vale->monto, 2);
 
-        DB::transaction(function () use ($vale, $caja, $companiaId, $data, $monto, $usuario) {
+        $itbms = round((float) ($data['itbms_monto'] ?? 0), 2);
+        $cuentaItbmsId = null;
+        if ($itbms > 0) {
+            if (round($monto - $itbms, 2) <= 0) {
+                return back()->withErrors(['itbms_monto' => 'El ITBMS no puede ser mayor o igual al monto del vale.']);
+            }
+            $cuentaItbmsId = CuentaDefault::idPara($companiaId, 'ITBMS_CREDITO');
+            if (! $cuentaItbmsId) {
+                return back()->withErrors(['itbms_monto' => 'La compañía no tiene configurada la cuenta default ITBMS_CREDITO; no se puede separar el crédito fiscal.']);
+            }
+        }
+
+        DB::transaction(function () use ($vale, $caja, $companiaId, $data, $monto, $itbms, $cuentaItbmsId, $usuario) {
             $mov = CajaMovimiento::create([
                 'compania_id'        => $companiaId,
                 'caja_id'            => $caja->id,
@@ -200,17 +240,24 @@ class CajaOperacionController extends Controller
                 'beneficiario'       => $vale->beneficiario,
                 'descripcion'        => 'Liquidación de vale: '.($vale->motivo ?? ''),
                 'monto'              => $monto,
+                'itbms_monto'        => $itbms,
+                'documento_ref'      => $data['documento_ref'] ?? null,
                 'cuenta_contable_id' => (int) $data['cuenta_contable_id'],
                 'created_by'         => $usuario->email,
             ]);
 
+            $base = round($monto - $itbms, 2);
+            $lineas = [
+                ['cuenta_id' => (int) $data['cuenta_contable_id'], 'descripcion' => $vale->motivo ?? 'Gasto de caja', 'debito' => $base, 'credito' => 0],
+            ];
+            if ($itbms > 0) {
+                $lineas[] = ['cuenta_id' => $cuentaItbmsId, 'descripcion' => 'ITBMS crédito fiscal'.(($data['documento_ref'] ?? null) ? ' '.$data['documento_ref'] : ''), 'debito' => $itbms, 'credito' => 0];
+            }
+            $lineas[] = ['cuenta_id' => (int) $caja->cuenta_contable_id, 'descripcion' => 'Caja '.$caja->codigo, 'debito' => 0, 'credito' => $monto];
+
             $asiento = app(AsientoAutomatico::class)->postear(
                 $companiaId, $data['fecha'], "Liquidación vale caja {$caja->codigo} — {$vale->beneficiario}", null,
-                [
-                    ['cuenta_id' => (int) $data['cuenta_contable_id'], 'descripcion' => $vale->motivo ?? 'Gasto de caja', 'debito' => $monto, 'credito' => 0],
-                    ['cuenta_id' => (int) $caja->cuenta_contable_id, 'descripcion' => 'Caja '.$caja->codigo, 'debito' => 0, 'credito' => $monto],
-                ],
-                'CAJA', 'caj_movimientos', $mov->id, $usuario,
+                $lineas, 'CAJA', 'caj_movimientos', $mov->id, $usuario,
             );
 
             $mov->update(['asiento_id' => $asiento->id]);
