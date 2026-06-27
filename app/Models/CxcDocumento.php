@@ -43,6 +43,7 @@ class CxcDocumento extends Model
         'cliente_id',
         'tipo_documento',
         'numero',
+        'referencia',
         'fecha',
         'fecha_vencimiento',
         'moneda_id',

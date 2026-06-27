@@ -101,10 +101,44 @@ return new class extends Migration
                 $table->string('updated_by', 200)->nullable();
             });
         }
+
+        if (! Schema::hasTable('ventas_recibos')) {
+            Schema::create('ventas_recibos', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('compania_id');
+                $table->unsignedBigInteger('cliente_id');
+                $table->string('numero', 50);
+                $table->date('fecha');
+                $table->string('metodo_pago', 50)->nullable();
+                $table->unsignedBigInteger('moneda_id')->nullable();
+                $table->decimal('total', 18, 2)->default(0);
+                $table->string('estado', 30)->default('APLICADO');
+                $table->unsignedBigInteger('cxc_documento_id')->nullable();
+                $table->unsignedBigInteger('asiento_id')->nullable();
+                $table->timestamps();
+                $table->string('created_by', 200)->nullable();
+                $table->string('updated_by', 200)->nullable();
+            });
+        }
+
+        if (! Schema::hasTable('ventas_recibos_detalle')) {
+            Schema::create('ventas_recibos_detalle', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('recibo_id');
+                $table->unsignedBigInteger('factura_id');
+                $table->unsignedBigInteger('cxc_documento_id')->nullable();
+                $table->decimal('monto', 18, 2)->default(0);
+                $table->timestamps();
+                $table->string('created_by', 200)->nullable();
+                $table->string('updated_by', 200)->nullable();
+            });
+        }
     }
 
     public function down(): void
     {
+        Schema::dropIfExists('ventas_recibos_detalle');
+        Schema::dropIfExists('ventas_recibos');
         Schema::dropIfExists('ventas_facturas_detalle');
         Schema::dropIfExists('ventas_facturas');
         Schema::dropIfExists('ventas_cotizaciones_detalle');

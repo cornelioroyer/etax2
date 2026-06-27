@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Exports\CobrosPlantillaExport;
 use App\Http\Controllers\Concerns\ConCompaniaActiva;
+use App\Http\Controllers\Concerns\EmparejaContactos;
 use App\Http\Controllers\Controller;
+use App\Imports\CobrosGenericoImport;
 use App\Models\Contacto;
 use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
@@ -18,10 +21,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\Response;
 
 class VentaReciboController extends Controller
 {
     use ConCompaniaActiva;
+    use EmparejaContactos;
 
     public function index(Request $request): View
     {
@@ -157,6 +163,7 @@ class VentaReciboController extends Controller
                 'cliente_id'     => $data['cliente_id'],
                 'tipo_documento' => CxcDocumento::TIPO_PAGO,
                 'numero'         => CxcDocumento::siguienteNumero($companiaId, CxcDocumento::TIPO_PAGO),
+                'referencia'     => $data['referencia'] ?? null,
                 'fecha'          => $data['fecha'],
                 'subtotal'       => $total,
                 'impuesto'       => 0,
@@ -306,5 +313,375 @@ class VentaReciboController extends Controller
 
         return redirect()->route('admin.ventas.recibos.show', $recibo)
             ->with('status', "Recibo {$recibo->numero} anulado; saldos restaurados.");
+    }
+
+    /**
+     * Descarga la plantilla .xlsx para importar cobros de clientes, con un par de
+     * cuentas de banco/caja reales de la compañía como ejemplo.
+     */
+    public function importarPlantilla(Request $request): Response
+    {
+        abort_unless($request->user()->can('ventas.gestionar'), 403);
+
+        $companiaId = $this->companiaActivaId($request);
+
+        // Cuentas de banco/caja reales (activo disponible que permite movimiento)
+        // para la muestra de la plantilla.
+        $cuentasBanco = CuentaContable::where('compania_id', $companiaId)
+            ->where('permite_movimiento', true)
+            ->where('activa', true)
+            ->where('codigo', 'like', '10%') // activo disponible como muestra
+            ->orderBy('codigo')
+            ->limit(2)
+            ->get(['codigo', 'nombre'])
+            ->map(fn ($c) => [$c->codigo, $c->nombre])
+            ->all();
+
+        return Excel::download(new CobrosPlantillaExport($cuentasBanco), 'plantilla_cobros.xlsx');
+    }
+
+    /**
+     * Importa cobros de clientes desde un Excel/CSV. Un cobro refiere a una factura
+     * de venta existente: NO crea clientes ni facturas; empareja el cliente
+     * (RUC→código→nombre) y la factura por número, y aplica el cobro a su saldo.
+     * Espejo del importador de pagos de CxP. Cada cobro se registra exactamente
+     * como un recibo manual (VentaRecibo + CxcDocumento PAGO + asiento Dr cuenta de
+     * cobro / Cr CxC); el movimiento bancario lo refleja BancoSync desde el asiento.
+     * Síncrono y con una transacción por cobro.
+     */
+    public function importar(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()->can('ventas.gestionar'), 403);
+
+        $companiaId = $this->companiaActivaId($request);
+        $usuario = $request->user();
+
+        $request->validate([
+            'archivo' => ['required', 'file', 'mimes:xlsx,xls,csv,txt', 'max:5120'],
+        ]);
+
+        $cuentaCxcId = CuentaDefault::idPara($companiaId, 'CXC');
+
+        if (! $cuentaCxcId) {
+            return back()->withErrors(['archivo_cobros' => 'La compañía no tiene configurada la cuenta default CXC (Cuentas por Cobrar).']);
+        }
+
+        $import = new CobrosGenericoImport;
+        Excel::import($import, $request->file('archivo'));
+
+        if ($import->filas === []) {
+            return back()->withErrors(['archivo_cobros' => 'El archivo no tiene filas con datos. La primera fila deben ser los encabezados (cliente, numero, fecha, monto…).']);
+        }
+
+        $cuentaBancoDefault = CuentaDefault::idPara($companiaId, 'BANCO_DEFAULT')
+            ?? CuentaDefault::idPara($companiaId, 'CAJA_DEFAULT');
+
+        $catalogo = CuentaContable::where('compania_id', $companiaId)
+            ->where('permite_movimiento', true)
+            ->get(['id', 'codigo'])
+            ->keyBy(fn ($c) => trim((string) $c->codigo));
+
+        // Índice de clientes para emparejar con tolerancia (RUC/código/nombre).
+        $indiceClientes = ['ruc' => [], 'codigo' => [], 'nombre' => []];
+        foreach (Contacto::where('compania_id', $companiaId)->get(['id', 'codigo', 'nombre', 'identificacion']) as $c) {
+            $this->indexarContacto($indiceClientes, $c);
+        }
+
+        $errores = [];
+        $cobros = []; // clave cliente|fecha|cuenta|referencia => cabecera + aplicaciones
+
+        foreach ($import->filas as $f) {
+            $fila = $f['fila'];
+
+            if ($f['cliente'] === '' && $f['ruc'] === '') {
+                $errores[] = "Fila {$fila}: falta el cliente (nombre o RUC).";
+
+                continue;
+            }
+            if ($f['numero'] === '') {
+                $errores[] = "Fila {$fila}: falta el número de la factura a cobrar.";
+
+                continue;
+            }
+            if (! $f['fecha']) {
+                $errores[] = "Fila {$fila}: falta la fecha o tiene un formato no reconocido (usa dd/mm/aaaa).";
+
+                continue;
+            }
+            if ($f['monto'] <= 0) {
+                $errores[] = "Fila {$fila}: el monto debe ser mayor que cero.";
+
+                continue;
+            }
+
+            $cliente = $this->emparejarCliente($f, $indiceClientes);
+
+            if (! $cliente) {
+                $errores[] = "Fila {$fila}: no se encontró el cliente '".($f['cliente'] ?: $f['ruc'])."'. Regístralo primero.";
+
+                continue;
+            }
+
+            // Cuenta de cobro (depósito): por código del Excel, o la default de banco/caja.
+            $cuentaCobroId = null;
+            if ($f['cuenta'] !== '') {
+                $cuentaCobroId = $catalogo[$f['cuenta']]->id ?? null;
+                if (! $cuentaCobroId) {
+                    $errores[] = "Fila {$fila}: la cuenta '{$f['cuenta']}' no existe o no permite movimiento; se usó la cuenta de banco/caja por defecto.";
+                }
+            }
+            $cuentaCobroId ??= $cuentaBancoDefault;
+
+            if (! $cuentaCobroId) {
+                $errores[] = "Fila {$fila}: no hay cuenta de cobro (ni en el Excel ni la default BANCO_DEFAULT/CAJA_DEFAULT). Configúralas.";
+
+                continue;
+            }
+
+            $clave = $cliente->id.'|'.$f['fecha'].'|'.$cuentaCobroId.'|'.$f['referencia'];
+            $cobros[$clave] ??= [
+                'cliente'      => $cliente,
+                'fecha'        => $f['fecha'],
+                'cuenta_cobro' => (int) $cuentaCobroId,
+                'referencia'   => $f['referencia'],
+                'aplicaciones' => [], // numero_factura => ['monto'=>, 'fila'=>]
+            ];
+            // Acumula por número de factura (varias filas de la misma factura suman).
+            if (isset($cobros[$clave]['aplicaciones'][$f['numero']])) {
+                $cobros[$clave]['aplicaciones'][$f['numero']]['monto'] = round($cobros[$clave]['aplicaciones'][$f['numero']]['monto'] + $f['monto'], 2);
+            } else {
+                $cobros[$clave]['aplicaciones'][$f['numero']] = ['monto' => round($f['monto'], 2), 'fila' => $fila];
+            }
+        }
+
+        $creados = 0;
+        $omitidos = 0;
+
+        foreach ($cobros as $cobro) {
+            // Idempotencia: si hay referencia, no recreamos un recibo vigente del mismo
+            // cliente con esa misma referencia y fecha (evita doble carga del depósito).
+            if ($cobro['referencia'] !== '') {
+                $yaExiste = CxcDocumento::where('compania_id', $companiaId)
+                    ->where('cliente_id', $cobro['cliente']->id)
+                    ->where('tipo_documento', CxcDocumento::TIPO_PAGO)
+                    ->where('referencia', $cobro['referencia'])
+                    ->whereDate('fecha', $cobro['fecha'])
+                    ->where('estado', '!=', CxcDocumento::ESTADO_ANULADO)
+                    ->exists();
+
+                if ($yaExiste) {
+                    $omitidos++;
+                    $errores[] = "Cobro ref. {$cobro['referencia']} de {$cobro['cliente']->nombre}: ya existe; se omitió.";
+
+                    continue;
+                }
+            }
+
+            try {
+                $this->crearCobroImportado($companiaId, $cobro, $cuentaCxcId, $usuario, $errores);
+                $creados++;
+            } catch (ValidationException $e) {
+                $msg = collect($e->errors())->flatten()->first() ?? 'error de validación';
+                $ref = $cobro['referencia'] !== '' ? "ref. {$cobro['referencia']}" : 'sin referencia';
+                $errores[] = "Cobro {$ref} de {$cobro['cliente']->nombre}: {$msg}";
+            } catch (\Throwable $e) {
+                $ref = $cobro['referencia'] !== '' ? "ref. {$cobro['referencia']}" : 'sin referencia';
+                $errores[] = "Cobro {$ref} de {$cobro['cliente']->nombre}: no se pudo registrar ({$e->getMessage()}).";
+            }
+        }
+
+        $resumen = "Importación de cobros: {$creados} cobro(s) registrado(s)";
+        if ($omitidos > 0) {
+            $resumen .= ", {$omitidos} omitido(s) por estar ya registrados";
+        }
+        $resumen .= '.';
+
+        return redirect()->route('admin.ventas.recibos.index')
+            ->with('status', $resumen)
+            ->with('import_cobros_errores', array_slice($errores, 0, 50));
+    }
+
+    /**
+     * Empareja un cliente existente por RUC → código → nombre NORMALIZADO contra el
+     * índice. No crea: un cobro refiere a una factura que ya existe. null si no lo
+     * encuentra.
+     */
+    private function emparejarCliente(array $f, array $indice): ?Contacto
+    {
+        $ruc = $f['ruc'] !== '' ? substr($f['ruc'], 0, 50) : null;
+
+        if ($ruc && isset($indice['ruc'][$ruc])) {
+            return $indice['ruc'][$ruc];
+        }
+        if ($f['cliente'] !== '' && isset($indice['codigo'][$f['cliente']])) {
+            return $indice['codigo'][$f['cliente']];
+        }
+
+        $norm = $this->normalizarTexto($f['cliente']);
+
+        return $norm !== '' ? ($indice['nombre'][$norm] ?? null) : null;
+    }
+
+    /**
+     * Registra un cobro importado replicando exactamente el recibo manual
+     * (VentaReciboController::store): empareja cada factura por número (con saldo)
+     * dentro del cliente, crea el VentaRecibo + CxcDocumento PAGO + detalles +
+     * aplicaciones + asiento (Dr cuenta de cobro / Cr CxC) y reduce los saldos de la
+     * factura y su CxcDocumento. Todo en una transacción. Las facturas que no se
+     * encuentran o no tienen saldo se reportan en $errores y se omiten; si ninguna
+     * aplica, no se crea el recibo.
+     *
+     * @param  array<string, mixed>  $cobro
+     * @param  array<int, string>    $errores  (se agregan avisos por factura)
+     */
+    private function crearCobroImportado(int $companiaId, array $cobro, int $cuentaCxcId, $usuario, array &$errores): void
+    {
+        $cliente = $cobro['cliente'];
+
+        // Empareja cada factura por número (dentro del cliente) con saldo > 0.
+        $facturasPorNumero = VentaFactura::where('compania_id', $companiaId)
+            ->where('cliente_id', $cliente->id)
+            ->whereIn('estado', [VentaFactura::ESTADO_EMITIDA, VentaFactura::ESTADO_PARCIAL])
+            ->where('saldo', '>', 0)
+            ->orderBy('fecha')
+            ->get()
+            ->keyBy(fn ($d) => trim((string) $d->numero));
+
+        $aplicar = []; // [factura => monto]
+
+        foreach ($cobro['aplicaciones'] as $numeroFactura => $apl) {
+            $factura = $facturasPorNumero->get(trim((string) $numeroFactura));
+
+            if (! $factura) {
+                $errores[] = "Cobro de {$cliente->nombre}: la factura '{$numeroFactura}' no existe, está anulada/pagada o no tiene saldo; se omitió.";
+
+                continue;
+            }
+
+            $monto = $apl['monto'];
+
+            if ($monto > round((float) $factura->saldo, 2) + 0.004) {
+                $errores[] = "Cobro de {$cliente->nombre}: el monto a {$factura->numero} (B/. ".number_format($monto, 2).') excede su saldo (B/. '.number_format((float) $factura->saldo, 2).'); se ajustó al saldo.';
+                $monto = round((float) $factura->saldo, 2);
+            }
+
+            if ($monto <= 0) {
+                continue;
+            }
+
+            $aplicar[] = ['factura' => $factura, 'monto' => $monto];
+        }
+
+        if ($aplicar === []) {
+            return; // nada que aplicar para este cobro
+        }
+
+        $total = round(array_sum(array_column($aplicar, 'monto')), 2);
+
+        DB::transaction(function () use ($companiaId, $cobro, $aplicar, $total, $cuentaCxcId, $usuario) {
+            $cliente = $cobro['cliente'];
+
+            $recibo = VentaRecibo::create([
+                'compania_id' => $companiaId,
+                'cliente_id'  => $cliente->id,
+                'numero'      => VentaRecibo::siguienteNumero($companiaId),
+                'fecha'       => $cobro['fecha'],
+                'metodo_pago' => null,
+                'total'       => $total,
+                'estado'      => VentaRecibo::ESTADO_APLICADO,
+                'created_by'  => $usuario->email,
+                'updated_by'  => $usuario->email,
+            ]);
+
+            $cobroDoc = CxcDocumento::create([
+                'compania_id'    => $companiaId,
+                'cliente_id'     => $cliente->id,
+                'tipo_documento' => CxcDocumento::TIPO_PAGO,
+                'numero'         => CxcDocumento::siguienteNumero($companiaId, CxcDocumento::TIPO_PAGO),
+                'referencia'     => $cobro['referencia'] !== '' ? $cobro['referencia'] : null,
+                'fecha'          => $cobro['fecha'],
+                'subtotal'       => $total,
+                'impuesto'       => 0,
+                'total'          => $total,
+                'saldo'          => 0,
+                'estado'         => CxcDocumento::ESTADO_PAGADO,
+                'created_by'     => $usuario->email,
+            ]);
+
+            $recibo->update(['cxc_documento_id' => $cobroDoc->id]);
+
+            foreach ($aplicar as $a) {
+                $factura = VentaFactura::lockForUpdate()->find($a['factura']->id);
+
+                VentaReciboDetalle::create([
+                    'recibo_id'        => $recibo->id,
+                    'factura_id'       => $factura->id,
+                    'cxc_documento_id' => $factura->cxc_documento_id,
+                    'monto'            => $a['monto'],
+                    'created_by'       => $usuario->email,
+                    'updated_by'       => $usuario->email,
+                ]);
+
+                // Aplicar al CxcDocumento de la factura.
+                if ($factura->cxc_documento_id) {
+                    CxcAplicacion::create([
+                        'compania_id'          => $companiaId,
+                        'cliente_id'           => $cliente->id,
+                        'documento_origen_id'  => $cobroDoc->id,
+                        'documento_destino_id' => $factura->cxc_documento_id,
+                        'fecha'                => $cobro['fecha'],
+                        'monto_aplicado'       => $a['monto'],
+                        'created_by'           => $usuario->email,
+                    ]);
+
+                    $cxcDoc = $factura->cxcDocumento()->lockForUpdate()->first();
+                    if ($cxcDoc) {
+                        $nuevoSaldo = round((float) $cxcDoc->saldo - $a['monto'], 2);
+                        $cxcDoc->update([
+                            'saldo'      => max(0, $nuevoSaldo),
+                            'estado'     => $nuevoSaldo <= 0 ? CxcDocumento::ESTADO_PAGADO : CxcDocumento::ESTADO_PARCIAL,
+                            'updated_by' => $usuario->email,
+                        ]);
+                    }
+                }
+
+                // Actualizar VentaFactura.
+                $nuevoSaldo = round((float) $factura->saldo - $a['monto'], 2);
+                $factura->saldo      = max(0, $nuevoSaldo);
+                $factura->estado     = $nuevoSaldo <= 0 ? VentaFactura::ESTADO_PAGADA : VentaFactura::ESTADO_PARCIAL;
+                $factura->updated_by = $usuario->email;
+                $factura->save();
+            }
+
+            // Asiento: Dr cuenta de cobro (total) / Cr CxC (total, con contacto).
+            $asiento = app(AsientoAutomatico::class)->postear(
+                $companiaId,
+                $cobro['fecha'],
+                "Cobro {$recibo->numero} — ".$cliente->nombre,
+                $cobroDoc->referencia ?? $recibo->numero,
+                [
+                    [
+                        'cuenta_id'   => $cobro['cuenta_cobro'],
+                        'descripcion' => "Cobro {$recibo->numero}",
+                        'debito'      => $total,
+                        'credito'     => 0,
+                    ],
+                    [
+                        'cuenta_id'   => $cuentaCxcId,
+                        'contacto_id' => $cliente->id,
+                        'descripcion' => "Cobro {$recibo->numero}",
+                        'debito'      => 0,
+                        'credito'     => $total,
+                    ],
+                ],
+                'VENTAS',
+                'ventas_recibos',
+                $recibo->id,
+                $usuario,
+            );
+
+            $recibo->update(['asiento_id' => $asiento->id]);
+            $cobroDoc->update(['asiento_id' => $asiento->id]);
+        });
     }
 }

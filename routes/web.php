@@ -455,6 +455,8 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     });
 
     Route::middleware('permission:ventas.gestionar')->group(function () {
+        Route::get('ventas/recibos/importar/plantilla', [VentaReciboController::class, 'importarPlantilla'])->name('ventas.recibos.importar.plantilla');
+        Route::post('ventas/recibos/importar', [VentaReciboController::class, 'importar'])->name('ventas.recibos.importar');
         Route::get('ventas/recibos/nuevo', [VentaReciboController::class, 'create'])->name('ventas.recibos.create');
         Route::post('ventas/recibos', [VentaReciboController::class, 'store'])->name('ventas.recibos.store');
         Route::post('ventas/recibos/{recibo}/anular', [VentaReciboController::class, 'anular'])->whereNumber('recibo')->name('ventas.recibos.anular');

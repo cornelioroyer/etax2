@@ -3,9 +3,15 @@
         <div class="flex items-center justify-between">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Recibos de cobro</h2>
             @can('ventas.gestionar')
-                <a href="{{ route('admin.ventas.recibos.create') }}" class="rounded-md bg-[#0d2d5e] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">
-                    + Nuevo recibo
-                </a>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="document.getElementById('modal-importar-cobros').classList.remove('hidden')"
+                            class="inline-flex items-center rounded-md border border-blue-300 bg-white px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">
+                        Importar Excel
+                    </button>
+                    <a href="{{ route('admin.ventas.recibos.create') }}" class="rounded-md bg-[#0d2d5e] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">
+                        + Nuevo recibo
+                    </a>
+                </div>
             @endcan
         </div>
     </x-slot>
@@ -14,6 +20,17 @@
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-4">
             @if (session('status'))
                 <div class="rounded-md bg-green-50 p-4 text-sm text-green-800">{{ session('status') }}</div>
+            @endif
+            @if ($errors->any())
+                <div class="rounded-md bg-red-50 p-4 text-sm text-red-800">
+                    @foreach ($errors->all() as $error)<div>{{ $error }}</div>@endforeach
+                </div>
+            @endif
+            @if (session('import_cobros_errores') && count(session('import_cobros_errores')))
+                <div class="rounded-md bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800">
+                    <div class="font-semibold mb-1">Avisos de la importación:</div>
+                    @foreach (session('import_cobros_errores') as $aviso)<div>• {{ $aviso }}</div>@endforeach
+                </div>
             @endif
 
             <form method="GET" class="bg-white p-4 shadow-sm sm:rounded-lg flex flex-wrap gap-3 items-end">
@@ -83,4 +100,49 @@
             </div>
         </div>
     </div>
+
+    @can('ventas.gestionar')
+    <div id="modal-importar-cobros" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-gray-900">Importar cobros (Excel)</h3>
+                <button type="button" onclick="document.getElementById('modal-importar-cobros').classList.add('hidden')"
+                        class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+            </div>
+            <p class="text-sm text-gray-600 mb-3">
+                Sube un Excel con tus cobros de clientes. El cliente y la factura deben <strong>existir</strong>
+                (no se crean). Cada fila aplica un monto a una factura por su número; varias filas con el mismo
+                cliente, fecha, cuenta y referencia forman <strong>un solo recibo de cobro</strong>.
+            </p>
+            <p class="text-sm mb-4">
+                <a href="{{ route('admin.ventas.recibos.importar.plantilla') }}" class="text-blue-600 hover:underline font-medium">
+                    ↓ Descargar plantilla de ejemplo
+                </a>
+            </p>
+            <p class="text-xs text-gray-500 mb-4">
+                Columnas: <code>cliente</code>, <code>ruc</code>, <code>numero</code> (de la factura),
+                <code>fecha</code>, <code>monto</code>, <code>cuenta</code> (código de banco/caja donde se deposita),
+                <code>referencia</code> (depósito/transferencia). El cobro se registra Dr banco / Cr CxC.
+            </p>
+            <form method="POST" action="{{ route('admin.ventas.recibos.importar') }}" enctype="multipart/form-data">
+                @csrf
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Archivo Excel/CSV</label>
+                    <input type="file" name="archivo" accept=".xlsx,.xls,.csv" required
+                           class="block w-full text-sm text-gray-700 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+                <div class="flex justify-end gap-3">
+                    <button type="button" onclick="document.getElementById('modal-importar-cobros').classList.add('hidden')"
+                            class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                        Cancelar
+                    </button>
+                    <button type="submit"
+                            class="rounded-md bg-[#0d2d5e] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">
+                        Importar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    @endcan
 </x-app-layout>
