@@ -113,6 +113,18 @@ class AsientoAutomatico
     public function anular(?Asiento $asiento, User $usuario): void
     {
         if ($asiento && $asiento->esPosteado()) {
+            // A4 (integridad de período): anular revierte saldos vía trigger; si el
+            // período del asiento está cerrado, anularlo mutaría un período cerrado.
+            // Se valida aquí —fuente única de toda anulación de módulo (CxC, CxP,
+            // Ventas, Bancos, Inventario, Caja, Activos)— para dar un error amigable
+            // antes de chocar contra el backstop del trigger de PostgreSQL.
+            $periodo = $asiento->periodo;
+            if ($periodo && ! $periodo->estaAbierto()) {
+                throw ValidationException::withMessages([
+                    'estado' => "El período {$periodo->anio}-".str_pad((string) $periodo->mes, 2, '0', STR_PAD_LEFT)." está {$periodo->estado}; no se puede anular el documento en un período cerrado.",
+                ]);
+            }
+
             $asiento->update([
                 'estado' => Asiento::ESTADO_ANULADO,
                 'updated_by' => $usuario->email,

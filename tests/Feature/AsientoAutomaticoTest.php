@@ -4,10 +4,12 @@ namespace Tests\Feature;
 
 use App\Models\Compania;
 use App\Models\CuentaContable;
+use App\Models\PeriodoContable;
 use App\Models\User;
 use App\Services\AsientoAutomatico;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class AsientoAutomaticoTest extends TestCase
@@ -66,5 +68,66 @@ class AsientoAutomaticoTest extends TestCase
         // El asiento cuadra y, concretamente, vale 0.99 por lado (Σ del detalle).
         $this->assertEqualsWithDelta((float) $asiento->total_debito, (float) $asiento->total_credito, 0.0001);
         $this->assertEqualsWithDelta(0.99, (float) $asiento->total_debito, 0.0001);
+    }
+
+    /**
+     * Crea un asiento POSTEADO simple (Dr 10101 / Cr 40101) y devuelve [asiento, admin].
+     */
+    private function postearSimple(Compania $compania, User $admin): \App\Models\Asiento
+    {
+        $d = $this->cuenta($compania, '10101', 'DEBITO');
+        $c = $this->cuenta($compania, '40101', 'CREDITO');
+
+        return DB::transaction(fn () => app(AsientoAutomatico::class)->postear(
+            $compania->id, '2026-06-15', 'Prueba anular', null,
+            [
+                ['cuenta_id' => $d->id, 'debito' => 100, 'credito' => 0],
+                ['cuenta_id' => $c->id, 'debito' => 0, 'credito' => 100],
+            ],
+            'CXC', 'cxc_documentos', null, $admin,
+        ));
+    }
+
+    /**
+     * A4: anular un documento cuyo período está CERRADO debe bloquearse en la
+     * fuente única (AsientoAutomatico::anular), que cubre todas las anulaciones
+     * de módulo. Mutar un período cerrado vía la reversión de saldos rompería su
+     * inmutabilidad.
+     */
+    public function test_no_se_puede_anular_asiento_en_periodo_cerrado(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $compania = Compania::create(['nombre' => 'COMPANIA ANULAR CERRADO', 'activa' => true]);
+
+        $asiento = $this->postearSimple($compania, $admin);
+
+        // Cerrar el período en que quedó asentado.
+        PeriodoContable::whereKey($asiento->periodo_id)->update(['estado' => PeriodoContable::ESTADO_CERRADO]);
+        $asiento = $asiento->fresh();
+
+        try {
+            app(AsientoAutomatico::class)->anular($asiento, $admin);
+            $this->fail('Se esperaba ValidationException por período cerrado.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('estado', $e->errors());
+        }
+
+        // El asiento sigue POSTEADO: reabrir el período es prerrequisito.
+        $this->assertSame(\App\Models\Asiento::ESTADO_POSTEADO, $asiento->fresh()->estado);
+    }
+
+    /**
+     * Contraparte: con el período ABIERTO la anulación procede normalmente.
+     */
+    public function test_anular_asiento_en_periodo_abierto_procede(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $compania = Compania::create(['nombre' => 'COMPANIA ANULAR ABIERTO', 'activa' => true]);
+
+        $asiento = $this->postearSimple($compania, $admin);
+
+        app(AsientoAutomatico::class)->anular($asiento, $admin);
+
+        $this->assertSame(\App\Models\Asiento::ESTADO_ANULADO, $asiento->fresh()->estado);
     }
 }
