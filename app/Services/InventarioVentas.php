@@ -162,10 +162,16 @@ class InventarioVentas
                 ['compania_id' => $companiaId, 'cantidad' => 0, 'costo_promedio' => $costo, 'updated_by' => $usuario->email],
             );
 
-            // Descuenta (tope en 0, como el módulo de inventario manual). El costo
-            // promedio no cambia al salir.
+            // Descuenta permitiendo existencia NEGATIVA (política "inventario
+            // negativo consistente"): el asiento de la venta acredita Inventario por
+            // costoProm × cantidad COMPLETA, así que la existencia debe bajar por esa
+            // misma cantidad para que el kárdex (cantidad × costo_promedio) cuadre
+            // EXACTAMENTE con el saldo de la cuenta de inventario en el mayor. Pisar
+            // en 0 rompía esa igualdad al sobre-vender. El costo promedio no cambia al
+            // salir; la absorción del negativo se reconcilia en la próxima entrada
+            // (promedio ponderado, que ya admite cantidades negativas).
             $existencia->update([
-                'cantidad'   => max(0, round((float) $existencia->cantidad - $cantidad, 4)),
+                'cantidad'   => round((float) $existencia->cantidad - $cantidad, 4),
                 'updated_by' => $usuario->email,
             ]);
         }

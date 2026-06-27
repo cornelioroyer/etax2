@@ -9,6 +9,10 @@ use App\Models\Contacto;
 use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
 use App\Models\CxpDocumento;
+use App\Models\InvAlmacen;
+use App\Models\InvExistencia;
+use App\Models\InvMovimiento;
+use App\Models\ItemProducto;
 use App\Models\TaxImpuesto;
 use App\Models\TipoContacto;
 use App\Models\User;
@@ -351,5 +355,43 @@ class ComprasTest extends TestCase
         $this->assertSame(0, CxpDocumento::count());
         $this->assertSame(0, Asiento::count());
         $this->assertSame('APROBADA', $orden->fresh()->estado);
+    }
+
+    public function test_anular_compra_con_stock_ya_consumido_deja_existencia_negativa(): void
+    {
+        // Política "inventario negativo consistente": anular una compra cuyo stock
+        // ya se consumió debe llevar la existencia a NEGATIVO (no pisarla en 0) para
+        // que el kárdex (cantidad × costo) cuadre con el crédito a Inventario del
+        // asiento anulado. Se prueba el servicio directamente (es el código tocado).
+        $almacen = InvAlmacen::create(['compania_id' => $this->compania->id, 'codigo' => 'ALM-01', 'nombre' => 'Principal', 'activo' => true]);
+        $item = ItemProducto::create([
+            'compania_id' => $this->compania->id, 'codigo' => 'PROD-001', 'nombre' => 'Producto X',
+            'tipo' => ItemProducto::TIPO_PRODUCTO, 'precio_venta' => 10, 'costo' => 5, 'activo' => true,
+        ]);
+
+        $svc = app(\App\Services\InventarioCompras::class);
+
+        // Compra: entran 5 a costo 5 → existencia 5 @ 5.
+        $svc->registrarEntrada(
+            $this->compania->id, $almacen->id, '2026-06-12',
+            [['item_id' => $item->id, 'cantidad' => 5, 'costo_unitario' => 5]],
+            null, 'compras_facturas', 999, $this->admin,
+        );
+        $exist = InvExistencia::where('almacen_id', $almacen->id)->where('item_id', $item->id)->firstOrFail();
+        $this->assertEqualsWithDelta(5.0, (float) $exist->cantidad, 0.001);
+
+        // Se vendieron 3 (stock baja a 2) ANTES de anular la compra.
+        $exist->update(['cantidad' => 2]);
+
+        // Anular la compra reversa la entrada de 5 → 2 - 5 = -3 (antes pisaba en 0).
+        $svc->reversarPorDocumento('compras_facturas', 999, $this->admin);
+
+        $exist->refresh();
+        $this->assertEqualsWithDelta(-3.0, (float) $exist->cantidad, 0.001);
+        // Valor consistente: -3 × 5 = -15 = (valor previo 10) − (crédito a inventario 25).
+        $this->assertEqualsWithDelta(5.0, (float) $exist->costo_promedio, 0.001);
+
+        $mov = InvMovimiento::where('documento_origen', 'compras_facturas')->where('documento_id', 999)->firstOrFail();
+        $this->assertSame('ANULADO', $mov->estado);
     }
 }

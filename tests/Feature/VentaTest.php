@@ -519,6 +519,71 @@ class VentaTest extends TestCase
         $this->assertSame('ANULADO', $mov->fresh()->estado);
     }
 
+    public function test_sobreventa_deja_existencia_negativa_consistente_con_el_mayor(): void
+    {
+        // Política "inventario negativo consistente": vender más de lo disponible
+        // NO debe pisar la existencia en 0. El asiento acredita Inventario por la
+        // cantidad COMPLETA al costo promedio, así que la existencia debe bajar por
+        // esa misma cantidad para que kárdex (cantidad × costo) cuadre con el mayor.
+        $inv = CuentaContable::create([
+            'compania_id' => $this->compania->id, 'codigo' => '10105', 'nombre' => 'Inventario',
+            'nivel' => 3, 'naturaleza' => 'DEBITO', 'permite_movimiento' => true, 'conciliable' => false, 'activa' => true,
+        ]);
+        $costo = CuentaContable::create([
+            'compania_id' => $this->compania->id, 'codigo' => '50101', 'nombre' => 'Costo de ventas',
+            'nivel' => 3, 'naturaleza' => 'DEBITO', 'permite_movimiento' => true, 'conciliable' => false, 'activa' => true,
+        ]);
+        CuentaDefault::create(['compania_id' => $this->compania->id, 'clave' => 'INVENTARIO', 'cuenta_id' => $inv->id]);
+        CuentaDefault::create(['compania_id' => $this->compania->id, 'clave' => 'COSTO_VENTAS', 'cuenta_id' => $costo->id]);
+
+        // Solo 3 unidades a costo 5 en existencia.
+        $almacen = InvAlmacen::create(['compania_id' => $this->compania->id, 'codigo' => 'ALM-01', 'nombre' => 'Principal', 'activo' => true]);
+        $item = ItemProducto::create([
+            'compania_id' => $this->compania->id, 'codigo' => 'PROD-001', 'nombre' => 'Producto X',
+            'tipo' => ItemProducto::TIPO_PRODUCTO, 'precio_venta' => 50, 'costo' => 5,
+            'cuenta_inventario_id' => $inv->id, 'cuenta_costo_venta_id' => $costo->id, 'activo' => true,
+        ]);
+        InvExistencia::create([
+            'compania_id' => $this->compania->id, 'almacen_id' => $almacen->id, 'item_id' => $item->id,
+            'cantidad' => 3, 'costo_promedio' => 5,
+        ]);
+
+        // Vender 5 (más que las 3 disponibles).
+        $this->actuar()->post(route('admin.ventas.facturas.store'), [
+            'cliente_id' => $this->cliente->id,
+            'fecha' => '2026-06-13',
+            'accion' => 'emitir',
+            'lineas' => [
+                ['item_id' => $item->id, 'descripcion' => 'Producto X', 'cantidad' => 5, 'precio_unitario' => 50, 'impuesto_id' => $this->impuestoId('ITBMS_7')],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $factura = VentaFactura::where('compania_id', $this->compania->id)->latest('id')->firstOrFail();
+        $asiento = Asiento::find($factura->asiento_id);
+
+        // COGS por la cantidad COMPLETA al costo promedio: 5 u × 5 = 25. Asiento cuadra.
+        $this->assertEqualsWithDelta(25.0, (float) $asiento->detalle->where('cuenta_id', $costo->id)->sum('debito'), 0.001);
+        $this->assertEqualsWithDelta(25.0, (float) $asiento->detalle->where('cuenta_id', $inv->id)->sum('credito'), 0.001);
+        $this->assertEqualsWithDelta((float) $asiento->detalle->sum('debito'), (float) $asiento->detalle->sum('credito'), 0.001);
+
+        // INVARIANTE: existencia NEGATIVA (3 - 5 = -2), sin pisar en 0; costo promedio intacto.
+        $exist = InvExistencia::where('almacen_id', $almacen->id)->where('item_id', $item->id)->firstOrFail();
+        $this->assertEqualsWithDelta(-2.0, (float) $exist->cantidad, 0.001);
+        $this->assertEqualsWithDelta(5.0, (float) $exist->costo_promedio, 0.001);
+
+        // El movimiento descontó la cantidad completa (Δvalor kárdex = -25 = crédito a Inventario).
+        $mov = InvMovimiento::where('documento_origen', 'ventas_facturas')
+            ->where('documento_id', $factura->id)
+            ->where('tipo_movimiento', InvMovimiento::TIPO_SALIDA)
+            ->firstOrFail();
+        $this->assertEqualsWithDelta(5.0, (float) $mov->detalle->sum('cantidad'), 0.001);
+
+        // Anular repone el negativo: -2 + 5 = 3 (estado original), costo promedio 5.
+        $this->actuar()->post(route('admin.ventas.facturas.anular', $factura))->assertSessionHasNoErrors();
+        $this->assertEqualsWithDelta(3.0, (float) $exist->fresh()->cantidad, 0.001);
+        $this->assertEqualsWithDelta(5.0, (float) $exist->fresh()->costo_promedio, 0.001);
+    }
+
     public function test_emitir_factura_servicio_no_mueve_inventario(): void
     {
         // Sin item_id (servicio/libre): no debe crear movimiento de inventario ni costo.

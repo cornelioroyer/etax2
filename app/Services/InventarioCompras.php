@@ -116,15 +116,19 @@ class InventarioCompras
                 $qa       = (float) $existencia->cantidad;
                 $ca       = (float) $existencia->costo_promedio;
 
+                // Permite existencia NEGATIVA (política "inventario negativo
+                // consistente"): al anular una compra cuyo stock ya se consumió, el
+                // asiento anulado acredita Inventario por costo × cantidad, así que la
+                // existencia debe bajar por esa misma cantidad para que el kárdex
+                // cuadre con el mayor. Pisar en 0 reintroducía el descuadre.
                 $nuevaCantidad = round($qa - $cantidad, 4);
-                if ($nuevaCantidad < 0) {
-                    $nuevaCantidad = 0;
-                }
 
-                // Baja el valor al costo de entrada; conserva el promedio si la
-                // existencia ya no tiene unidades o el cálculo daría negativo.
-                $nuevoValor = $qa * $ca - $cantidad * $costo;
-                $nuevoCosto = ($nuevaCantidad > 0 && $nuevoValor >= 0)
+                // El valor baja EXACTAMENTE por el costo de entrada (= crédito a
+                // Inventario del asiento). El promedio se recalcula para preservar esa
+                // igualdad; solo se conserva el anterior en el caso degenerado de
+                // cantidad resultante nula (valor 0).
+                $nuevoValor = round($qa * $ca - $cantidad * $costo, 4);
+                $nuevoCosto = abs($nuevaCantidad) > 0.00001
                     ? round($nuevoValor / $nuevaCantidad, 4)
                     : $ca;
 
