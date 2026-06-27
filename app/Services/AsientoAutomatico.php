@@ -36,6 +36,18 @@ class AsientoAutomatico
             $usuario = User::where('email', $email)->firstOrFail();
         }
 
+        // Redondear cada línea a 2 decimales ANTES de sumar, para que los
+        // totales de cabecera cuadren EXACTAMENTE con la suma de los detalles
+        // (que también se guardan redondeados). round(Σ) puede diferir de
+        // Σ(round) por centavos con importes de >2 decimales y disparar el
+        // rechazo "totales no coinciden" del trigger de control (M1).
+        $lineas = array_map(function (array $linea): array {
+            $linea['debito'] = round((float) ($linea['debito'] ?? 0), 2);
+            $linea['credito'] = round((float) ($linea['credito'] ?? 0), 2);
+
+            return $linea;
+        }, array_values($lineas));
+
         $debito = round(collect($lineas)->sum('debito'), 2);
         $credito = round(collect($lineas)->sum('credito'), 2);
 
