@@ -26,6 +26,7 @@ use App\Models\VentaNotaCredito;
 use App\Models\VentasImportacion;
 use App\Services\AsientoAutomatico;
 use App\Services\DgiFepConsulta;
+use App\Services\InventarioVentas;
 use App\Services\RucDigitoVerificador;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -174,7 +175,10 @@ class VentaFacturaController extends Controller
             return back()->withInput()->withErrors(['cliente_id' => 'La compañía no tiene configurada la cuenta default CXC.']);
         }
 
-        $factura = DB::transaction(function () use ($companiaId, $data, $usuario, $lineasCalc, $subtotal, $itbms, $total, $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId, $numeracion, $numeroManual) {
+        $invVentas = app(InventarioVentas::class);
+        $almacenId = $invVentas->almacenPorDefecto($companiaId);
+
+        $factura = DB::transaction(function () use ($companiaId, $data, $usuario, $lineasCalc, $subtotal, $itbms, $total, $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId, $numeracion, $numeroManual, $invVentas, $almacenId) {
             $numero = $numeracion === 'manual' ? $numeroManual : VentaFactura::siguienteNumero($companiaId);
 
             $factura = VentaFactura::create([
@@ -267,6 +271,11 @@ class VentaFacturaController extends Controller
                 ];
             }
 
+            // Costo de ventas + salida de inventario para líneas de productos
+            // inventariables (Dr Costo / Cr Inventario en el MISMO asiento).
+            $cogs = $invVentas->calcular($companiaId, $almacenId, $lineasCalc);
+            $lineasAsiento = array_merge($lineasAsiento, $cogs['lineasAsiento']);
+
             $cliente = Contacto::find($data['cliente_id']);
             $asiento = app(AsientoAutomatico::class)->postear(
                 $companiaId, $data['fecha'],
@@ -276,6 +285,10 @@ class VentaFacturaController extends Controller
 
             $factura->update(['cxc_documento_id' => $cxc->id, 'asiento_id' => $asiento->id]);
             $cxc->update(['asiento_id' => $asiento->id]);
+
+            if ($almacenId && ! empty($cogs['detalle'])) {
+                $invVentas->registrar($companiaId, $almacenId, $data['fecha'], $cogs['detalle'], $asiento->id, InventarioVentas::ORIGEN_VENTAS, $factura->id, $usuario);
+            }
 
             return $factura;
         });
@@ -574,6 +587,7 @@ class VentaFacturaController extends Controller
 
         $lineasCalc = $factura->detalle->map(fn ($d) => [
             'linea'             => $d->linea,
+            'item_id'           => $d->item_id,
             'descripcion'       => $d->descripcion,
             'cantidad'          => $d->cantidad,
             'precio_unitario'   => $d->precio_unitario,
@@ -584,7 +598,10 @@ class VentaFacturaController extends Controller
             'cuenta_ingreso_id' => $d->cuenta_ingreso_id,
         ])->all();
 
-        DB::transaction(function () use ($factura, $companiaId, $usuario, $lineasCalc, $subtotal, $itbms, $total, $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId, $numeracion, $numeroManual) {
+        $invVentas = app(InventarioVentas::class);
+        $almacenId = $invVentas->almacenPorDefecto($companiaId);
+
+        DB::transaction(function () use ($factura, $companiaId, $usuario, $lineasCalc, $subtotal, $itbms, $total, $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId, $numeracion, $numeroManual, $invVentas, $almacenId) {
             $numero = $numeracion === 'manual' ? $numeroManual : VentaFactura::siguienteNumero($companiaId);
             $factura->update(['numero' => $numero, 'estado' => VentaFactura::ESTADO_EMITIDA, 'extra' => [], 'updated_by' => $usuario->email]);
 
@@ -641,6 +658,10 @@ class VentaFacturaController extends Controller
                 $lineasAsiento[] = ['cuenta_id' => $cuentaItbmsId, 'descripcion' => "ITBMS factura {$numero}", 'debito' => 0, 'credito' => $itbms];
             }
 
+            // Costo de ventas + salida de inventario para productos inventariables.
+            $cogs = $invVentas->calcular($companiaId, $almacenId, $lineasCalc);
+            $lineasAsiento = array_merge($lineasAsiento, $cogs['lineasAsiento']);
+
             $asiento = app(AsientoAutomatico::class)->postear(
                 $companiaId, $factura->fecha,
                 "Factura de venta {$numero} — ".($factura->cliente->nombre ?? ''),
@@ -649,6 +670,10 @@ class VentaFacturaController extends Controller
 
             $factura->update(['cxc_documento_id' => $cxc->id, 'asiento_id' => $asiento->id]);
             $cxc->update(['asiento_id' => $asiento->id]);
+
+            if ($almacenId && ! empty($cogs['detalle'])) {
+                $invVentas->registrar($companiaId, $almacenId, $factura->fecha, $cogs['detalle'], $asiento->id, InventarioVentas::ORIGEN_VENTAS, $factura->id, $usuario);
+            }
         });
 
         return redirect()->route('admin.ventas.facturas.show', $factura)
@@ -1080,6 +1105,9 @@ class VentaFacturaController extends Controller
                 app(AsientoAutomatico::class)->anular($factura->asiento, $usuario);
             }
 
+            // Reponer inventario de las salidas por venta (si las hubo)
+            app(InventarioVentas::class)->reversarPorDocumento(InventarioVentas::ORIGEN_VENTAS, $factura->id, $usuario);
+
             // Anular el cxc_documentos vinculado
             if ($factura->cxcDocumento) {
                 $factura->cxcDocumento->update([
@@ -1143,6 +1171,7 @@ class VentaFacturaController extends Controller
             if ($factura->asiento) {
                 app(AsientoAutomatico::class)->anular($factura->asiento, $usuario);
             }
+            app(InventarioVentas::class)->reversarPorDocumento(InventarioVentas::ORIGEN_VENTAS, $factura->id, $usuario);
             if ($factura->cxcDocumento) {
                 $factura->cxcDocumento->update(['estado' => 'ANULADO', 'saldo' => 0, 'updated_by' => $usuario->email]);
             }

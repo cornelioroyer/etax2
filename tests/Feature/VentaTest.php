@@ -8,6 +8,10 @@ use App\Models\Contacto;
 use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
 use App\Models\CxcDocumento;
+use App\Models\InvAlmacen;
+use App\Models\InvExistencia;
+use App\Models\InvMovimiento;
+use App\Models\ItemProducto;
 use App\Models\TaxImpuesto;
 use App\Models\TipoContacto;
 use App\Models\User;
@@ -329,5 +333,208 @@ class VentaTest extends TestCase
         // El segundo import omite el documento ya existente (no duplica).
         $this->assertSame(1, VentaFactura::where('numero', 'DUP-1')->count());
         $this->assertSame(1, CxcDocumento::where('numero', 'DUP-1')->where('tipo_documento', 'FACTURA')->count());
+    }
+
+    /** Cuenta de banco/caja para depositar el cobro (Dr en el asiento). */
+    private function cuentaBanco(string $codigo = '10201'): CuentaContable
+    {
+        $cuenta = CuentaContable::create([
+            'compania_id' => $this->compania->id,
+            'codigo' => $codigo,
+            'nombre' => 'Banco General',
+            'nivel' => 3,
+            'naturaleza' => 'DEBITO',
+            'permite_movimiento' => true,
+            'conciliable' => true,
+            'activa' => true,
+        ]);
+
+        CuentaDefault::create([
+            'compania_id' => $this->compania->id,
+            'clave' => 'BANCO_DEFAULT',
+            'cuenta_id' => $cuenta->id,
+        ]);
+
+        return $cuenta;
+    }
+
+    public function test_importar_cobros_aplica_a_factura_y_postea_cuadrado(): void
+    {
+        $this->cuentaBanco();
+        $factura = $this->facturar($this->crearCotizacion(100)); // total 107 (100 + 7% ITBMS)
+
+        $this->assertSame('EMITIDA', $factura->estado);
+        $this->assertSame('107.00', (string) $factura->saldo);
+
+        // Cobro de B/. 107 contra la factura, por depósito en banco 10201.
+        $csv = implode("\n", [
+            'cliente,ruc,numero,fecha,monto,cuenta,referencia',
+            "CLIENTE PRUEBA,,{$factura->numero},20/06/2026,107,10201,DEP-001",
+        ]);
+
+        $this->actuar()->post(route('admin.ventas.recibos.importar'), [
+            'archivo' => UploadedFile::fake()->createWithContent('cobros.csv', $csv),
+        ])->assertRedirect(route('admin.ventas.recibos.index'))->assertSessionHas('status');
+
+        // La factura quedó pagada y sin saldo.
+        $factura->refresh();
+        $this->assertSame('PAGADA', $factura->estado);
+        $this->assertSame('0.00', (string) $factura->saldo);
+
+        // Se creó el recibo aplicado.
+        $recibo = \App\Models\VentaRecibo::where('compania_id', $this->compania->id)->latest('id')->first();
+        $this->assertNotNull($recibo);
+        $this->assertSame('APLICADO', $recibo->estado);
+        $this->assertSame('107.00', (string) $recibo->total);
+
+        // Documento CxC de cobro (PAGO) con la referencia del depósito.
+        $cobroDoc = CxcDocumento::where('compania_id', $this->compania->id)
+            ->where('tipo_documento', 'PAGO')->latest('id')->first();
+        $this->assertNotNull($cobroDoc);
+        $this->assertSame('DEP-001', $cobroDoc->referencia);
+
+        // El CxC de la factura quedó pagado.
+        $cxcFactura = CxcDocumento::where('numero', $factura->numero)
+            ->where('tipo_documento', 'FACTURA')->first();
+        $this->assertSame('PAGADO', $cxcFactura->estado);
+        $this->assertSame('0.00', (string) $cxcFactura->saldo);
+
+        // Asiento cuadrado: Dr banco 107 / Cr CxC 107.
+        $asiento = Asiento::find($recibo->asiento_id);
+        $this->assertNotNull($asiento);
+        $this->assertEqualsWithDelta(
+            (float) $asiento->detalle->sum('debito'),
+            (float) $asiento->detalle->sum('credito'),
+            0.001,
+        );
+        $this->assertEqualsWithDelta(107.0, (float) $asiento->detalle->sum('debito'), 0.001);
+    }
+
+    public function test_importar_cobros_es_idempotente_por_referencia(): void
+    {
+        $this->cuentaBanco();
+        $factura = $this->facturar($this->crearCotizacion(100));
+
+        $csv = implode("\n", [
+            'cliente,ruc,numero,fecha,monto,cuenta,referencia',
+            "CLIENTE PRUEBA,,{$factura->numero},20/06/2026,50,10201,DEP-DUP",
+        ]);
+
+        $this->actuar()->post(route('admin.ventas.recibos.importar'), [
+            'archivo' => UploadedFile::fake()->createWithContent('c1.csv', $csv),
+        ]);
+        $this->actuar()->post(route('admin.ventas.recibos.importar'), [
+            'archivo' => UploadedFile::fake()->createWithContent('c2.csv', $csv),
+        ]);
+
+        // El segundo cobro con la misma referencia+fecha se omite (no duplica).
+        $this->assertSame(1, CxcDocumento::where('compania_id', $this->compania->id)
+            ->where('tipo_documento', 'PAGO')->where('referencia', 'DEP-DUP')->count());
+
+        $factura->refresh();
+        // Factura total 107 (100 + 7% ITBMS); solo se aplicó un cobro de 50 → saldo 57.
+        $this->assertSame('57.00', (string) $factura->saldo);
+    }
+
+    public function test_importar_cobros_no_crea_cliente_ni_aplica_a_factura_inexistente(): void
+    {
+        $this->cuentaBanco();
+
+        // Cliente que no existe y factura inexistente: nada se registra.
+        $csv = implode("\n", [
+            'cliente,ruc,numero,fecha,monto,cuenta,referencia',
+            'CLIENTE FANTASMA,8-NT-NOEXISTE,F-NOEXISTE,20/06/2026,99,10201,X-1',
+        ]);
+
+        $this->actuar()->post(route('admin.ventas.recibos.importar'), [
+            'archivo' => UploadedFile::fake()->createWithContent('c.csv', $csv),
+        ])->assertRedirect(route('admin.ventas.recibos.index'));
+
+        $this->assertSame(0, \App\Models\VentaRecibo::where('compania_id', $this->compania->id)->count());
+        $this->assertSame(0, Contacto::where('identificacion', '8-NT-NOEXISTE')->count());
+    }
+
+    public function test_emitir_factura_con_producto_descuenta_inventario_y_postea_costo(): void
+    {
+        // Cuentas de inventario y costo de ventas + sus defaults.
+        $inv = CuentaContable::create([
+            'compania_id' => $this->compania->id, 'codigo' => '10105', 'nombre' => 'Inventario',
+            'nivel' => 3, 'naturaleza' => 'DEBITO', 'permite_movimiento' => true, 'conciliable' => false, 'activa' => true,
+        ]);
+        $costo = CuentaContable::create([
+            'compania_id' => $this->compania->id, 'codigo' => '50101', 'nombre' => 'Costo de ventas',
+            'nivel' => 3, 'naturaleza' => 'DEBITO', 'permite_movimiento' => true, 'conciliable' => false, 'activa' => true,
+        ]);
+        CuentaDefault::create(['compania_id' => $this->compania->id, 'clave' => 'INVENTARIO', 'cuenta_id' => $inv->id]);
+        CuentaDefault::create(['compania_id' => $this->compania->id, 'clave' => 'COSTO_VENTAS', 'cuenta_id' => $costo->id]);
+
+        // Producto inventariable con existencia (10 unidades a costo 5).
+        $almacen = InvAlmacen::create(['compania_id' => $this->compania->id, 'codigo' => 'ALM-01', 'nombre' => 'Principal', 'activo' => true]);
+        $item = ItemProducto::create([
+            'compania_id' => $this->compania->id, 'codigo' => 'PROD-001', 'nombre' => 'Producto X',
+            'tipo' => ItemProducto::TIPO_PRODUCTO, 'precio_venta' => 50, 'costo' => 5,
+            'cuenta_inventario_id' => $inv->id, 'cuenta_costo_venta_id' => $costo->id, 'activo' => true,
+        ]);
+        InvExistencia::create([
+            'compania_id' => $this->compania->id, 'almacen_id' => $almacen->id, 'item_id' => $item->id,
+            'cantidad' => 10, 'costo_promedio' => 5,
+        ]);
+
+        // Emitir factura: 2 unidades a 50 (ITBMS 7%) → subtotal 100, ITBMS 7, total 107.
+        $this->actuar()->post(route('admin.ventas.facturas.store'), [
+            'cliente_id' => $this->cliente->id,
+            'fecha' => '2026-06-13',
+            'accion' => 'emitir',
+            'lineas' => [
+                ['item_id' => $item->id, 'descripcion' => 'Producto X', 'cantidad' => 2, 'precio_unitario' => 50, 'impuesto_id' => $this->impuestoId('ITBMS_7')],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $factura = VentaFactura::where('compania_id', $this->compania->id)->latest('id')->firstOrFail();
+        $this->assertSame(VentaFactura::ESTADO_EMITIDA, $factura->estado);
+
+        // Asiento cuadrado con costo de ventas: Dr CxC 107 + Dr Costo 10 / Cr Ventas 100 + Cr ITBMS 7 + Cr Inventario 10.
+        $asiento = Asiento::find($factura->asiento_id);
+        $this->assertEqualsWithDelta((float) $asiento->detalle->sum('debito'), (float) $asiento->detalle->sum('credito'), 0.001);
+        $this->assertEqualsWithDelta(117.0, (float) $asiento->detalle->sum('debito'), 0.001);
+        $this->assertEqualsWithDelta(10.0, (float) $asiento->detalle->where('cuenta_id', $costo->id)->sum('debito'), 0.001);
+        $this->assertEqualsWithDelta(10.0, (float) $asiento->detalle->where('cuenta_id', $inv->id)->sum('credito'), 0.001);
+
+        // Existencia descontada: 10 - 2 = 8, costo promedio sin cambio.
+        $exist = InvExistencia::where('almacen_id', $almacen->id)->where('item_id', $item->id)->firstOrFail();
+        $this->assertEqualsWithDelta(8.0, (float) $exist->cantidad, 0.001);
+        $this->assertEqualsWithDelta(5.0, (float) $exist->costo_promedio, 0.001);
+
+        // Movimiento de SALIDA registrado y enlazado al documento.
+        $mov = InvMovimiento::where('documento_origen', 'ventas_facturas')
+            ->where('documento_id', $factura->id)
+            ->where('tipo_movimiento', InvMovimiento::TIPO_SALIDA)
+            ->firstOrFail();
+        $this->assertSame('CONFIRMADO', $mov->estado);
+        $this->assertSame($factura->asiento_id, $mov->asiento_id);
+
+        // Anular repone el stock y marca el movimiento ANULADO.
+        $this->actuar()->post(route('admin.ventas.facturas.anular', $factura))->assertSessionHasNoErrors();
+        $this->assertEqualsWithDelta(10.0, (float) $exist->fresh()->cantidad, 0.001);
+        $this->assertSame('ANULADO', $mov->fresh()->estado);
+    }
+
+    public function test_emitir_factura_servicio_no_mueve_inventario(): void
+    {
+        // Sin item_id (servicio/libre): no debe crear movimiento de inventario ni costo.
+        $this->actuar()->post(route('admin.ventas.facturas.store'), [
+            'cliente_id' => $this->cliente->id,
+            'fecha' => '2026-06-13',
+            'accion' => 'emitir',
+            'lineas' => [
+                ['descripcion' => 'Servicio', 'cantidad' => 1, 'precio_unitario' => 100, 'impuesto_id' => $this->impuestoId('ITBMS_7')],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $factura = VentaFactura::where('compania_id', $this->compania->id)->latest('id')->firstOrFail();
+        $asiento = Asiento::find($factura->asiento_id);
+        // Solo 3 líneas: Dr CxC / Cr Ventas / Cr ITBMS (sin costo).
+        $this->assertCount(3, $asiento->detalle);
+        $this->assertSame(0, InvMovimiento::where('documento_origen', 'ventas_facturas')->where('documento_id', $factura->id)->count());
     }
 }
