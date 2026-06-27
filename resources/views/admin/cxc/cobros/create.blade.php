@@ -47,13 +47,9 @@
                                 <x-input-error :messages="$errors->get('fecha')" class="mt-1" />
                             </div>
                             <div>
-                                <x-input-label for="cuenta_cobro_id" value="Depositar en (cuenta) *" />
-                                <select id="cuenta_cobro_id" name="cuenta_cobro_id" required
-                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                    @foreach ($cuentasCobro as $cuenta)
-                                        <option value="{{ $cuenta->id }}" @selected(old('cuenta_cobro_id', $cuentaBancoId) == $cuenta->id)>{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
-                                    @endforeach
-                                </select>
+                                <x-buscador-contacto name="cuenta_cobro_id" label="Depositar en (cuenta) *" required
+                                    :opciones="$cuentasCobro" :selected="old('cuenta_cobro_id', $cuentaBancoId)"
+                                    placeholder="Buscar cuenta por código o nombre" />
                                 <x-input-error :messages="$errors->get('cuenta_cobro_id')" class="mt-1" />
                             </div>
                             <div>

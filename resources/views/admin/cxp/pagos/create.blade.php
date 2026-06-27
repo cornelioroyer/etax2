@@ -72,13 +72,9 @@
                                 <x-input-error :messages="$errors->get('fecha')" class="mt-1" />
                             </div>
                             <div>
-                                <x-input-label for="cuenta_pago_id" value="Pagar desde (cuenta) *" />
-                                <select id="cuenta_pago_id" name="cuenta_pago_id" required
-                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                    @foreach ($cuentasPago as $cuenta)
-                                        <option value="{{ $cuenta->id }}" @selected(old('cuenta_pago_id', $cuentaBancoId) == $cuenta->id)>{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
-                                    @endforeach
-                                </select>
+                                <x-buscador-contacto name="cuenta_pago_id" label="Pagar desde (cuenta) *" required
+                                    :opciones="$cuentasPago" :selected="old('cuenta_pago_id', $cuentaBancoId)"
+                                    placeholder="Buscar cuenta por código o nombre" />
                                 <x-input-error :messages="$errors->get('cuenta_pago_id')" class="mt-1" />
                             </div>
                             <div>

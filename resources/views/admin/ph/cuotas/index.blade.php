@@ -27,13 +27,8 @@
             <form method="GET" class="bg-white p-4 shadow-sm sm:rounded-lg">
                 <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
                     <div>
-                        <x-input-label value="Edificio" />
-                        <select name="edificio_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm">
-                            <option value="">Todos</option>
-                            @foreach ($edificios as $ed)
-                                <option value="{{ $ed->id }}" @selected($edificioId == $ed->id)>{{ $ed->nombre }}</option>
-                            @endforeach
-                        </select>
+                        <x-buscador-contacto name="edificio_id" label="Edificio" :opciones="$edificios"
+                            :selected="$edificioId" placeholder="Todos — buscar" empty-label="Todos" width="w-56" compact />
                     </div>
                     <div>
                         <x-input-label value="Tipo de cuota" />

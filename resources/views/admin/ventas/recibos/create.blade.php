@@ -71,13 +71,9 @@
                                 </div>
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700">Cuenta a acreditar <span class="text-red-500">*</span></label>
-                                <select name="cuenta_cobro_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 text-sm" required>
-                                    <option value="">Seleccionar…</option>
-                                    @foreach ($cuentasCobro as $cc)
-                                        <option value="{{ $cc->id }}" @selected(old('cuenta_cobro_id', $cuentaBancoId) == $cc->id)>{{ $cc->codigo }} — {{ $cc->nombre }}</option>
-                                    @endforeach
-                                </select>
+                                <x-buscador-contacto name="cuenta_cobro_id" label="Cuenta a acreditar *" required
+                                    :opciones="$cuentasCobro" :selected="old('cuenta_cobro_id', $cuentaBancoId)"
+                                    placeholder="Buscar cuenta por código o nombre" />
                             </div>
                         </div>
 

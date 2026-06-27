@@ -110,13 +110,8 @@
                 @csrf
                 <div class="grid grid-cols-2 gap-4">
                     <div class="col-span-2">
-                        <label class="block text-sm font-medium text-gray-700">Banco <span class="text-red-500">*</span></label>
-                        <select name="banco_id" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm">
-                            <option value="">Seleccionar…</option>
-                            @foreach ($bancos as $b)
-                                <option value="{{ $b->id }}">{{ $b->nombre }}</option>
-                            @endforeach
-                        </select>
+                        <x-buscador-contacto name="banco_id" label="Banco *" required
+                            :opciones="$bancos" :selected="old('banco_id')" placeholder="Buscar banco por nombre" />
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Número de cuenta <span class="text-red-500">*</span></label>

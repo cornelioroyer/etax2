@@ -75,13 +75,9 @@
 
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Contacto (opcional)</label>
-                            <select name="contacto_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 text-sm">
-                                <option value="">—</option>
-                                @foreach ($contactos as $c)
-                                    <option value="{{ $c->id }}" @selected(old('contacto_id') == $c->id)>{{ $c->codigo }} — {{ $c->nombre }}</option>
-                                @endforeach
-                            </select>
+                            <x-buscador-contacto name="contacto_id" label="Contacto (opcional)"
+                                :opciones="$contactos" :selected="old('contacto_id')"
+                                placeholder="Buscar por código o nombre" empty-label="— Ninguno —" mostrar-ruc />
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Cuenta contable contrapartida</label>
