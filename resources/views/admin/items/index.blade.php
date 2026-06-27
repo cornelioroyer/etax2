@@ -35,14 +35,11 @@
                         <option value="SERVICIO" @selected(($filtros['tipo'] ?? '') === 'SERVICIO')>Servicio</option>
                     </select>
                 </div>
+                {{-- Combobox buscable por nombre (componente genérico). --}}
                 <div>
-                    <label class="block text-xs text-gray-500 mb-1">Categoría</label>
-                    <select name="categoria_id" class="rounded-md border-gray-300 text-sm shadow-sm focus:ring-blue-500">
-                        <option value="">Todas</option>
-                        @foreach ($categorias as $cat)
-                            <option value="{{ $cat->id }}" @selected(($filtros['categoria_id'] ?? '') == $cat->id)>{{ $cat->nombre }}</option>
-                        @endforeach
-                    </select>
+                    <x-buscador-contacto name="categoria_id" label="Categoría" :opciones="$categorias"
+                        :selected="$filtros['categoria_id'] ?? ''" placeholder="Todas — buscar" empty-label="Todas"
+                        width="w-56" compact />
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">Estado</label>

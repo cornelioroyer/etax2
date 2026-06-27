@@ -17,14 +17,11 @@
             @endif
 
             <form method="GET" class="bg-white p-4 shadow-sm sm:rounded-lg flex flex-wrap gap-3 items-end">
+                {{-- Combobox buscable por código o nombre (componente genérico). --}}
                 <div>
-                    <label class="block text-xs text-gray-500 mb-1">Almacén</label>
-                    <select name="almacen_id" class="rounded-md border-gray-300 text-sm shadow-sm">
-                        <option value="">Todos</option>
-                        @foreach ($almacenes as $alm)
-                            <option value="{{ $alm->id }}" @selected(($filtros['almacen_id'] ?? '') == $alm->id)>{{ $alm->codigo }} — {{ $alm->nombre }}</option>
-                        @endforeach
-                    </select>
+                    <x-buscador-contacto name="almacen_id" label="Almacén" :opciones="$almacenes"
+                        :selected="$filtros['almacen_id'] ?? ''" placeholder="Todos — código o nombre" empty-label="Todos"
+                        width="w-56" compact />
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">Tipo</label>

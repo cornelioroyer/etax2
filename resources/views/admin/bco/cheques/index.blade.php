@@ -18,14 +18,11 @@
             @endif
 
             <form method="GET" class="flex flex-wrap gap-3 items-end">
+                {{-- Combobox buscable por nombre (componente genérico). --}}
                 <div>
-                    <label class="block text-xs text-gray-500 mb-1">Cuenta</label>
-                    <select name="cuenta_id" class="rounded-md border-gray-300 text-sm shadow-sm">
-                        <option value="">Todas</option>
-                        @foreach ($cuentas as $c)
-                            <option value="{{ $c->id }}" @selected($cuentaId == $c->id)>{{ $c->nombre }}</option>
-                        @endforeach
-                    </select>
+                    <x-buscador-contacto name="cuenta_id" label="Cuenta" :opciones="$cuentas"
+                        :selected="$cuentaId" placeholder="Todas — buscar" empty-label="Todas"
+                        width="w-56" compact />
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">Estado</label>
