@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Compania;
 use App\Models\FelConfiguracion;
+use App\Services\FelConfiguracionDefault;
 use App\Services\FelService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class FelConfiguracionController extends Controller
@@ -18,7 +20,11 @@ class FelConfiguracionController extends Controller
         $compania = $this->companiaActiva($request);
         $config = FelConfiguracion::firstWhere('compania_id', $compania->id);
 
-        return view('admin.fel.configuracion', compact('compania', 'config'));
+        // ¿Usa todavía los tokens demo compartidos? (sin config => hereda demo)
+        $esDemo = $config ? app(FelConfiguracionDefault::class)->esDemo($config) : true;
+        $endpoint = FelService::WSDL[$config->ambiente ?? 'PRUEBAS'] ?? FelService::WSDL['PRUEBAS'];
+
+        return view('admin.fel.configuracion', compact('compania', 'config', 'esDemo', 'endpoint'));
     }
 
     public function update(Request $request): RedirectResponse
@@ -43,6 +49,26 @@ class FelConfiguracionController extends Controller
         }
         if (empty($data['token_password'])) {
             unset($data['token_password']);
+        }
+
+        // PRODUCCIÓN exige credenciales PROPIAS: ni vacías ni las demo compartidas.
+        // El token que QUEDARÍA tras guardar es el nuevo (si se escribió) o el ya
+        // guardado (si el campo se dejó en blanco). Esto evita el footgun de emitir
+        // contra el endpoint de producción con la cuenta PAC demo de WIN SOFT.
+        if ($data['ambiente'] === 'PRODUCCION') {
+            $tokenEfectivo = $data['token_empresa'] ?? $config->token_empresa;
+
+            if (empty($tokenEfectivo)) {
+                throw ValidationException::withMessages([
+                    'ambiente' => 'Para emitir en PRODUCCIÓN primero debes cargar los tokens de producción de tu compañía (The Factory HKA).',
+                ]);
+            }
+
+            if ($tokenEfectivo === FelConfiguracionDefault::VALORES['token_empresa']) {
+                throw ValidationException::withMessages([
+                    'ambiente' => 'No puedes usar los tokens demo compartidos en PRODUCCIÓN. Pega las credenciales de producción propias de tu compañía y vuelve a guardar.',
+                ]);
+            }
         }
 
         $config->fill($data + [

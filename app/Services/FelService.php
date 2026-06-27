@@ -14,7 +14,8 @@ use Throwable;
  */
 class FelService
 {
-    private const WSDL = [
+    /** Endpoint del PAC por ambiente (público para mostrarlo en la config). */
+    public const WSDL = [
         'PRUEBAS' => 'https://demoemision.thefactoryhka.com.pa/ws/obj/v1.0/Service.svc?singleWsdl',
         'PRODUCCION' => 'https://emision.thefactoryhka.com.pa/ws/obj/v1.0/Service.svc?singleWsdl',
     ];

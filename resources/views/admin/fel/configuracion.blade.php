@@ -16,6 +16,21 @@
                 <strong>{{ $compania->nombre }}</strong> — proveedor: The Factory HKA.
                 Los tokens se guardan cifrados. En ambiente <strong>PRUEBAS</strong> los documentos van al
                 servidor demo del PAC (no tienen validez fiscal).
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                    @if ($esDemo)
+                        <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium" style="background:#fef3c7;color:#92400e;">Tokens demo compartidos</span>
+                    @else
+                        <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium" style="background:#dcfce7;color:#166534;">Credenciales propias</span>
+                    @endif
+                    <span class="text-xs" style="color:#1e40af;">Endpoint: <code>{{ parse_url($endpoint, PHP_URL_HOST) }}</code></span>
+                </div>
+                @if ($esDemo)
+                    <p class="mt-2 text-xs" style="color:#92400e;">
+                        Para emitir en <strong>PRODUCCIÓN</strong> con validez fiscal, esta compañía debe cargar sus
+                        propios tokens de The Factory HKA (asociados a su RUC). Mientras use los tokens demo, solo
+                        podrá emitir en PRUEBAS.
+                    </p>
+                @endif
             </div>
 
             <form method="POST" action="{{ route('admin.fel.configuracion.update') }}" class="bg-white p-6 shadow-sm sm:rounded-lg space-y-4">
