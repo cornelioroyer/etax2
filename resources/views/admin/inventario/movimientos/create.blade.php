@@ -19,13 +19,9 @@
                 <div class="bg-white p-6 shadow-sm sm:rounded-lg space-y-4">
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Almacén <span class="text-red-500">*</span></label>
-                            <select name="almacen_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 text-sm" required>
-                                <option value="">Seleccionar…</option>
-                                @foreach ($almacenes as $alm)
-                                    <option value="{{ $alm->id }}" @selected(old('almacen_id') == $alm->id)>{{ $alm->codigo }} — {{ $alm->nombre }}</option>
-                                @endforeach
-                            </select>
+                            <x-buscador-contacto name="almacen_id" label="Almacén *" required
+                                :opciones="$almacenes" :selected="old('almacen_id')"
+                                placeholder="Buscar por código o nombre" />
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Fecha <span class="text-red-500">*</span></label>

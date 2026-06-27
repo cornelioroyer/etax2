@@ -29,14 +29,10 @@
                             </select>
                         </div>
                         <div>
-                            <x-input-label for="mat_estudiante_id" value="Estudiante *" />
-                            <select id="mat_estudiante_id" name="estudiante_id"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" required>
-                                <option value="">— seleccione estudiante —</option>
-                                @foreach ($estudiantes as $est)
-                                    <option value="{{ $est->id }}" @selected(old('estudiante_id', request('estudiante_id')) == $est->id)>{{ $est->contacto?->nombre }}</option>
-                                @endforeach
-                            </select>
+                            <x-buscador-contacto name="estudiante_id" label="Estudiante *" required
+                                :opciones="$estudiantes->map(fn ($est) => (object) ['id' => $est->id, 'nombre' => $est->contacto?->nombre])"
+                                :selected="old('estudiante_id', request('estudiante_id'))"
+                                placeholder="Buscar estudiante" empty-label="— seleccione estudiante —" />
                         </div>
                         <div>
                             <x-input-label for="mat_periodo_id" value="Período *" />

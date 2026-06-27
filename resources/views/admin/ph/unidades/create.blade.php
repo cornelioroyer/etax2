@@ -56,16 +56,9 @@
                         </div>
                     </div>
                     <div class="mt-4">
-                        <x-input-label for="propietario_id" value="Propietario" />
-                        <select id="propietario_id" name="propietario_id"
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                            <option value="">— Sin propietario —</option>
-                            @foreach ($propietarios as $p)
-                                <option value="{{ $p->id }}" @selected(old('propietario_id') == $p->id)>
-                                    {{ $p->nombre }}{{ $p->identificacion ? ' — ' . $p->identificacion : '' }}
-                                </option>
-                            @endforeach
-                        </select>
+                        <x-buscador-contacto name="propietario_id" label="Propietario" :opciones="$propietarios"
+                            :selected="old('propietario_id')" placeholder="Buscar por nombre o RUC"
+                            empty-label="— Sin propietario —" mostrar-ruc />
                     </div>
                     <div class="mt-6 flex gap-3">
                         <x-primary-button>Guardar unidad</x-primary-button>

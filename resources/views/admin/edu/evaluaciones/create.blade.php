@@ -59,14 +59,9 @@
                             </select>
                         </div>
                         <div>
-                            <x-input-label for="ev_docente_id" value="Docente" />
-                            <select id="ev_docente_id" name="docente_id"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                <option value="">— ninguno —</option>
-                                @foreach ($docentes as $d)
-                                    <option value="{{ $d->id }}" @selected(old('docente_id') == $d->id)>{{ $d->contacto?->nombre }}</option>
-                                @endforeach
-                            </select>
+                            <x-buscador-contacto name="docente_id" label="Docente"
+                                :opciones="$docentes->map(fn ($d) => (object) ['id' => $d->id, 'nombre' => $d->contacto?->nombre])"
+                                :selected="old('docente_id')" placeholder="Buscar docente" empty-label="— ninguno —" />
                         </div>
                         <div>
                             <x-input-label for="ev_titulo" value="Título *" />

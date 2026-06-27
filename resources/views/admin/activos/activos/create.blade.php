@@ -59,15 +59,12 @@
                             <x-input-error :messages="$errors->get('descripcion')" class="mt-1" />
                         </div>
                         <div>
-                            <x-input-label for="categoria_id" value="Categoría" />
-                            <select id="categoria_id" name="categoria_id"
-                                x-model="categoriaId" @change="aplicarCategoria()"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                <option value="">— sin categoría —</option>
-                                @foreach ($categorias as $cat)
-                                    <option value="{{ $cat->id }}" @selected(old('categoria_id') == $cat->id)>{{ $cat->codigo }} — {{ $cat->nombre }}</option>
-                                @endforeach
-                            </select>
+                            {{-- Categoría buscable; sincroniza categoriaId y aplica sus defaults. --}}
+                            <div @contacto-seleccionado="categoriaId = $event.detail?.id ?? ''; aplicarCategoria()">
+                                <x-buscador-contacto name="categoria_id" label="Categoría"
+                                    :opciones="$categorias" :selected="old('categoria_id')"
+                                    placeholder="Buscar por código o nombre" empty-label="— sin categoría —" />
+                            </div>
                         </div>
                         <div>
                             <x-input-label for="ubicacion_id" value="Ubicación" />

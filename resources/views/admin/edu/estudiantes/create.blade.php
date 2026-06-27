@@ -29,14 +29,9 @@
                             </select>
                         </div>
                         <div>
-                            <x-input-label for="est_contacto_id" value="Contacto (persona) *" />
-                            <select id="est_contacto_id" name="contacto_id"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" required>
-                                <option value="">— seleccione contacto —</option>
-                                @foreach ($contactos as $c)
-                                    <option value="{{ $c->id }}" @selected(old('contacto_id') == $c->id)>{{ $c->nombre }} {{ $c->identificacion ? '(' . $c->identificacion . ')' : '' }}</option>
-                                @endforeach
-                            </select>
+                            <x-buscador-contacto name="contacto_id" label="Contacto (persona) *" required
+                                :opciones="$contactos" :selected="old('contacto_id')"
+                                placeholder="Buscar por nombre o RUC" empty-label="— seleccione contacto —" mostrar-ruc />
                         </div>
                         <div>
                             <x-input-label for="est_codigo" value="Código de estudiante" />

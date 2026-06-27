@@ -24,14 +24,9 @@
                     @csrf
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
-                            <x-input-label for="edificio_id" value="Edificio *" />
-                            <select id="edificio_id" name="edificio_id" required
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                <option value="">— Seleccione —</option>
-                                @foreach ($edificios as $ed)
-                                    <option value="{{ $ed->id }}" @selected(old('edificio_id') == $ed->id)>{{ $ed->nombre }}</option>
-                                @endforeach
-                            </select>
+                            <x-buscador-contacto name="edificio_id" label="Edificio *" required
+                                :opciones="$edificios" :selected="old('edificio_id')"
+                                placeholder="Buscar edificio" empty-label="— Seleccione —" />
                         </div>
                         <div>
                             <x-input-label for="tipo_cuota_id" value="Tipo de cuota *" />

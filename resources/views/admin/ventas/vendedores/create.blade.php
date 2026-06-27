@@ -24,13 +24,9 @@
                                class="w-full rounded-md border-gray-300 text-sm shadow-sm uppercase" placeholder="Ej: VEND01">
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Contacto (opcional)</label>
-                        <select name="contacto_id" class="w-full rounded-md border-gray-300 text-sm shadow-sm">
-                            <option value="">Sin asignar</option>
-                            @foreach ($contactos as $ct)
-                                <option value="{{ $ct->id }}" @selected(old('contacto_id') == $ct->id)>{{ $ct->nombre }}</option>
-                            @endforeach
-                        </select>
+                        <x-buscador-contacto name="contacto_id" label="Contacto (opcional)"
+                            :opciones="$contactos" :selected="old('contacto_id')"
+                            placeholder="Buscar por nombre o código" empty-label="Sin asignar" mostrar-ruc />
                     </div>
 
                     <div class="flex justify-end gap-3 pt-2">
