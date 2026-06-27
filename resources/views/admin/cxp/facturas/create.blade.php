@@ -14,7 +14,7 @@
 
                 <form method="POST" action="{{ route('admin.cxp.facturas.store') }}"
                       x-data="facturaCxp({{ old('lineas') ? collect(old('lineas'))->values()->toJson() : '[]' }}, {{ (int) ($cuentaGastoId ?? 0) }}, {{ $proveedores->pluck('cuenta_gasto_id', 'id')->toJson() }}, '{{ old('forma_pago', 'CREDITO') }}', '{{ old('cuenta_pago_id', $cuentaPagoId) }}', '{{ old('tipo_documento', 'FACTURA') }}')"
-                      x-init="$nextTick(() => onProveedor(document.getElementById('proveedor_id').value))">
+                      x-init="$nextTick(() => onProveedor('{{ old('proveedor_id') }}'))">
                     @csrf
 
                     <div class="mb-4 max-w-xs">
@@ -33,16 +33,19 @@
                     </div>
 
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
-                        <div class="sm:col-span-2">
-                            <x-input-label for="proveedor_id" value="Proveedor *" />
-                            <select id="proveedor_id" name="proveedor_id" required
-                                    @change="onProveedor($event.target.value)"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="">— Proveedor —</option>
-                                @foreach ($proveedores as $proveedor)
-                                    <option value="{{ $proveedor->id }}" @selected(old('proveedor_id') == $proveedor->id)>{{ $proveedor->codigo }} — {{ $proveedor->nombre }}</option>
-                                @endforeach
-                            </select>
+                        {{-- Proveedor buscable por código o nombre. El listener
+                             @contacto-seleccionado va en este div (scope de facturaCxp)
+                             para que onProveedor siga autoseleccionando la cuenta de gasto. --}}
+                        <div class="sm:col-span-2" @contacto-seleccionado="onProveedor($event.detail?.id ?? '')">
+                            <x-buscador-contacto
+                                name="proveedor_id"
+                                label="Proveedor *"
+                                :opciones="$proveedores"
+                                :selected="old('proveedor_id')"
+                                placeholder="— Proveedor — código o nombre"
+                                mostrar-ruc
+                                required
+                            />
                             <x-input-error :messages="$errors->get('proveedor_id')" class="mt-1" />
                         </div>
                         <div>

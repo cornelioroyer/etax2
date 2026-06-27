@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
         flatpickr(el, {
             dateFormat: 'Y-m-d',
             locale: { firstDayOfWeek: 1 },
+            weekNumbers: true,
             allowInput: true,
         });
     });

@@ -36,11 +36,11 @@
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">Desde</label>
-                    <input type="date" name="desde" value="{{ $desde }}" class="rounded-md border-gray-300 text-sm shadow-sm">
+                    <input type="text" name="desde" value="{{ $desde }}" class="js-date rounded-md border-gray-300 text-sm shadow-sm">
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">Hasta</label>
-                    <input type="date" name="hasta" value="{{ $hasta }}" class="rounded-md border-gray-300 text-sm shadow-sm">
+                    <input type="text" name="hasta" value="{{ $hasta }}" class="js-date rounded-md border-gray-300 text-sm shadow-sm">
                 </div>
                 <button type="submit" class="rounded-md bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">Filtrar</button>
             </form>
