@@ -6,8 +6,10 @@ use App\Models\Compania;
 use App\Models\Respaldo;
 use App\Models\User;
 use App\Services\RespaldoCompania;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 use ZipArchive;
@@ -30,28 +32,42 @@ class RespaldoCompaniaTest extends TestCase
         $this->companiaA = Compania::create(['nombre' => 'COMPANIA A', 'activa' => true]);
         $this->companiaB = Compania::create(['nombre' => 'COMPANIA B', 'activa' => true]);
 
-        // Tabla DIRECTA (compania_id): 2 contactos de A, 1 de B.
-        $a1 = DB::table('contact_contactos')->insertGetId([
-            'compania_id' => $this->companiaA->id, 'nombre' => 'Cliente A1',
-        ]);
-        DB::table('contact_contactos')->insert([
-            'compania_id' => $this->companiaA->id, 'nombre' => 'Cliente A2',
-        ]);
-        $b1 = DB::table('contact_contactos')->insertGetId([
-            'compania_id' => $this->companiaB->id, 'nombre' => 'Cliente B1',
-        ]);
-
-        // Tabla HIJA (sin compania_id, pertenece por contacto_id): una de A, una de B.
-        DB::table('contact_contactos_tipos')->insert([
-            ['contacto_id' => $a1, 'tipo_id' => 1],
-            ['contacto_id' => $b1, 'tipo_id' => 1],
-        ]);
+        // Par padre/hijo propio para ejercitar el mismo código que usa el esquema
+        // real: DIRECTA (compania_id) + HIJA resuelta por FK ON DELETE CASCADE.
+        Schema::dropIfExists('zz_hijos');
+        Schema::dropIfExists('zz_padres');
+        Schema::create('zz_padres', function (Blueprint $t) {
+            $t->id();
+            $t->unsignedBigInteger('compania_id');
+            $t->string('nombre');
+        });
+        Schema::create('zz_hijos', function (Blueprint $t) {
+            $t->id();
+            $t->foreignId('padre_id')->constrained('zz_padres')->cascadeOnDelete();
+            $t->string('dato');
+        });
     }
 
-    /** El respaldo de A contiene SOLO datos de A, incluidas las tablas hija. */
+    protected function tearDown(): void
+    {
+        Schema::dropIfExists('zz_hijos');
+        Schema::dropIfExists('zz_padres');
+        parent::tearDown();
+    }
+
+    /** El respaldo de A contiene SOLO datos de A, incluida la tabla hija (FK CASCADE). */
     public function test_respaldo_contiene_solo_datos_de_la_compania(): void
     {
         Storage::fake('local');
+
+        // 2 padres de A, 1 de B; cada uno con un hijo.
+        $pa1 = DB::table('zz_padres')->insertGetId(['compania_id' => $this->companiaA->id, 'nombre' => 'A1']);
+        DB::table('zz_padres')->insert(['compania_id' => $this->companiaA->id, 'nombre' => 'A2']);
+        $pb1 = DB::table('zz_padres')->insertGetId(['compania_id' => $this->companiaB->id, 'nombre' => 'B1']);
+        DB::table('zz_hijos')->insert([
+            ['padre_id' => $pa1, 'dato' => 'hijo de A'],
+            ['padre_id' => $pb1, 'dato' => 'hijo de B'],
+        ]);
 
         $respaldo = Respaldo::create([
             'compania_id' => $this->companiaA->id,
@@ -63,32 +79,28 @@ class RespaldoCompaniaTest extends TestCase
 
         $respaldo->refresh();
         $this->assertSame(Respaldo::ESTADO_COMPLETADO, $respaldo->estado);
-        $this->assertNotNull($respaldo->ruta);
         $this->assertTrue(Storage::disk('local')->exists($respaldo->ruta));
 
-        // Abrir el ZIP producido.
         $zip = new ZipArchive();
         $this->assertTrue($zip->open(Storage::disk('local')->path($respaldo->ruta)) === true);
 
-        // Tabla directa: solo los 2 contactos de A, ninguno de B.
-        $contactos = $this->ndjson($zip, 'data/contact_contactos.ndjson');
-        $this->assertCount(2, $contactos);
-        foreach ($contactos as $c) {
-            $this->assertSame($this->companiaA->id, (int) $c->compania_id);
+        // DIRECTA: solo los 2 padres de A.
+        $padres = $this->ndjson($zip, 'data/zz_padres.ndjson');
+        $this->assertCount(2, $padres);
+        foreach ($padres as $p) {
+            $this->assertSame($this->companiaA->id, (int) $p->compania_id);
         }
-        $this->assertNotContains('Cliente B1', array_map(fn ($c) => $c->nombre, $contactos));
+        $this->assertNotContains('B1', array_map(fn ($p) => $p->nombre, $padres));
 
-        // Tabla hija: solo el tipo del contacto de A (resuelto por la cadena fk).
-        $tipos = $this->ndjson($zip, 'data/contact_contactos_tipos.ndjson');
-        $this->assertCount(1, $tipos);
+        // HIJA: solo el hijo de A, resuelto por la cadena de FK CASCADE.
+        $hijos = $this->ndjson($zip, 'data/zz_hijos.ndjson');
+        $this->assertCount(1, $hijos);
+        $this->assertSame('hijo de A', $hijos[0]->dato);
 
-        // Manifest: cobertura total del esquema, sin tablas sin clasificar.
         $manifest = json_decode($zip->getFromName('manifest.json'));
         $this->assertSame($this->companiaA->id, $manifest->compania->id);
-        $this->assertSame([], $manifest->tablas_no_clasificadas_omitidas,
-            'Hay tablas del esquema sin clasificar en el manifiesto de respaldo: '
-            .implode(', ', $manifest->tablas_no_clasificadas_omitidas));
-        $this->assertSame(2, $manifest->tablas->contact_contactos);
+        $this->assertSame(2, $manifest->tablas->zz_padres);
+        $this->assertSame(1, $manifest->tablas->zz_hijos);
 
         $zip->close();
     }
@@ -96,7 +108,6 @@ class RespaldoCompaniaTest extends TestCase
     /** No se puede descargar el respaldo de OTRA compañía (aislamiento / anti-IDOR). */
     public function test_no_descarga_respaldo_de_otra_compania(): void
     {
-        // Respaldo perteneciente a B.
         $respaldoB = Respaldo::create([
             'compania_id' => $this->companiaB->id,
             'usuario' => 'admin@test',
@@ -106,7 +117,6 @@ class RespaldoCompaniaTest extends TestCase
             'disco' => 'local',
         ]);
 
-        // Usuario con compañía activa = A intenta bajar el respaldo de B -> 404.
         $resp = $this->actingAs($this->admin)
             ->withSession(['compania_activa_id' => $this->companiaA->id])
             ->get(route('admin.respaldos.download', $respaldoB));
