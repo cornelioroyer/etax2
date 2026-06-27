@@ -67,14 +67,9 @@
                             </div>
                         </div>
                         <div>
-                            <x-input-label for="ubicacion_id" value="Ubicación" />
-                            <select id="ubicacion_id" name="ubicacion_id"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                <option value="">— sin ubicación —</option>
-                                @foreach ($ubicaciones as $ub)
-                                    <option value="{{ $ub->id }}" @selected(old('ubicacion_id') == $ub->id)>{{ $ub->codigo }} — {{ $ub->nombre }}</option>
-                                @endforeach
-                            </select>
+                            <x-buscador-contacto name="ubicacion_id" label="Ubicación" :opciones="$ubicaciones"
+                                :selected="old('ubicacion_id')" placeholder="Buscar por código o nombre"
+                                empty-label="— sin ubicación —" />
                         </div>
                         <div>
                             <x-input-label for="fecha_compra" value="Fecha de compra *" />

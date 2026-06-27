@@ -36,13 +36,9 @@
                         <p class="mt-1 text-xs text-gray-400">Si lo dejas vacío se usará el nombre del contacto vinculado.</p>
                     </div>
                     <div>
-                        <label for="contacto_id" class="block text-sm text-gray-500 mb-1">Contacto</label>
-                        <select name="contacto_id" id="contacto_id" class="w-full border-gray-300 rounded-md shadow-sm text-sm focus:ring-indigo-500 focus:border-indigo-500">
-                            <option value="">— Sin contacto —</option>
-                            @foreach ($contactos as $c)
-                                <option value="{{ $c->id }}" @selected($vendedor->contacto_id == $c->id)>{{ $c->nombre }}</option>
-                            @endforeach
-                        </select>
+                        <x-buscador-contacto name="contacto_id" label="Contacto" :opciones="$contactos"
+                            :selected="$vendedor->contacto_id" placeholder="Buscar por nombre o código"
+                            empty-label="— Sin contacto —" mostrar-ruc />
                     </div>
                     <button type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700">Guardar</button>
                 </form>

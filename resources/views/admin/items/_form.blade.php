@@ -34,13 +34,9 @@
             </select>
         </div>
         <div>
-            <label class="block text-sm font-medium text-gray-700">Categoría</label>
-            <select name="categoria_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 text-sm">
-                <option value="">Sin categoría</option>
-                @foreach ($categorias as $cat)
-                    <option value="{{ $cat->id }}" @selected(old('categoria_id', $item->categoria_id ?? '') == $cat->id)>{{ $cat->nombre }}</option>
-                @endforeach
-            </select>
+            <x-buscador-contacto name="categoria_id" label="Categoría" :opciones="$categorias"
+                :selected="old('categoria_id', $item->categoria_id ?? '')"
+                placeholder="Buscar categoría" empty-label="Sin categoría" />
         </div>
         <div>
             <label class="block text-sm font-medium text-gray-700">Unidad de medida</label>
@@ -94,13 +90,9 @@
             </select>
         </div>
         <div>
-            <label class="block text-sm font-medium text-gray-700">Cuenta de gasto/costo</label>
-            <select name="cuenta_gasto_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 text-sm">
-                <option value="">Sin cuenta</option>
-                @foreach ($cuentas as $c)
-                    <option value="{{ $c->id }}" @selected(old('cuenta_gasto_id', isset($item) ? ($item->cuenta_gasto_id ?? '') : ($cuentaGastoDefaultId ?? '')) == $c->id)>{{ $c->codigo }} — {{ $c->nombre }}</option>
-                @endforeach
-            </select>
+            <x-buscador-contacto name="cuenta_gasto_id" label="Cuenta de gasto/costo" :opciones="$cuentas"
+                :selected="old('cuenta_gasto_id', isset($item) ? ($item->cuenta_gasto_id ?? '') : ($cuentaGastoDefaultId ?? ''))"
+                placeholder="Buscar cuenta por código o nombre" empty-label="Sin cuenta" />
         </div>
     </div>
 </div>

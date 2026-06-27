@@ -163,14 +163,9 @@
                                 class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-end">
                                 @csrf
                                 <div class="lg:col-span-2">
-                                    <label class="block text-xs text-gray-600 mb-1">Cuenta contable *</label>
-                                    <select name="cuenta_id" required
-                                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                        <option value="">— Seleccione cuenta —</option>
-                                        @foreach ($cuentas as $c)
-                                            <option value="{{ $c->id }}">{{ $c->codigo }} · {{ $c->nombre }}</option>
-                                        @endforeach
-                                    </select>
+                                    <x-buscador-contacto name="cuenta_id" label="Cuenta contable *" required
+                                        :opciones="$cuentas" placeholder="Buscar cuenta por código o nombre"
+                                        empty-label="— Seleccione cuenta —" compact />
                                 </div>
                                 <div>
                                     <label class="block text-xs text-gray-600 mb-1">Periodo</label>
@@ -183,34 +178,16 @@
                                     </select>
                                 </div>
                                 <div>
-                                    <label class="block text-xs text-gray-600 mb-1">Centro de costo</label>
-                                    <select name="centro_costo_id"
-                                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                        <option value="">— Ninguno —</option>
-                                        @foreach ($centrosCosto as $cc)
-                                            <option value="{{ $cc->id }}">{{ $cc->codigo }} · {{ $cc->nombre }}</option>
-                                        @endforeach
-                                    </select>
+                                    <x-buscador-contacto name="centro_costo_id" label="Centro de costo" :opciones="$centrosCosto"
+                                        placeholder="Buscar" empty-label="— Ninguno —" compact />
                                 </div>
                                 <div>
-                                    <label class="block text-xs text-gray-600 mb-1">Departamento</label>
-                                    <select name="departamento_id"
-                                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                        <option value="">— Ninguno —</option>
-                                        @foreach ($departamentos as $dep)
-                                            <option value="{{ $dep->id }}">{{ $dep->codigo }} · {{ $dep->nombre }}</option>
-                                        @endforeach
-                                    </select>
+                                    <x-buscador-contacto name="departamento_id" label="Departamento" :opciones="$departamentos"
+                                        placeholder="Buscar" empty-label="— Ninguno —" compact />
                                 </div>
                                 <div>
-                                    <label class="block text-xs text-gray-600 mb-1">Proyecto</label>
-                                    <select name="proyecto_id"
-                                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                        <option value="">— Ninguno —</option>
-                                        @foreach ($proyectos as $pro)
-                                            <option value="{{ $pro->id }}">{{ $pro->codigo }} · {{ $pro->nombre }}</option>
-                                        @endforeach
-                                    </select>
+                                    <x-buscador-contacto name="proyecto_id" label="Proyecto" :opciones="$proyectos"
+                                        placeholder="Buscar" empty-label="— Ninguno —" compact />
                                 </div>
                                 <div>
                                     <label class="block text-xs text-gray-600 mb-1">Monto presupuestado *</label>

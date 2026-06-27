@@ -173,13 +173,8 @@
                             </div>
                             @if ($almacenes->isNotEmpty())
                                 <div class="mt-4 sm:w-1/3">
-                                    <x-input-label for="fac_almacen" value="Almacén (entrada a inventario)" />
-                                    <select id="fac_almacen" name="almacen_id"
-                                            class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                        @foreach ($almacenes as $almacen)
-                                            <option value="{{ $almacen->id }}">{{ $almacen->codigo }} — {{ $almacen->nombre }}</option>
-                                        @endforeach
-                                    </select>
+                                    <x-buscador-contacto name="almacen_id" label="Almacén (entrada a inventario)" required
+                                        :opciones="$almacenes" placeholder="Buscar por código o nombre" />
                                     <p class="mt-1 text-xs text-gray-500">Las líneas con producto inventariable subirán las existencias a este almacén.</p>
                                 </div>
                             @endif
