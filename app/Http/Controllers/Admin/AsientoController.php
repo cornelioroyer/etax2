@@ -585,13 +585,57 @@ class AsientoController extends Controller
         $this->asegurarManual($asiento, 'anular');
         $this->asegurarPeriodoAbierto($asiento, 'anular');
 
+        // Opción: tras anular, dejar una copia en BORRADOR (mismas líneas) para
+        // corregirla y volver a postear. No se postea aquí; queda manual y editable.
+        $copiar = $request->boolean('copiar_borrador');
+        $usuario = $request->user();
+
         // El AsientoObserver retira los movimientos bancarios reflejados; si
         // alguno está conciliado lanza ValidationException y la transacción
         // revierte la anulación.
-        DB::transaction(fn () => $asiento->update([
-            'estado' => Asiento::ESTADO_ANULADO,
-            'updated_by' => $request->user()->email,
-        ]));
+        $copia = DB::transaction(function () use ($asiento, $usuario, $copiar) {
+            $asiento->update([
+                'estado' => Asiento::ESTADO_ANULADO,
+                'updated_by' => $usuario->email,
+            ]);
+
+            if (! $copiar) {
+                return null;
+            }
+
+            $asiento->load('detalle');
+
+            $copia = Asiento::create([
+                'compania_id' => $asiento->compania_id,
+                'diario_id' => $asiento->diario_id,
+                'numero' => Asiento::siguienteNumero($asiento->compania_id),
+                'fecha' => $asiento->fecha,
+                'descripcion' => $asiento->descripcion,
+                'referencia' => $asiento->referencia,
+                'estado' => Asiento::ESTADO_BORRADOR,
+                'origen_modulo' => 'CGL',
+                'origen_tabla' => 'cgl_asientos',
+                'origen_id' => $asiento->id,
+                'total_debito' => (float) $asiento->total_debito,
+                'total_credito' => (float) $asiento->total_credito,
+                'usuario_id' => $usuario->id,
+                'created_by' => $usuario->email,
+            ]);
+
+            $this->guardarLineas($copia, $asiento->detalle->map(fn ($l) => [
+                'cuenta_id' => $l->cuenta_id,
+                'descripcion' => $l->descripcion,
+                'debito' => (float) $l->debito,
+                'credito' => (float) $l->credito,
+            ])->all(), $usuario->email);
+
+            return $copia;
+        });
+
+        if ($copia) {
+            return redirect()->route('admin.asientos.show', $copia)
+                ->with('status', "Asiento {$asiento->numero} anulado. Copia {$copia->numero} creada en borrador: revísala y postéala.");
+        }
 
         return redirect()->route('admin.asientos.show', $asiento)
             ->with('status', "Asiento {$asiento->numero} anulado.");

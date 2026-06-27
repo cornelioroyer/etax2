@@ -45,10 +45,22 @@
                                class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Editar en {{ $asiento->nombreModuloOrigen() }} →</a>
                         @endif
                         <form method="POST" action="{{ route('admin.asientos.anular', $asiento) }}"
-                              onsubmit="return confirm('¿Anular el asiento {{ $asiento->numero }}? Esta acción revierte su efecto en los saldos.');">
+                              onsubmit="return confirmarAnular(this);">
                             @csrf
+                            <input type="hidden" name="copiar_borrador" value="0">
                             <button class="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">Anular</button>
                         </form>
+                        <script>
+                            function confirmarAnular(form) {
+                                if (! confirm('¿Anular el asiento {{ $asiento->numero }}? Esta acción revierte su efecto en los saldos.')) {
+                                    return false;
+                                }
+                                form.copiar_borrador.value =
+                                    confirm('¿Quieres una copia en BORRADOR (mismas líneas) para corregirla y volver a postear?\n\nAceptar = sí, crear borrador.\nCancelar = solo anular.')
+                                        ? '1' : '0';
+                                return true;
+                            }
+                        </script>
                     @endcan
                 @endif
             </div>

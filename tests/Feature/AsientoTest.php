@@ -274,6 +274,61 @@ class AsientoTest extends TestCase
         $this->assertSame('ANULADO', $asiento->fresh()->estado);
     }
 
+    public function test_anular_con_copia_deja_un_borrador_enlazado(): void
+    {
+        $asiento = $this->crearBorrador();
+        $this->actingAs($this->admin)
+            ->withSession(['compania_activa_id' => $this->compania->id])
+            ->post(route('admin.asientos.postear', $asiento))
+            ->assertSessionHasNoErrors();
+
+        $this->actingAs($this->admin)
+            ->withSession(['compania_activa_id' => $this->compania->id])
+            ->post(route('admin.asientos.anular', $asiento), ['copiar_borrador' => '1'])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('ANULADO', $asiento->fresh()->estado);
+
+        // La copia queda en BORRADOR, manual, enlazada al original y con las
+        // mismas líneas (cuadrada). No se postea: se revisa y postea aparte.
+        $copia = \App\Models\Asiento::where('compania_id', $this->compania->id)
+            ->where('origen_id', $asiento->id)
+            ->where('estado', 'BORRADOR')
+            ->first();
+
+        $this->assertNotNull($copia, 'Debe existir la copia en borrador enlazada al anulado.');
+        $this->assertTrue($copia->esManual());
+        $this->assertSame(
+            $asiento->detalle()->count(),
+            $copia->detalle()->count(),
+            'La copia debe replicar todas las líneas del original.'
+        );
+        $this->assertEqualsWithDelta(
+            (float) $asiento->total_debito,
+            (float) $copia->total_debito,
+            0.004
+        );
+    }
+
+    public function test_anular_sin_copia_no_crea_borrador(): void
+    {
+        $asiento = $this->crearBorrador();
+        $this->actingAs($this->admin)
+            ->withSession(['compania_activa_id' => $this->compania->id])
+            ->post(route('admin.asientos.postear', $asiento));
+
+        $this->actingAs($this->admin)
+            ->withSession(['compania_activa_id' => $this->compania->id])
+            ->post(route('admin.asientos.anular', $asiento), ['copiar_borrador' => '0'])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('ANULADO', $asiento->fresh()->estado);
+        $this->assertFalse(
+            \App\Models\Asiento::where('origen_id', $asiento->id)->exists(),
+            'Sin opción de copia no debe crearse ningún borrador.'
+        );
+    }
+
     public function test_no_se_puede_anular_asiento_en_periodo_cerrado(): void
     {
         $asiento = $this->crearBorrador();
