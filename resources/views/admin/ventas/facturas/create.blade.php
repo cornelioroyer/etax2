@@ -262,14 +262,9 @@
                         </div>
 
                         <div class="mt-4">
-                            <x-input-label value="Cuenta de ventas (contrapartida) *" />
-                            <select name="cuenta_id" required
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="">— Cuenta —</option>
-                                @foreach ($cuentasIngreso as $cuenta)
-                                    <option value="{{ $cuenta->id }}" @selected(old('cuenta_id', $cuentaVentasId) == $cuenta->id)>{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
-                                @endforeach
-                            </select>
+                            <x-buscador-contacto name="cuenta_id" label="Cuenta de ventas (contrapartida) *" required
+                                :opciones="$cuentasIngreso" :selected="old('cuenta_id', $cuentaVentasId)"
+                                placeholder="Buscar cuenta por código o nombre" empty-label="— Cuenta —" />
                             <x-input-error :messages="$errors->get('cuenta_id')" class="mt-1" />
                         </div>
 
@@ -317,14 +312,9 @@
                                 <x-input-error :messages="$errors->get('total')" class="mt-1" />
                             </div>
                             <div>
-                                <x-input-label value="Cuenta contrapartida (ingreso/otro) *" />
-                                <select name="cuenta_id" required
-                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                    <option value="">— Cuenta —</option>
-                                    @foreach ($cuentasIngreso as $cuenta)
-                                        <option value="{{ $cuenta->id }}" @selected(old('cuenta_id', $cuentaVentasId) == $cuenta->id)>{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
-                                    @endforeach
-                                </select>
+                                <x-buscador-contacto name="cuenta_id" label="Cuenta contrapartida (ingreso/otro) *" required
+                                    :opciones="$cuentasIngreso" :selected="old('cuenta_id', $cuentaVentasId)"
+                                    placeholder="Buscar cuenta por código o nombre" empty-label="— Cuenta —" />
                                 <x-input-error :messages="$errors->get('cuenta_id')" class="mt-1" />
                             </div>
                         </div>
@@ -385,14 +375,9 @@
                                 <x-input-error :messages="$errors->get('total')" class="mt-1" />
                             </div>
                             <div>
-                                <x-input-label value="Cuenta de reembolso (contrapartida) *" />
-                                <select name="cuenta_id" required
-                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                    <option value="">— Cuenta —</option>
-                                    @foreach ($cuentasIngreso as $cuenta)
-                                        <option value="{{ $cuenta->id }}" @selected(old('cuenta_id', $cuentaVentasId) == $cuenta->id)>{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
-                                    @endforeach
-                                </select>
+                                <x-buscador-contacto name="cuenta_id" label="Cuenta de reembolso (contrapartida) *" required
+                                    :opciones="$cuentasIngreso" :selected="old('cuenta_id', $cuentaVentasId)"
+                                    placeholder="Buscar cuenta por código o nombre" empty-label="— Cuenta —" />
                                 <x-input-error :messages="$errors->get('cuenta_id')" class="mt-1" />
                             </div>
                         </div>

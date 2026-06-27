@@ -69,12 +69,10 @@
                             <x-text-input id="fecha" name="fecha" type="text" class="js-date mt-1 block w-full" :value="old('fecha', now()->format('Y-m-d'))" />
                         </div>
                         <div>
-                            <x-input-label for="cuenta_id" :value="$esCredito ? 'Cuenta de contrapartida (gasto/inventario) *' : 'Cuenta de gasto/cargo *'" />
-                            <select id="cuenta_id" name="cuenta_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                @foreach ($cuentas as $cta)
-                                    <option value="{{ $cta->id }}" @selected(old('cuenta_id', $cuentaSugeridaId) == $cta->id)>{{ $cta->codigo }} — {{ $cta->nombre }}</option>
-                                @endforeach
-                            </select>
+                            <x-buscador-contacto name="cuenta_id" required
+                                :label="$esCredito ? 'Cuenta de contrapartida (gasto/inventario) *' : 'Cuenta de gasto/cargo *'"
+                                :opciones="$cuentas" :selected="old('cuenta_id', $cuentaSugeridaId)"
+                                placeholder="Buscar cuenta por código o nombre" />
                         </div>
                     </div>
 

@@ -56,13 +56,9 @@
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Cuenta de ventas (contrapartida) <span class="text-red-500">*</span></label>
-                        <select name="cuenta_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 text-sm" required>
-                            <option value="">Seleccionar…</option>
-                            @foreach ($cuentasVenta as $cv)
-                                <option value="{{ $cv->id }}" @selected(old('cuenta_id', $cuentaVentaId) == $cv->id)>{{ $cv->codigo }} — {{ $cv->nombre }}</option>
-                            @endforeach
-                        </select>
+                        <x-buscador-contacto name="cuenta_id" label="Cuenta de ventas (contrapartida) *" required
+                            :opciones="$cuentasVenta" :selected="old('cuenta_id', $cuentaVentaId)"
+                            placeholder="Buscar cuenta por código o nombre" />
                     </div>
                 </div>
 
