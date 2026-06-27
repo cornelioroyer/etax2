@@ -33,6 +33,25 @@ return Application::configure(basePath: dirname(__DIR__))
             ->dailyAt('02:10')
             ->withoutOverlapping()
             ->appendOutputTo($logRecurrentes);
+
+        // Verificación diaria de la maquinaria de integridad contable (UNIQUE,
+        // triggers y funciones que protegen cgl_saldos; viven en el esquema
+        // maestro PG, fuera de las migraciones). La salida (OK / FALTA) se anexa
+        // a storage/logs/integridad.log; si el comando falla (exit != 0),
+        // onFailure marca una línea de ALERTA para que salte a la vista.
+        $logIntegridad = storage_path('logs/integridad.log');
+
+        $schedule->command('contabilidad:verificar-integridad')
+            ->dailyAt('03:00')
+            ->withoutOverlapping()
+            ->appendOutputTo($logIntegridad)
+            ->onFailure(function () use ($logIntegridad) {
+                file_put_contents(
+                    $logIntegridad,
+                    '['.date('Y-m-d H:i:s').'] ALERTA: la verificación de integridad contable FALLÓ (faltan objetos del esquema maestro). Revisa el detalle de esta corrida.'.PHP_EOL,
+                    FILE_APPEND
+                );
+            });
     })
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
