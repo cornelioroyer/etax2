@@ -17,14 +17,11 @@
             @endif
 
             <form method="GET" class="bg-white p-4 shadow-sm sm:rounded-lg flex flex-wrap gap-3 items-end">
+                {{-- Combobox buscable; nombre mapeado a "Banco — Cuenta" para no perder el banco. --}}
                 <div>
-                    <label class="block text-xs text-gray-500 mb-1">Cuenta</label>
-                    <select name="cuenta_id" class="rounded-md border-gray-300 text-sm shadow-sm">
-                        <option value="">Todas</option>
-                        @foreach ($cuentas as $c)
-                            <option value="{{ $c->id }}" @selected(($filtros['cuenta_id'] ?? '') == $c->id)>{{ $c->banco?->nombre }} — {{ $c->nombre }}</option>
-                        @endforeach
-                    </select>
+                    <x-buscador-contacto name="cuenta_id" label="Cuenta"
+                        :opciones="$cuentas->map(fn ($c) => (object) ['id' => $c->id, 'nombre' => trim(($c->banco?->nombre ? $c->banco->nombre.' — ' : '').$c->nombre)])"
+                        :selected="$filtros['cuenta_id'] ?? ''" placeholder="Todas — buscar" empty-label="Todas" width="w-64" compact />
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">Desde</label>

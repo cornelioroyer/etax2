@@ -82,17 +82,12 @@
                             </select>
                             <x-input-error :messages="$errors->get('forma_pago')" class="mt-1" />
                         </div>
-                        <div class="sm:col-span-2" x-show="pagoInmediato()" x-cloak>
-                            <x-input-label for="cuenta_pago_id">
-                                <span x-text="formaPago === 'TARJETA' ? 'Cuenta de tarjeta (pasivo) *' : 'Cuenta de banco / caja *'">Cuenta de banco / caja *</span>
-                            </x-input-label>
-                            <select id="cuenta_pago_id" name="cuenta_pago_id" x-model="cuentaPago"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="">— Cuenta —</option>
-                                @foreach ($cuentasPago as $cuenta)
-                                    <option value="{{ $cuenta->id }}">{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
-                                @endforeach
-                            </select>
+                        {{-- Cuenta de pago buscable; sincroniza cuentaPago por evento (solo se inicializa, nunca se reasigna). --}}
+                        <div class="sm:col-span-2" x-show="pagoInmediato()" x-cloak
+                             @contacto-seleccionado="cuentaPago = $event.detail?.id ?? ''">
+                            <x-buscador-contacto name="cuenta_pago_id" label="Cuenta de banco / caja / tarjeta *"
+                                :opciones="$cuentasPago" :selected="old('cuenta_pago_id', $cuentaPagoId)"
+                                placeholder="Buscar cuenta por código o nombre" empty-label="— Cuenta —" />
                             <x-input-error :messages="$errors->get('cuenta_pago_id')" class="mt-1" />
                         </div>
                         <div class="flex items-end" x-show="pagoInmediato()" x-cloak>
