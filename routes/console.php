@@ -105,6 +105,27 @@ Artisan::command('contabilidad:verificar-integridad', function () {
             'SELECT 1 FROM pg_trigger WHERE tgname=? AND NOT tgisinternal', [$trg]));
     }
 
+    // Contenido de funciones críticas: que existan no basta — alguien podría
+    // recrear una función con un cuerpo viejo y perder una regla. Se busca un
+    // marcador estable del cuerpo (prosrc). Solo se evalúa si la función existe
+    // (su ausencia ya la reporta el bloque anterior).
+    $contiene = function (string $fn, string $marcador): bool {
+        $row = DB::selectOne(
+            'SELECT p.prosrc AS src FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname=\'public\' AND p.proname=?',
+            [$fn]
+        );
+
+        return $row !== null && str_contains($row->src, $marcador);
+    };
+
+    foreach ([
+        ['fn_proteger_asiento_posteado', 'no se puede anular un asiento en un periodo cerrado', 'bloquea anular en período cerrado (A4)'],
+        ['fn_validar_asiento_posteado',  'no se puede postear',                                  'bloquea postear en período cerrado'],
+        ['fn_validar_asiento_posteado',  'descuadrado',                                          'rechaza asiento descuadrado al postear'],
+    ] as [$fn, $marcador, $regla]) {
+        $check("contenido {$fn}() — {$regla}", $contiene($fn, $marcador));
+    }
+
     // Saldos duplicados (deberían ser 0 si el UNIQUE está activo).
     $dups = DB::selectOne(<<<'SQL'
         SELECT COUNT(*) AS n FROM (
