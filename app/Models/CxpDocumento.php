@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\GestionaAdjuntos;
 use App\Models\Concerns\TipoDocumentoBehavior;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 
 class CxpDocumento extends Model
 {
+    use GestionaAdjuntos;
     use TipoDocumentoBehavior;
 
     protected $table = 'cxp_documentos';

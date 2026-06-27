@@ -24,6 +24,7 @@ use App\Models\InvAlmacen;
 use App\Models\ItemProducto;
 use App\Models\TipoContacto;
 use App\Models\TipoDocumento;
+use App\Services\AdjuntoService;
 use App\Services\AsientoAutomatico;
 use App\Services\DgiFepConsulta;
 use App\Services\InventarioCompras;
@@ -242,7 +243,11 @@ class CxpFacturaController extends Controller
     {
         $this->autorizarFactura($request, $documento);
 
-        $documento->load(['proveedor', 'detalle.cuenta.tipo', 'asiento', 'aplicacionesComoDestino.origen', 'compraOrden']);
+        // Espeja (idempotente) el archivo_path legado a core_adjuntos para que el
+        // bloque de adjuntos también muestre la foto/PDF guardado por el flujo viejo.
+        $this->espejarArchivoEnAdjuntos($documento);
+
+        $documento->load(['proveedor', 'detalle.cuenta.tipo', 'asiento', 'aplicacionesComoDestino.origen', 'compraOrden', 'adjuntos']);
 
         $activosPorDetalle = AfiActivo::whereIn('cxp_detalle_id', $documento->detalle->pluck('id'))
             ->get(['id', 'codigo', 'descripcion', 'cxp_detalle_id'])
@@ -251,6 +256,7 @@ class CxpFacturaController extends Controller
         return view('admin.cxp.facturas.show', [
             'factura'            => $documento,
             'activosPorDetalle'  => $activosPorDetalle,
+            'puedeGestionarAdjuntos' => $request->user()->can('cxp.gestionar'),
         ]);
     }
 
@@ -1125,6 +1131,7 @@ class CxpFacturaController extends Controller
     {
         if ($fotoPath) {
             $factura->update(['archivo_path' => $fotoPath, 'archivo_disk' => $fotoDisk]);
+            $this->espejarArchivoEnAdjuntos($factura->fresh());
 
             return;
         }
@@ -1133,7 +1140,36 @@ class CxpFacturaController extends Controller
             $pdf = app(DgiFepConsulta::class)->pdfPorCufe($cufe);
             if ($pdf && $adj = $this->guardarAdjuntoCxp($pdf, 'pdf', $companiaId)) {
                 $factura->update(['archivo_path' => $adj['path'], 'archivo_disk' => $adj['disk']]);
+                $this->espejarArchivoEnAdjuntos($factura->fresh());
             }
+        }
+    }
+
+    /**
+     * Registra (idempotente, best-effort) el archivo_path legado del documento en
+     * core_adjuntos. Es el puente de "doble escritura" durante la transición al
+     * sistema central de adjuntos: no toca S3, solo crea la fila si falta.
+     */
+    private function espejarArchivoEnAdjuntos(?CxpDocumento $factura): void
+    {
+        if (! $factura || ! $factura->archivo_path) {
+            return;
+        }
+
+        try {
+            app(AdjuntoService::class)->registrarExistente(
+                $factura->archivo_path,
+                $factura->archivo_disk,
+                'cxp_documentos',
+                $factura->id,
+                $factura->compania_id,
+                'CXP',
+            );
+        } catch (Throwable $e) {
+            Log::warning('CxP: no se pudo espejar archivo en core_adjuntos', [
+                'factura' => $factura->id,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

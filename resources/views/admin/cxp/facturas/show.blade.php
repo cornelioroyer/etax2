@@ -144,6 +144,14 @@
                 </div>
             </div>
 
+            {{-- Adjuntos centrales (core_adjuntos) --}}
+            <x-adjuntos
+                tabla-origen="cxp_documentos"
+                :registro-id="$factura->id"
+                :adjuntos="$factura->adjuntos"
+                :puede-gestionar="$puedeGestionarAdjuntos"
+                titulo="Adjuntos de la factura" />
+
             {{-- Detalle --}}
             @php
                 $mostrarColumnaAfi = $factura->esBorrador() === false

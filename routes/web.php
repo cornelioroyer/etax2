@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\AdjuntoController;
 use App\Http\Controllers\Admin\AsientoController;
 use App\Http\Controllers\Admin\AsientoRecurrenteController;
 use App\Http\Controllers\Admin\AuditoriaController;
@@ -192,6 +193,12 @@ Route::middleware(['auth', 'permission:respaldos.gestionar'])->prefix('admin')->
 
 // Módulos protegidos por permisos (por compañía)
 Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
+    // Adjuntos centrales: la autorización por módulo la resuelve el controlador
+    // según el registro de tablas permitidas (no por middleware de permiso).
+    Route::post('adjuntos', [AdjuntoController::class, 'subir'])->name('adjuntos.subir');
+    Route::get('adjuntos/{adjunto}', [AdjuntoController::class, 'descargar'])->whereNumber('adjunto')->name('adjuntos.descargar');
+    Route::delete('adjuntos/{adjunto}', [AdjuntoController::class, 'eliminar'])->whereNumber('adjunto')->name('adjuntos.eliminar');
+
     Route::middleware('permission:zonas.ver')->group(function () {
         Route::resource('zonas', ZonaController::class)->except(['show'])->parameters(['zonas' => 'zona']);
     });
