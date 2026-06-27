@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\AuditActividad;
 use App\Models\Compania;
 use App\Models\User;
 use App\Services\FelConfiguracionDefault;
@@ -122,6 +123,24 @@ Artisan::command('contabilidad:verificar-integridad', function () {
     }
 
     $this->error('Integridad contable: FALTAN '.count($fallas).' objeto(s). Reaplica el esquema maestro (triggers/funciones/UNIQUE) en este entorno antes de operar.');
+
+    // Dejar constancia en la bitácora de auditoría (visible en Auditoría global,
+    // super_admin). Es un evento de SISTEMA: en CLI no hay usuario autenticado,
+    // por eso se pasa usuario_nombre explícito (si no, registrar() lo descarta).
+    // compania_id null = evento global (la integridad de cgl_saldos no es por compañía).
+    try {
+        AuditActividad::registrar([
+            'compania_id' => null,
+            'usuario_nombre' => 'sistema (verificación de integridad)',
+            'evento' => 'integridad_contable_fallo',
+            'entidad' => 'Integridad contable',
+            'entidad_tabla' => 'cgl_saldos',
+            'descripcion' => 'Faltan '.count($fallas)." objeto(s) de integridad en BD {$bd}: ".implode('; ', $fallas),
+            'valores_nuevos' => ['bd' => $bd, 'faltantes' => $fallas],
+        ]);
+    } catch (\Throwable $e) {
+        Log::error('verificar-integridad: no se pudo registrar en auditoría: '.$e->getMessage());
+    }
 
     // Notificar por correo a los super_admin (is_admin). El correo es PUSH; el
     // log queda como respaldo. Un fallo de envío NO cambia el exit code: la
