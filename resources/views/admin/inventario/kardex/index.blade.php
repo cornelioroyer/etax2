@@ -21,14 +21,18 @@
                         compact
                     />
                 </div>
+                {{-- Combobox buscable por código o nombre (mismo componente genérico). --}}
                 <div>
-                    <label class="block text-xs text-gray-500 mb-1">Almacén</label>
-                    <select name="almacen_id" class="rounded-md border-gray-300 text-sm shadow-sm">
-                        <option value="">Todos</option>
-                        @foreach ($almacenes as $al)
-                            <option value="{{ $al->id }}" @selected($almacenId == $al->id)>{{ $al->nombre }}</option>
-                        @endforeach
-                    </select>
+                    <x-buscador-contacto
+                        name="almacen_id"
+                        label="Almacén"
+                        :opciones="$almacenes"
+                        :selected="$almacenId"
+                        placeholder="Todos — código o nombre"
+                        empty-label="Todos"
+                        width="w-56"
+                        compact
+                    />
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">Desde</label>
