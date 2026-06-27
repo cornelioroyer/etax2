@@ -458,11 +458,17 @@ class FacturaFelController extends Controller
             return back()->withErrors(['fel' => 'Solo se pueden anular documentos autorizados.']);
         }
 
+        // El motivo se envía a la DGI y queda registrado (trazabilidad);
+        // se valida en servidor además del prompt del cliente.
+        $data = $request->validate([
+            'motivo' => ['required', 'string', 'min:5', 'max:255'],
+        ]);
+        $motivo = trim($data['motivo']);
+
         $config = FelConfiguracion::firstWhere('compania_id', $compania->id);
         $builder = new FelDocumentoBuilder();
-        $motivo = (string) $request->input('motivo', 'Anulación solicitada por el emisor');
         $resp = (new FelService($config))->anulacionDocumento($builder->datosDocumento($config, $documento->numero, $documento->tipo_documento), $motivo);
-        $this->registrarEvento($documento, 'ANULACION', $resp, $request->user()->email);
+        $this->registrarEvento($documento, 'ANULACION', array_merge(['motivo_solicitado' => $motivo], $resp), $request->user()->email);
 
         $resultado = $resp['AnulacionDocumentoResult'] ?? $resp;
         $codigo = (string) ($resultado['codigo'] ?? '');
@@ -470,7 +476,7 @@ class FacturaFelController extends Controller
         if ($codigo === '200' || ($resultado['resultado'] ?? '') === 'Procesado') {
             $documento->update(['estado_fel' => 'ANULADO', 'updated_by' => $request->user()->email]);
 
-            return back()->with('status', "Documento {$documento->numero} anulado.");
+            return back()->with('status', "Documento {$documento->numero} anulado. Motivo: {$motivo}");
         }
 
         return back()->withErrors(['fel' => 'No se pudo anular: '.($resultado['mensaje'] ?? 'sin detalle')]);

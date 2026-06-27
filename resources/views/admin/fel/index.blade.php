@@ -97,8 +97,9 @@
                                                 <a href="{{ $doc->qr }}" target="_blank" class="text-blue-600 hover:text-blue-800">QR</a>
                                             @endif
                                             @can('fel.gestionar')
-                                                <form method="POST" action="{{ route('admin.fel.anular', $doc) }}" onsubmit="return confirm('¿Anular la factura {{ $doc->numero }} ante la DGI?')">
+                                                <form method="POST" action="{{ route('admin.fel.anular', $doc) }}" onsubmit="return felPedirMotivo(this, '{{ $doc->numero }}')">
                                                     @csrf
+                                                    <input type="hidden" name="motivo">
                                                     <button type="submit" class="text-red-600 hover:text-red-800">Anular</button>
                                                 </form>
                                             @endcan
@@ -120,4 +121,20 @@
             {{ $documentos->links() }}
         </div>
     </div>
+
+    <script>
+        // Pide el motivo de anulación (requerido por la DGI) y lo inyecta en el
+        // campo oculto antes de enviar; el servidor lo valida de nuevo.
+        function felPedirMotivo(form, numero) {
+            var motivo = window.prompt('Motivo de anulación de la factura ' + numero + ' (se enviará y registrará en la DGI):', '');
+            if (motivo === null) return false; // canceló
+            motivo = motivo.trim();
+            if (motivo.length < 5) {
+                alert('Indica un motivo de al menos 5 caracteres para anular el documento.');
+                return false;
+            }
+            form.querySelector('input[name="motivo"]').value = motivo;
+            return true;
+        }
+    </script>
 </x-app-layout>
