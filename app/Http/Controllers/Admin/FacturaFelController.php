@@ -447,41 +447,6 @@ class FacturaFelController extends Controller
         ]);
     }
 
-    /** Anula un documento autorizado ante la DGI. */
-    public function anular(Request $request, FelDocumento $documento): RedirectResponse
-    {
-        abort_unless($request->user()->can('fel.gestionar'), 403);
-        $compania = $this->companiaActiva($request);
-        abort_unless($documento->compania_id === $compania->id, 404);
-
-        if ($documento->estado_fel !== 'AUTORIZADO') {
-            return back()->withErrors(['fel' => 'Solo se pueden anular documentos autorizados.']);
-        }
-
-        // El motivo se envía a la DGI y queda registrado (trazabilidad);
-        // se valida en servidor además del prompt del cliente.
-        $data = $request->validate([
-            'motivo' => ['required', 'string', 'min:5', 'max:255'],
-        ]);
-        $motivo = trim($data['motivo']);
-
-        $config = FelConfiguracion::firstWhere('compania_id', $compania->id);
-        $builder = new FelDocumentoBuilder();
-        $resp = (new FelService($config))->anulacionDocumento($builder->datosDocumento($config, $documento->numero, $documento->tipo_documento), $motivo);
-        $this->registrarEvento($documento, 'ANULACION', array_merge(['motivo_solicitado' => $motivo], $resp), $request->user()->email);
-
-        $resultado = $resp['AnulacionDocumentoResult'] ?? $resp;
-        $codigo = (string) ($resultado['codigo'] ?? '');
-
-        if ($codigo === '200' || ($resultado['resultado'] ?? '') === 'Procesado') {
-            $documento->update(['estado_fel' => 'ANULADO', 'updated_by' => $request->user()->email]);
-
-            return back()->with('status', "Documento {$documento->numero} anulado. Motivo: {$motivo}");
-        }
-
-        return back()->withErrors(['fel' => 'No se pudo anular: '.($resultado['mensaje'] ?? 'sin detalle')]);
-    }
-
     private function registrarEvento(FelDocumento $fel, string $evento, array $respuesta, string $usuario): void
     {
         DB::table('fel_eventos')->insert([

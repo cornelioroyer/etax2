@@ -514,7 +514,6 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::put('fel/{documento}', [FacturaFelController::class, 'updateBorrador'])->name('fel.update');
         Route::delete('fel/{documento}', [FacturaFelController::class, 'destroyBorrador'])->name('fel.destroy');
         Route::post('fel/{documento}/emitir', [FacturaFelController::class, 'emitirBorrador'])->name('fel.emitir');
-        Route::post('fel/{documento}/anular', [FacturaFelController::class, 'anular'])->name('fel.anular');
     });
 
     Route::middleware('permission:fel.ver')->group(function () {
