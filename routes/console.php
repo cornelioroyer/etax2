@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Compania;
+use App\Models\User;
 use App\Services\FelConfiguracionDefault;
 use App\Services\GeneradorAsientosRecurrentes;
 use App\Services\GeneradorCxpRecurrentes;
@@ -8,6 +9,8 @@ use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -64,15 +67,16 @@ Artisan::command('contabilidad:verificar-integridad', function () {
         return 0;
     }
 
-    $ok = true;
-    $check = function (string $etiqueta, bool $existe) use (&$ok) {
+    $fallas = [];
+    $check = function (string $etiqueta, bool $existe) use (&$fallas) {
         $this->line(sprintf('  [%s] %s', $existe ? ' OK  ' : 'FALTA', $etiqueta));
         if (! $existe) {
-            $ok = false;
+            $fallas[] = $etiqueta;
         }
     };
 
-    $this->info('Verificando integridad contable en BD: '.DB::selectOne('select current_database() d')->d);
+    $bd = DB::selectOne('select current_database() d')->d;
+    $this->info('Verificando integridad contable en BD: '.$bd);
 
     // UNIQUE que evita saldos duplicados.
     $check('UNIQUE uq_cgl_saldos (compania,periodo,cuenta,contacto,centro_costo)', (bool) DB::selectOne(
@@ -111,13 +115,48 @@ Artisan::command('contabilidad:verificar-integridad', function () {
     $check("sin saldos duplicados en cgl_saldos (encontrados: {$dups})", $dups == 0);
 
     $this->newLine();
-    if ($ok) {
+    if (empty($fallas)) {
         $this->info('Integridad contable: OK — toda la maquinaria está presente.');
 
         return 0;
     }
 
-    $this->error('Integridad contable: FALTAN objetos. Reaplica el esquema maestro (triggers/funciones/UNIQUE) en este entorno antes de operar.');
+    $this->error('Integridad contable: FALTAN '.count($fallas).' objeto(s). Reaplica el esquema maestro (triggers/funciones/UNIQUE) en este entorno antes de operar.');
+
+    // Notificar por correo a los super_admin (is_admin). El correo es PUSH; el
+    // log queda como respaldo. Un fallo de envío NO cambia el exit code: la
+    // inconsistencia ya quedó reportada y debe resolverse igual.
+    $destinatarios = User::query()
+        ->where('is_admin', true)
+        ->whereNotNull('email')
+        ->pluck('email')
+        ->all();
+
+    if (empty($destinatarios)) {
+        $this->warn('No hay super_admin con correo; no se envió notificación (revisa storage/logs/integridad.log).');
+
+        return 1;
+    }
+
+    $cuerpo = "Se detectaron inconsistencias en la integridad contable de eTax2.\n\n"
+        ."Base de datos: {$bd}\n"
+        ."Fecha:         ".date('Y-m-d H:i:s')."\n\n"
+        ."Objetos faltantes o con problema:\n  - ".implode("\n  - ", $fallas)."\n\n"
+        ."Acción recomendada: reaplica el esquema maestro de PostgreSQL en este "
+        ."entorno (UNIQUE uq_cgl_saldos, triggers trg_cgl_asientos_* y funciones "
+        ."fn_*) y vuelve a ejecutar:\n  php artisan contabilidad:verificar-integridad\n";
+
+    try {
+        Mail::raw($cuerpo, function ($mensaje) use ($destinatarios, $bd) {
+            $mensaje->to($destinatarios)
+                ->subject("[eTax2] ALERTA: inconsistencia de integridad contable ({$bd})");
+        });
+        $this->info('Notificación enviada a: '.implode(', ', $destinatarios));
+    } catch (\Throwable $e) {
+        // No romper el comando si el correo falla; dejar rastro para diagnóstico.
+        $this->error('No se pudo enviar la notificación por correo: '.$e->getMessage());
+        Log::error('verificar-integridad: fallo al enviar correo de alerta: '.$e->getMessage());
+    }
 
     return 1;
-})->purpose('Verifica triggers, funciones y UNIQUE que protegen la integridad contable (cgl_saldos)');
+})->purpose('Verifica triggers, funciones y UNIQUE que protegen la integridad contable (cgl_saldos); notifica por correo a super_admin si falta algo');
