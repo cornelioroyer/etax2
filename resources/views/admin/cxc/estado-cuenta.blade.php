@@ -17,13 +17,9 @@
             <form method="GET" class="bg-white p-4 shadow-sm sm:rounded-lg print:hidden">
                 <div class="flex flex-wrap items-end gap-3">
                     <div class="min-w-64">
-                        <x-input-label for="cliente_id" value="Cliente" />
-                        <select id="cliente_id" name="cliente_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                            <option value="">— Seleccione un cliente —</option>
-                            @foreach ($clientes as $c)
-                                <option value="{{ $c->id }}" @selected($cliente && $cliente->id === $c->id)>{{ $c->codigo ? $c->codigo.' · ' : '' }}{{ $c->nombre }}</option>
-                            @endforeach
-                        </select>
+                        <x-buscador-contacto name="cliente_id" label="Cliente" :opciones="$clientes"
+                            :selected="$cliente?->id" placeholder="Seleccione — código o nombre"
+                            empty-label="— Seleccione un cliente —" mostrar-ruc compact />
                     </div>
                     <div>
                         <x-input-label for="desde" value="Desde" />

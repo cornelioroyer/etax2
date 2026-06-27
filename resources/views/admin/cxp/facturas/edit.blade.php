@@ -36,16 +36,11 @@
                     @method('PUT')
 
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
-                        <div class="sm:col-span-2">
-                            <x-input-label for="proveedor_id" value="Proveedor *" />
-                            <select id="proveedor_id" name="proveedor_id" required
-                                    @change="onProveedor($event.target.value)"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="">— Proveedor —</option>
-                                @foreach ($proveedores as $proveedor)
-                                    <option value="{{ $proveedor->id }}" @selected(old('proveedor_id', $factura->proveedor_id) == $proveedor->id)>{{ $proveedor->codigo }} — {{ $proveedor->nombre }}</option>
-                                @endforeach
-                            </select>
+                        {{-- Proveedor buscable; @contacto-seleccionado mantiene onProveedor (cuenta de gasto). --}}
+                        <div class="sm:col-span-2" @contacto-seleccionado="onProveedor($event.detail?.id ?? '')">
+                            <x-buscador-contacto name="proveedor_id" label="Proveedor *" required
+                                :opciones="$proveedores" :selected="old('proveedor_id', $factura->proveedor_id)"
+                                placeholder="— Proveedor — código o nombre" mostrar-ruc />
                             <x-input-error :messages="$errors->get('proveedor_id')" class="mt-1" />
                         </div>
                         <div>

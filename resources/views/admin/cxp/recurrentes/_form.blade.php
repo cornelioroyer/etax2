@@ -24,14 +24,9 @@
 <div x-data="cxpRecurrenteForm({{ $lineasIniciales->toJson() }})" class="space-y-5">
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div>
-            <x-input-label for="proveedor_id" value="Proveedor *" />
-            <select id="proveedor_id" name="proveedor_id" required
-                    class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                <option value="">— Proveedor —</option>
-                @foreach ($proveedores as $p)
-                    <option value="{{ $p->id }}" @selected((int) old('proveedor_id', $plantilla->proveedor_id ?? 0) === $p->id)>{{ $p->nombre }}</option>
-                @endforeach
-            </select>
+            <x-buscador-contacto name="proveedor_id" label="Proveedor *" required
+                :opciones="$proveedores" :selected="old('proveedor_id', $plantilla->proveedor_id ?? null)"
+                placeholder="— Proveedor — código o nombre" mostrar-ruc />
             <x-input-error :messages="$errors->get('proveedor_id')" class="mt-1" />
         </div>
         <div>
