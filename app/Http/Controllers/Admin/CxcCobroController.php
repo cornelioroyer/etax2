@@ -205,6 +205,10 @@ class CxcCobroController extends Controller
                 $factura->estado = $factura->estadoSegunSaldo();
                 $factura->updated_by = $usuario->email;
                 $factura->save();
+
+                // Si la factura es el espejo de una venta, propaga el saldo a
+                // ventas_facturas para que el submayor de Ventas no quede atrás.
+                $factura->sincronizarFacturaVenta($usuario->email);
             }
 
             $asiento = app(AsientoAutomatico::class)->postear(
@@ -272,6 +276,10 @@ class CxcCobroController extends Controller
                 $factura->updated_by = $usuario->email;
                 $factura->save();
 
+                // Propaga la restauración del saldo a ventas_facturas si la
+                // factura es el espejo de una venta.
+                $factura->sincronizarFacturaVenta($usuario->email);
+
                 $aplicacion->delete();
             }
 
@@ -327,6 +335,10 @@ class CxcCobroController extends Controller
                 $factura->estado = $factura->estadoSegunSaldo();
                 $factura->updated_by = $usuario->email;
                 $factura->save();
+
+                // Propaga la restauración del saldo a ventas_facturas si la
+                // factura es el espejo de una venta.
+                $factura->sincronizarFacturaVenta($usuario->email);
 
                 $aplicacion->delete();
             }

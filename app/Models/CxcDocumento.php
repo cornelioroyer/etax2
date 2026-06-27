@@ -6,6 +6,7 @@ use App\Models\Concerns\TipoDocumentoBehavior;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\DB;
 
 class CxcDocumento extends Model
@@ -99,9 +100,60 @@ class CxcDocumento extends Model
         return $this->hasMany(CxcAplicacion::class, 'documento_destino_id');
     }
 
+    /**
+     * La factura de venta cuyo espejo cobrable es este documento, si existe.
+     * El vínculo es ventas_facturas.cxc_documento_id → cxc_documentos.id. Solo
+     * los documentos de tipo FACTURA tienen una venta detrás; cobros y notas
+     * no son espejo de ninguna venta (la relación devuelve null). El global
+     * scope de VentaFactura ya restringe a tipo_documento='FACTURA'.
+     */
+    public function facturaVenta(): HasOne
+    {
+        return $this->hasOne(VentaFactura::class, 'cxc_documento_id');
+    }
+
     public function esAnulado(): bool
     {
         return $this->estado === self::ESTADO_ANULADO;
+    }
+
+    /**
+     * Propaga el saldo y el estado de este documento a la factura de venta que
+     * lo tiene como espejo (ventas_facturas.cxc_documento_id), para que el
+     * submayor de Ventas no quede desincronizado cuando el cobro, la nota de
+     * crédito o su anulación se realizan por el lado de CxC. CxC es la fuente de
+     * verdad del saldo cobrable. No-op si el documento no es espejo de ninguna
+     * venta (cobros, notas, facturas nativas de CxC). Llamar dentro de la misma
+     * transacción que actualizó el saldo de este documento.
+     */
+    public function sincronizarFacturaVenta(?string $usuarioEmail = null): void
+    {
+        $factura = $this->facturaVenta()->lockForUpdate()->first();
+
+        if (! $factura) {
+            return;
+        }
+
+        $saldo = round((float) $this->saldo, 2);
+
+        if ($this->esAnulado()) {
+            $estado = VentaFactura::ESTADO_ANULADA;
+        } elseif ($saldo <= 0.0) {
+            $estado = VentaFactura::ESTADO_PAGADA;
+        } elseif ($saldo < round((float) $factura->total, 2)) {
+            $estado = VentaFactura::ESTADO_PARCIAL;
+        } else {
+            $estado = VentaFactura::ESTADO_EMITIDA;
+        }
+
+        $factura->saldo = max(0.0, $saldo);
+        $factura->estado = $estado;
+
+        if ($usuarioEmail !== null) {
+            $factura->updated_by = $usuarioEmail;
+        }
+
+        $factura->save();
     }
 
     /**

@@ -260,6 +260,10 @@ class CxcNotaController extends Controller
                 $factura->updated_by = $usuario->email;
                 $factura->save();
 
+                // Si la factura acreditada es el espejo de una venta, propaga el
+                // saldo a ventas_facturas para que el submayor de Ventas cuadre.
+                $factura->sincronizarFacturaVenta($usuario->email);
+
                 $descAsiento = "Nota de crédito {$nota->numero} — ".$nota->cliente->nombre." (factura {$factura->numero})";
             } else {
                 // Dr CXC (total); Cr contrapartida (base) + Cr ITBMS
@@ -344,6 +348,10 @@ class CxcNotaController extends Controller
                 $factura->updated_by = $usuario->email;
                 $factura->save();
 
+                // Propaga la restauración del saldo a ventas_facturas si la
+                // factura acreditada es el espejo de una venta.
+                $factura->sincronizarFacturaVenta($usuario->email);
+
                 $aplicacion->delete();
             }
 
@@ -413,6 +421,10 @@ class CxcNotaController extends Controller
                 $factura->estado = $factura->estadoSegunSaldo();
                 $factura->updated_by = $usuario->email;
                 $factura->save();
+
+                // Propaga la restauración del saldo a ventas_facturas si la
+                // factura acreditada es el espejo de una venta.
+                $factura->sincronizarFacturaVenta($usuario->email);
 
                 $aplicacion->delete();
             }

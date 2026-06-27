@@ -537,4 +537,101 @@ class VentaTest extends TestCase
         $this->assertCount(3, $asiento->detalle);
         $this->assertSame(0, InvMovimiento::where('documento_origen', 'ventas_facturas')->where('documento_id', $factura->id)->count());
     }
+
+    public function test_cobro_total_por_cxc_propaga_saldo_a_la_factura_de_venta(): void
+    {
+        // Factura de venta emitida (107) → crea su espejo en cxc_documentos.
+        $factura = $this->facturar($this->crearCotizacion(100, 'ITBMS_7'));
+        $cxc = $factura->cxcDocumento;
+        $banco = $this->cuentaBanco();
+
+        // Cobro TOTAL por el lado de CxC (no Ventas→Recibos).
+        $this->actuar()->post(route('admin.cxc.cobros.store'), [
+            'cliente_id' => $this->cliente->id,
+            'fecha' => '2026-06-20',
+            'cuenta_cobro_id' => $banco->id,
+            'aplicaciones' => [
+                ['documento_id' => $cxc->id, 'monto' => 107],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        // El espejo CxC y la factura de venta quedan ambos en cero/pagado.
+        $this->assertSame('0.00', (string) $cxc->fresh()->saldo);
+        $this->assertSame(CxcDocumento::ESTADO_PAGADO, $cxc->fresh()->estado);
+
+        $factura->refresh();
+        $this->assertSame('0.00', (string) $factura->saldo);
+        $this->assertSame(VentaFactura::ESTADO_PAGADA, $factura->estado);
+    }
+
+    public function test_cobro_parcial_por_cxc_deja_la_factura_de_venta_parcial(): void
+    {
+        $factura = $this->facturar($this->crearCotizacion(100, 'ITBMS_7')); // total 107
+        $cxc = $factura->cxcDocumento;
+        $banco = $this->cuentaBanco();
+
+        $this->actuar()->post(route('admin.cxc.cobros.store'), [
+            'cliente_id' => $this->cliente->id,
+            'fecha' => '2026-06-20',
+            'cuenta_cobro_id' => $banco->id,
+            'aplicaciones' => [
+                ['documento_id' => $cxc->id, 'monto' => 40],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $factura->refresh();
+        $this->assertSame('67.00', (string) $factura->saldo);
+        $this->assertSame(VentaFactura::ESTADO_PARCIAL, $factura->estado);
+    }
+
+    public function test_anular_cobro_cxc_restaura_el_saldo_de_la_factura_de_venta(): void
+    {
+        $factura = $this->facturar($this->crearCotizacion(100, 'ITBMS_7')); // total 107
+        $cxc = $factura->cxcDocumento;
+        $banco = $this->cuentaBanco();
+
+        $this->actuar()->post(route('admin.cxc.cobros.store'), [
+            'cliente_id' => $this->cliente->id,
+            'fecha' => '2026-06-20',
+            'cuenta_cobro_id' => $banco->id,
+            'aplicaciones' => [['documento_id' => $cxc->id, 'monto' => 107]],
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame(VentaFactura::ESTADO_PAGADA, $factura->fresh()->estado);
+
+        // El cobro es el último CxcDocumento de tipo PAGO.
+        $cobro = CxcDocumento::where('tipo_documento', CxcDocumento::TIPO_PAGO)->latest('id')->firstOrFail();
+        $this->actuar()->post(route('admin.cxc.cobros.anular', $cobro))->assertSessionHasNoErrors();
+
+        // La factura de venta vuelve a EMITIDA con su saldo completo.
+        $factura->refresh();
+        $this->assertSame('107.00', (string) $factura->saldo);
+        $this->assertSame(VentaFactura::ESTADO_EMITIDA, $factura->estado);
+    }
+
+    public function test_nota_credito_cxc_propaga_saldo_a_la_factura_de_venta(): void
+    {
+        $factura = $this->facturar($this->crearCotizacion(100, 'ITBMS_7')); // total 107
+        $cxc = $factura->cxcDocumento;
+        $devoluciones = CuentaContable::create([
+            'compania_id' => $this->compania->id, 'codigo' => '40102', 'nombre' => 'Devoluciones en ventas',
+            'nivel' => 3, 'naturaleza' => 'DEBITO', 'permite_movimiento' => true, 'conciliable' => false, 'activa' => true,
+        ]);
+
+        // NC de 40 (exenta) aplicada a la factura por el lado de CxC.
+        $this->actuar()->post(route('admin.cxc.notas.store', ['tipo' => 'credito']), [
+            'tipo' => 'credito',
+            'cliente_id' => $this->cliente->id,
+            'fecha' => '2026-06-20',
+            'concepto' => 'Descuento posterior',
+            'cuenta_id' => $devoluciones->id,
+            'monto' => 40,
+            'tasa_itbms' => 0,
+            'factura_id' => $cxc->id,
+        ])->assertSessionHasNoErrors();
+
+        $factura->refresh();
+        $this->assertSame('67.00', (string) $factura->saldo);
+        $this->assertSame(VentaFactura::ESTADO_PARCIAL, $factura->estado);
+    }
 }
