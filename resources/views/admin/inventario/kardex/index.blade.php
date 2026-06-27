@@ -6,14 +6,20 @@
     <div class="py-8">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-4">
             <form method="GET" class="flex flex-wrap gap-3 items-end">
+                {{-- Combobox buscable por código o nombre. Reusa el combobox genérico
+                     Alpine de <x-buscador-contacto> (lee id/codigo/nombre); funciona sin
+                     recompilar el bundle. El botón "Filtrar" mantiene el flujo de submit. --}}
                 <div>
-                    <label class="block text-xs text-gray-500 mb-1">Producto</label>
-                    <select name="item_id" class="rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                        <option value="">Todos</option>
-                        @foreach ($items as $it)
-                            <option value="{{ $it->id }}" @selected($itemId == $it->id)>{{ $it->codigo }} – {{ $it->nombre }}</option>
-                        @endforeach
-                    </select>
+                    <x-buscador-contacto
+                        name="item_id"
+                        label="Producto"
+                        :opciones="$items"
+                        :selected="$itemId"
+                        placeholder="Todos — código o nombre"
+                        empty-label="Todos"
+                        width="w-72"
+                        compact
+                    />
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">Almacén</label>
