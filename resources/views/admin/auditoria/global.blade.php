@@ -42,16 +42,31 @@
                     @endforeach
                 </select>
             </label>
-            @php
-                $usuariosOpc = $usuarios->map(fn ($u) => (object) [
-                    'id' => $u->id,
-                    'nombre' => $u->name ?: $u->email,
-                    'codigo' => null,
-                ]);
-            @endphp
-            <x-buscador-contacto name="usuario_id" label="Usuario" compact
-                :opciones="$usuariosOpc" :selected="$filtros['usuario_id'] ?? null"
-                placeholder="Todos — buscar por nombre" emptyLabel="Todos" />
+            <div class="text-xs font-medium text-slate-600"
+                 x-data="{ open: false, sel: @js(array_map('strval', (array) ($filtros['usuario_id'] ?? []))) }">
+                Usuario(s)
+                <div class="relative mt-1">
+                    <button type="button" @click="open = ! open" @click.outside="open = false"
+                            class="flex w-full items-center justify-between gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-left text-sm shadow-sm focus:border-[#0d2d5e] focus:ring-[#0d2d5e]">
+                        <span class="truncate" x-text="sel.length ? sel.length + ' usuario(s)' : 'Todos'"></span>
+                        <svg class="h-4 w-4 shrink-0 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 20">
+                            <path stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M6 8l4 4 4-4"/>
+                        </svg>
+                    </button>
+                    <div x-show="open" x-cloak
+                         class="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-md border border-slate-200 bg-white py-1 shadow-lg">
+                        @forelse ($usuarios as $u)
+                            <label class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm font-normal text-slate-700 hover:bg-slate-50">
+                                <input type="checkbox" name="usuario_id[]" value="{{ $u->id }}" x-model="sel"
+                                       class="rounded border-slate-300 text-[#0d2d5e] focus:ring-[#0d2d5e]">
+                                <span class="truncate">{{ $u->name ?: $u->email }}</span>
+                            </label>
+                        @empty
+                            <p class="px-3 py-1.5 text-sm text-slate-400">Sin usuarios.</p>
+                        @endforelse
+                    </div>
+                </div>
+            </div>
             <div class="text-xs font-medium text-slate-600"
                  x-data="{ open: false, sel: @js(array_map('strval', (array) ($filtros['usuario_excluir_id'] ?? []))) }">
                 Excluir usuario(s)

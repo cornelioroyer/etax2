@@ -105,7 +105,8 @@ class AuditoriaController extends Controller
     public function globalIndex(Request $request): View|Response
     {
         $filtros = $request->validate([
-            'usuario_id' => ['nullable', 'integer'],
+            'usuario_id' => ['nullable', 'array'],
+            'usuario_id.*' => ['integer'],
             'usuario_excluir_id' => ['nullable', 'array'],
             'usuario_excluir_id.*' => ['integer'],
             'compania_id' => ['nullable', 'integer'],
@@ -132,7 +133,8 @@ class AuditoriaController extends Controller
             // Sin acotar por compañía: TODAS las compañías.
             ->whereBetween('created_at', [$desde, $hasta])
             ->when($filtros['compania_id'] ?? null, fn ($q, $v) => $q->where('compania_id', $v))
-            ->when($filtros['usuario_id'] ?? null, fn ($q, $v) => $q->where('usuario_id', $v))
+            // Incluir uno o varios usuarios.
+            ->when($filtros['usuario_id'] ?? null, fn ($q, $v) => $q->whereIn('usuario_id', array_map('intval', $v)))
             // Excluir uno o varios usuarios: conserva también los eventos sin
             // usuario (logins fallidos), que también son "distintos a X".
             ->when($filtros['usuario_excluir_id'] ?? null, fn ($q, $v) => $q->where(
