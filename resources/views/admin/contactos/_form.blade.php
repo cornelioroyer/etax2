@@ -32,15 +32,32 @@
                 </div>
             </div>
 
-            <div>
-                <label for="forma_pago" class="block text-sm font-medium text-gray-700">Forma de pago</label>
-                @php($formaPagoSel = old('forma_pago', $c->forma_pago ?? 'CREDITO'))
-                <select id="forma_pago" name="forma_pago" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                    <option value="CONTADO" @selected($formaPagoSel === 'CONTADO')>Contado</option>
-                    <option value="CREDITO" @selected($formaPagoSel === 'CREDITO')>Crédito</option>
-                </select>
-                @error('forma_pago') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label for="forma_pago" class="block text-sm font-medium text-gray-700">Forma de pago</label>
+                    @php($formaPagoSel = old('forma_pago', $c->forma_pago ?? 'CREDITO'))
+                    <select id="forma_pago" name="forma_pago" onchange="toggleDiasCredito()" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <option value="CONTADO" @selected($formaPagoSel === 'CONTADO')>Contado</option>
+                        <option value="CREDITO" @selected($formaPagoSel === 'CREDITO')>Crédito</option>
+                    </select>
+                    @error('forma_pago') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                </div>
+                <div id="dias_credito_wrap" style="{{ $formaPagoSel === 'CREDITO' ? '' : 'display:none' }}">
+                    <label for="dias_credito" class="block text-sm font-medium text-gray-700">Días de crédito</label>
+                    <input id="dias_credito" name="dias_credito" type="number" min="0" max="3650" step="1"
+                           value="{{ old('dias_credito', $c->dias_credito ?? 30) }}"
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    <p class="mt-1 text-xs text-gray-400">Vencimiento de facturas a crédito = fecha + días.</p>
+                    @error('dias_credito') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                </div>
             </div>
+            <script>
+                function toggleDiasCredito() {
+                    var fp = document.getElementById('forma_pago');
+                    var wrap = document.getElementById('dias_credito_wrap');
+                    if (fp && wrap) { wrap.style.display = (fp.value === 'CREDITO') ? '' : 'none'; }
+                }
+            </script>
 
             <div>
                 <label class="block text-sm font-medium text-gray-700">Tipos <span class="text-xs text-gray-400">(uno o más)</span></label>

@@ -157,6 +157,9 @@
           <th>Descripción</th>
           <th class="num" style="width:70px">Cant.</th>
           <th class="num" style="width:90px">Precio</th>
+          @if ((float) $cotizacion->descuento > 0)
+          <th class="num" style="width:90px">Descuento</th>
+          @endif
           <th class="num" style="width:120px">ITBMS</th>
           <th class="num" style="width:95px">Total</th>
         </tr>
@@ -168,6 +171,9 @@
           <td>{{ $linea->descripcion }}</td>
           <td class="num">{{ rtrim(rtrim(number_format((float) $linea->cantidad, 4), '0'), '.') }}</td>
           <td class="num">B/. {{ number_format((float) $linea->precio_unitario, 2) }}</td>
+          @if ((float) $cotizacion->descuento > 0)
+          <td class="num">{{ (float) $linea->descuento > 0 ? 'B/. '.number_format((float) $linea->descuento, 2) : '—' }}</td>
+          @endif
           <td class="num">{{ $linea->impuesto?->nombre ?? 'Exento' }}<br><span class="imp-tag">B/. {{ number_format((float) $linea->impuesto_monto, 2) }}</span></td>
           <td class="num">B/. {{ number_format((float) $linea->total_linea, 2) }}</td>
         </tr>
@@ -181,6 +187,12 @@
           <td class="t-label">Subtotal</td>
           <td class="num">B/. {{ number_format((float) $cotizacion->subtotal, 2) }}</td>
         </tr>
+        @if ((float) $cotizacion->descuento > 0)
+        <tr>
+          <td class="t-label">Descuento</td>
+          <td class="num">- B/. {{ number_format((float) $cotizacion->descuento, 2) }}</td>
+        </tr>
+        @endif
         @if ((float) $cotizacion->itbms > 0)
         <tr>
           <td class="t-label">ITBMS</td>

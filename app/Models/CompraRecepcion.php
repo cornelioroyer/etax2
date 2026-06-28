@@ -19,9 +19,11 @@ class CompraRecepcion extends Model
         'compania_id',
         'orden_id',
         'proveedor_id',
+        'almacen_id',
         'numero',
         'fecha',
         'estado',
+        'asiento_id',
         'created_by',
         'updated_by',
     ];
@@ -46,6 +48,16 @@ class CompraRecepcion extends Model
     public function detalle(): HasMany
     {
         return $this->hasMany(CompraRecepcionDetalle::class, 'recepcion_id');
+    }
+
+    public function almacen(): BelongsTo
+    {
+        return $this->belongsTo(InvAlmacen::class, 'almacen_id');
+    }
+
+    public function asiento(): BelongsTo
+    {
+        return $this->belongsTo(Asiento::class, 'asiento_id');
     }
 
     /** Siguiente número RM- (recepción de mercancía). Llamar en transacción. */

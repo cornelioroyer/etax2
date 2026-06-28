@@ -319,8 +319,17 @@ class CompraOrdenController extends Controller
     }
 
     /**
-     * Genera la factura de compra (CxpDocumento) + asiento desde la orden.
-     * Usa la cuenta_id de cada línea; si no tiene, cae en GASTO_DEFAULT.
+     * Genera una factura de compra (CxpDocumento) + asiento desde la orden.
+     *
+     * Modelo GRNI: los BIENES ya entraron al inventario en la recepción contra
+     * la cuenta puente «Mercancía recibida no facturada» (GRNI); al facturar NO
+     * se vuelve a mover inventario, solo se RECLASIFICA el puente a CxP:
+     *   Db GRNI (bienes) + Db Gasto (servicios) + Db ITBMS / Cr CxP (o Banco).
+     *
+     * Soporta facturación PARCIAL y VARIAS facturas por orden (1:N): se factura
+     * por línea hasta lo facturable (bienes: lo recibido no facturado; servicios:
+     * lo ordenado no facturado), se acumula cantidad_facturada y se recalcula el
+     * estado de la orden (PARCIALMENTE_FACTURADA / FACTURADA).
      */
     public function facturar(Request $request, CompraOrden $orden): RedirectResponse
     {
@@ -328,7 +337,7 @@ class CompraOrdenController extends Controller
         abort_unless($orden->compania_id === $this->companiaActivaId($request), 404);
 
         if (! $orden->esFacturable()) {
-            return back()->withErrors(['orden' => 'La orden no se puede facturar en su estado actual o ya tiene factura.']);
+            return back()->withErrors(['orden' => 'La orden no tiene cantidades pendientes de facturar en su estado actual.']);
         }
 
         $companiaId = $orden->compania_id;
@@ -337,136 +346,258 @@ class CompraOrdenController extends Controller
             'numero'            => ['required', 'string', 'max:50'],
             'fecha'             => ['required', 'date'],
             'fecha_vencimiento' => ['nullable', 'date', 'after_or_equal:fecha'],
-            'almacen_id'        => ['nullable', 'integer', Rule::exists('inv_almacenes', 'id')->where('compania_id', $companiaId)],
+            'forma_pago'        => ['nullable', Rule::in(['CREDITO', 'CONTADO', 'TARJETA'])],
+            'cuenta_pago_id'    => [
+                Rule::requiredIf(fn () => in_array($request->input('forma_pago'), ['CONTADO', 'TARJETA'], true)),
+                'nullable', 'integer', Rule::exists('cgl_cuentas', 'id')->where('compania_id', $companiaId),
+            ],
+            'lineas'                     => ['nullable', 'array'],
+            'lineas.*.orden_detalle_id'  => ['required_with:lineas', 'integer'],
+            'lineas.*.cantidad'          => ['nullable', 'numeric', 'gte:0', 'max:999999999'],
+            'lineas.*.precio_unitario'   => ['nullable', 'numeric', 'gte:0', 'max:999999999'],
+            'autorizar_diferencia'       => ['nullable', 'boolean'],
+            'motivo_diferencia'          => ['nullable', 'string', 'max:500'],
         ]);
 
         $usuario = $request->user();
+        $orden->load(['detalle.impuesto', 'proveedor']);
 
-        $cuentaCxpId        = CuentaDefault::idPara($companiaId, 'CXP');
-        $cuentaItbmsId      = CuentaDefault::idPara($companiaId, 'ITBMS_CREDITO');
-        $cuentaGastoId      = CuentaDefault::idPara($companiaId, 'GASTO_DEFAULT');
-        $cuentaInvDefaultId = CuentaDefault::idPara($companiaId, 'INVENTARIO');
+        $cuentaCxpId   = CuentaDefault::idPara($companiaId, 'CXP');
+        $cuentaItbmsId = CuentaDefault::idPara($companiaId, 'ITBMS_CREDITO');
+        $cuentaGastoId = CuentaDefault::idPara($companiaId, 'GASTO_DEFAULT');
+        $cuentaGrniId  = CuentaDefault::idPara($companiaId, CuentaDefault::CLAVE_GRNI);
 
         if (! $cuentaCxpId) {
             return back()->withErrors(['orden' => 'La compañía no tiene configurada la cuenta default CXP.']);
         }
 
-        $orden->load('detalle.impuesto');
+        // Forma de pago: la elegida o la predeterminada del proveedor.
+        $formaPago = $data['forma_pago'] ?? ($orden->proveedor->forma_pago === Contacto::FORMA_PAGO_CONTADO ? 'CONTADO' : 'CREDITO');
+        $contado   = in_array($formaPago, ['CONTADO', 'TARJETA'], true);
 
-        // Ítems inventariables (tipo PRODUCTO) de la orden, para enrutar su
-        // débito a la cuenta de inventario y subir existencias al facturar.
+        // Ítems tipo PRODUCTO (sus bienes entraron al GRNI en la recepción).
+        $cuentaInvDefaultId = CuentaDefault::idPara($companiaId, 'INVENTARIO');
         $itemIds  = $orden->detalle->pluck('item_id')->filter()->unique();
         $itemsMap = $itemIds->isNotEmpty()
             ? ItemProducto::whereIn('id', $itemIds)->get(['id', 'tipo', 'cuenta_inventario_id'])->keyBy('id')
             : collect();
 
-        // Almacén destino: el elegido, o el primero activo de la compañía.
-        $almacenId = $data['almacen_id']
+        // Almacén donde entraron los bienes (para ajustar el valor del inventario
+        // si el costo facturado difiere del de la orden): primer almacén de una
+        // recepción vigente de la orden, o el primero activo de la compañía.
+        $almacenVar = $orden->recepciones()->where('estado', '!=', \App\Models\CompraRecepcion::ESTADO_ANULADO)
+            ->orderBy('fecha')->value('almacen_id')
             ?? InvAlmacen::where('compania_id', $companiaId)->where('activo', true)->orderBy('codigo')->value('id');
 
-        $impuesto = (float) $orden->itbms;
-        if ($impuesto > 0 && ! $cuentaItbmsId) {
-            throw ValidationException::withMessages(['orden' => 'La compañía no tiene configurada la cuenta default ITBMS_CREDITO.']);
-        }
-
-        // Verificar que toda línea tenga cuenta resolvible
-        foreach ($orden->detalle as $linea) {
-            if (! $linea->cuenta_id && ! $cuentaGastoId) {
-                throw ValidationException::withMessages(['orden' =>
-                    "La línea «{$linea->descripcion}» no tiene cuenta contable y la compañía no tiene GASTO_DEFAULT configurado."]);
+        // Cantidades y costos a facturar: los indicados por línea o, por defecto,
+        // todo lo facturable al costo de la orden.
+        $facturable  = $orden->facturablePorLinea();
+        $pedidoCant  = [];
+        $pedidoCosto = [];
+        if (! empty($data['lineas'])) {
+            foreach ($data['lineas'] as $l) {
+                $id = (int) $l['orden_detalle_id'];
+                $pedidoCant[$id] = round((float) ($l['cantidad'] ?? 0), 4);
+                if (isset($l['precio_unitario']) && $l['precio_unitario'] !== '') {
+                    $pedidoCosto[$id] = round((float) $l['precio_unitario'], 4);
+                }
             }
+        } else {
+            $pedidoCant = $facturable;
         }
 
+        $autorizado = (bool) ($data['autorizar_diferencia'] ?? false);
+
+        // Construcción de líneas: valida topes, arma detalle/asiento, detecta
+        // diferencias de costo OC↔factura y acumula totales y ajustes de inventario.
+        $subtotal = 0.0; $impuestoTotal = 0.0;
+        $detalleFactura = []; $lineasAsiento = []; $incrFacturado = [];
+        $ajustesInv = []; $diferencias = [];
+        $numLinea = 0;
+
+        foreach ($orden->detalle as $linea) {
+            $cant = round((float) ($pedidoCant[$linea->id] ?? 0), 4);
+            if ($cant <= 0) {
+                continue;
+            }
+            $tope = (float) ($facturable[$linea->id] ?? 0);
+            if ($cant - 0.0001 > $tope) {
+                throw ValidationException::withMessages([
+                    'lineas' => "«{$linea->descripcion}»: se intenta facturar {$cant} pero solo hay {$tope} facturable (recibido no facturado).",
+                ]);
+            }
+
+            $costoOC  = round((float) $linea->precio_unitario, 4);
+            $costoInv = array_key_exists($linea->id, $pedidoCosto) ? $pedidoCosto[$linea->id] : $costoOC;
+
+            $tasa     = (float) ($linea->impuesto->porcentaje ?? 0);
+            $baseOC   = round($cant * $costoOC, 2);
+            $baseInv  = round($cant * $costoInv, 2);
+            $variance = round($baseInv - $baseOC, 2);
+            $imp      = round($baseInv * $tasa / 100, 2);
+
+            if (abs($costoInv - $costoOC) > 0.0001) {
+                $diferencias[] = "«{$linea->descripcion}»: OC B/. ".number_format($costoOC, 2)." vs factura B/. ".number_format($costoInv, 2);
+            }
+
+            $item       = $linea->item_id ? $itemsMap->get($linea->item_id) : null;
+            $esProducto = $item && $item->tipo === ItemProducto::TIPO_PRODUCTO;
+
+            if ($imp > 0 && ! $cuentaItbmsId) {
+                throw ValidationException::withMessages(['orden' => 'La compañía no tiene configurada la cuenta default ITBMS_CREDITO.']);
+            }
+
+            if ($esProducto) {
+                // Bienes: reclasifica el GRNI por el costo de la ORDEN (lo que la
+                // recepción acreditó) y lleva la DIFERENCIA de costo al inventario,
+                // ajustando además el valor de existencias (kárdex = mayor).
+                if (! $cuentaGrniId) {
+                    throw ValidationException::withMessages([
+                        'orden' => 'La compañía no tiene configurada la cuenta default '.CuentaDefault::CLAVE_GRNI.' (Mercancía recibida no facturada).',
+                    ]);
+                }
+                $cuentaInvId = $item->cuenta_inventario_id ?? $cuentaInvDefaultId;
+                if ($variance != 0.0 && ! $cuentaInvId) {
+                    throw ValidationException::withMessages([
+                        'orden' => "Hay diferencia de costo en «{$linea->descripcion}» pero no hay cuenta de inventario para registrarla.",
+                    ]);
+                }
+
+                $lineasAsiento[] = [
+                    'cuenta_id'   => $cuentaGrniId,
+                    'descripcion' => $linea->descripcion,
+                    'debito'      => $baseOC,
+                    'credito'     => 0,
+                ];
+                if ($variance > 0) {
+                    $lineasAsiento[] = ['cuenta_id' => $cuentaInvId, 'descripcion' => "Dif. costo {$linea->descripcion}", 'debito' => $variance, 'credito' => 0];
+                } elseif ($variance < 0) {
+                    $lineasAsiento[] = ['cuenta_id' => $cuentaInvId, 'descripcion' => "Dif. costo {$linea->descripcion}", 'debito' => 0, 'credito' => -$variance];
+                }
+                if ($variance != 0.0 && $almacenVar) {
+                    $ajustesInv[] = ['item_id' => (int) $linea->item_id, 'delta' => $variance];
+                }
+                $cuentaDb = $cuentaGrniId;
+            } else {
+                // Servicios/otros: gasto por el costo facturado (no usan GRNI ni inventario).
+                $cuentaDb = $linea->cuenta_id ?? $cuentaGastoId;
+                if (! $cuentaDb) {
+                    throw ValidationException::withMessages([
+                        'orden' => "La línea «{$linea->descripcion}» no tiene cuenta contable y no hay GASTO_DEFAULT configurado.",
+                    ]);
+                }
+                $lineasAsiento[] = [
+                    'cuenta_id'   => $cuentaDb,
+                    'descripcion' => $linea->descripcion,
+                    'debito'      => $baseInv,
+                    'credito'     => 0,
+                ];
+            }
+
+            $subtotal      += $baseInv;
+            $impuestoTotal += $imp;
+            $numLinea++;
+
+            $detalleFactura[] = [
+                'linea'           => $numLinea,
+                'orden_detalle_id'=> $linea->id,
+                'item_id'         => $linea->item_id,
+                'descripcion'     => $linea->descripcion,
+                'cantidad'        => $cant,
+                'precio_unitario' => $costoInv,
+                'descuento'       => 0,
+                'impuesto_monto'  => $imp,
+                'total_linea'     => round($baseInv + $imp, 2),
+                'cuenta_id'       => $cuentaDb,
+            ];
+            $incrFacturado[$linea->id] = $cant;
+        }
+
+        if (empty($detalleFactura)) {
+            throw ValidationException::withMessages(['lineas' => 'No hay cantidades a facturar.']);
+        }
+
+        // Diferencias de costo OC↔factura: requieren autorización explícita.
+        if (! empty($diferencias) && ! $autorizado) {
+            throw ValidationException::withMessages([
+                'autorizar_diferencia' => 'Hay diferencias de costo respecto a la orden: '.implode('; ', $diferencias)
+                    .'. Marca "autorizar diferencia" e indica el motivo para continuar.',
+            ]);
+        }
+        $referenciaDif = (! empty($diferencias) && $autorizado)
+            ? 'Dif. costo OC autorizada por '.$usuario->email.($data['motivo_diferencia'] ?? '' ? ': '.$data['motivo_diferencia'] : '')
+            : null;
+
+        $subtotal      = round($subtotal, 2);
+        $impuestoTotal = round($impuestoTotal, 2);
+        $total         = round($subtotal + $impuestoTotal, 2);
+
+        // Vencimiento: contado vence hoy; crédito usa la fecha indicada o los días del proveedor.
+        if ($contado) {
+            $vencimiento = $data['fecha'];
+        } elseif (! empty($data['fecha_vencimiento'])) {
+            $vencimiento = $data['fecha_vencimiento'];
+        } else {
+            $dias = (int) ($orden->proveedor->dias_credito ?: 30);
+            $vencimiento = \Carbon\Carbon::parse($data['fecha'])->addDays($dias)->format('Y-m-d');
+        }
+
+        // Número único por proveedor (excluye ANULADO, igual que el índice parcial de BD).
         $duplicada = CxpDocumento::where('compania_id', $companiaId)
             ->where('proveedor_id', $orden->proveedor_id)
             ->where('tipo_documento', CxpDocumento::TIPO_FACTURA)
             ->where('numero', $data['numero'])
+            ->where('estado', '!=', CxpDocumento::ESTADO_ANULADO)
             ->exists();
 
         if ($duplicada) {
             throw ValidationException::withMessages(['numero' => "Ya existe la factura {$data['numero']} de ese proveedor."]);
         }
 
-        $factura = DB::transaction(function () use ($orden, $data, $companiaId, $usuario, $cuentaCxpId, $cuentaItbmsId, $cuentaGastoId, $cuentaInvDefaultId, $impuesto, $itemsMap, $almacenId) {
+        $factura = DB::transaction(function () use (
+            $orden, $data, $companiaId, $usuario, $cuentaCxpId, $cuentaItbmsId,
+            $subtotal, $impuestoTotal, $total, $detalleFactura, $lineasAsiento,
+            $incrFacturado, $contado, $formaPago, $vencimiento, $referenciaDif, $ajustesInv, $almacenVar
+        ) {
             $factura = CxpDocumento::create([
                 'compania_id'       => $companiaId,
                 'proveedor_id'      => $orden->proveedor_id,
+                'orden_id'          => $orden->id,
                 'tipo_documento'    => CxpDocumento::TIPO_FACTURA,
                 'numero'            => $data['numero'],
                 'fecha'             => $data['fecha'],
-                'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
-                'subtotal'          => $orden->subtotal,
+                'fecha_vencimiento' => $vencimiento,
+                'referencia'        => $referenciaDif,
+                'subtotal'          => $subtotal,
                 'descuento'         => 0,
-                'impuesto'          => $orden->itbms,
-                'total'             => $orden->total,
-                'saldo'             => $orden->total,
-                'estado'            => CxpDocumento::ESTADO_PENDIENTE,
+                'impuesto'          => $impuestoTotal,
+                'total'             => $total,
+                'saldo'             => $contado ? 0 : $total,
+                'estado'            => $contado ? CxpDocumento::ESTADO_PAGADO : CxpDocumento::ESTADO_PENDIENTE,
+                'cuenta_pago_id'    => $contado ? ($data['cuenta_pago_id'] ?? null) : null,
                 'created_by'        => $usuario->email,
             ]);
 
-            $lineasAsiento  = [];
-            $entradasInv    = [];
-
-            foreach ($orden->detalle as $linea) {
-                $impLinea  = round((float) $linea->cantidad * (float) $linea->precio_unitario * (float) ($linea->impuesto->porcentaje ?? 0) / 100, 2);
-                $baseLinea = round((float) $linea->total_linea - $impLinea, 2);
-
-                // ¿Línea inventariable? Ítem tipo PRODUCTO con cuenta de
-                // inventario resolvible y almacén destino disponible. Si no, se
-                // comporta como hasta hoy (débito a gasto, sin tocar stock).
-                $item       = $linea->item_id ? $itemsMap->get($linea->item_id) : null;
-                $cuentaInvId = $item && $item->tipo === ItemProducto::TIPO_PRODUCTO
-                    ? ($item->cuenta_inventario_id ?? $cuentaInvDefaultId)
-                    : null;
-                $esInventario = $cuentaInvId && $almacenId;
-
-                $cuentaId = $esInventario
-                    ? $cuentaInvId
-                    : ($linea->cuenta_id ?? $cuentaGastoId);
-
-                if ($esInventario && (float) $linea->cantidad > 0) {
-                    $entradasInv[] = [
-                        'item_id'        => (int) $linea->item_id,
-                        'cantidad'       => (float) $linea->cantidad,
-                        'costo_unitario' => round($baseLinea / (float) $linea->cantidad, 4),
-                    ];
-                }
-
-                CxpDocumentoDetalle::create([
-                    'documento_id'    => $factura->id,
-                    'linea'           => $linea->linea,
-                    'descripcion'     => $linea->descripcion,
-                    'cantidad'        => $linea->cantidad,
-                    'precio_unitario' => $linea->precio_unitario,
-                    'impuesto_monto'  => $impLinea,
-                    'total_linea'     => $linea->total_linea,
-                    'cuenta_id'       => $cuentaId,
-                    'created_by'      => $usuario->email,
-                ]);
-
-                $lineasAsiento[] = [
-                    'cuenta_id'   => $cuentaId,
-                    'descripcion' => $linea->descripcion,
-                    'debito'      => $baseLinea,
-                    'credito'     => 0,
-                ];
+            foreach ($detalleFactura as $d) {
+                CxpDocumentoDetalle::create($d + ['documento_id' => $factura->id, 'created_by' => $usuario->email]);
             }
 
-            if ($impuesto > 0) {
+            // Asiento: Db (GRNI bienes / Gasto servicios) + Db ITBMS / Cr CxP o Banco.
+            if ($impuestoTotal > 0) {
                 $lineasAsiento[] = [
                     'cuenta_id'   => $cuentaItbmsId,
                     'descripcion' => "ITBMS factura {$factura->numero}",
-                    'debito'      => $impuesto,
+                    'debito'      => $impuestoTotal,
                     'credito'     => 0,
                 ];
             }
-
+            $cuentaCredito = $contado ? (int) $data['cuenta_pago_id'] : $cuentaCxpId;
             $lineasAsiento[] = [
-                'cuenta_id'   => $cuentaCxpId,
-                'contacto_id' => $orden->proveedor_id,
-                'descripcion' => "Factura {$factura->numero}",
+                'cuenta_id'   => $cuentaCredito,
+                'contacto_id' => $contado ? null : $orden->proveedor_id,
+                'descripcion' => "Factura {$factura->numero} — ".$orden->proveedor->nombre,
                 'debito'      => 0,
-                'credito'     => (float) $orden->total,
+                'credito'     => $total,
             ];
 
             $asiento = app(AsientoAutomatico::class)->postear(
@@ -476,20 +607,28 @@ class CompraOrdenController extends Controller
             );
 
             $factura->update(['asiento_id' => $asiento->id]);
-            $orden->update([
-                'estado'           => CompraOrden::ESTADO_FACTURADA,
-                'cxp_documento_id' => $factura->id,
-                'updated_by'       => $usuario->email,
-            ]);
 
-            // Entrada a inventario de las líneas inventariables (sube stock al
-            // costo de la factura; la contabilidad ya va en el asiento de arriba).
-            if (! empty($entradasInv)) {
-                app(InventarioCompras::class)->registrarEntrada(
-                    $companiaId, $almacenId, $data['fecha'], $entradasInv,
-                    $asiento->id, 'cxp_documentos', $factura->id, $usuario,
-                );
+            // Ajuste de valor de inventario por diferencia de costo OC↔factura,
+            // para que el kárdex siga cuadrando con el mayor (la cuenta de
+            // inventario ya recibió el débito/crédito de la varianza en el asiento).
+            if (! empty($ajustesInv) && $almacenVar) {
+                $invSvc = app(InventarioCompras::class);
+                foreach ($ajustesInv as $aj) {
+                    $invSvc->ajustarValorExistencia($companiaId, (int) $almacenVar, $aj['item_id'], (float) $aj['delta'], $usuario);
+                }
             }
+
+            // Acumula lo facturado por línea y recalcula el estado de la orden.
+            foreach ($incrFacturado as $detId => $cant) {
+                CompraOrdenDetalle::where('id', $detId)
+                    ->update(['cantidad_facturada' => DB::raw('cantidad_facturada + '.(float) $cant)]);
+            }
+            // Compat: deja el enlace al primer documento si aún no hay uno.
+            if (! $orden->cxp_documento_id) {
+                $orden->update(['cxp_documento_id' => $factura->id]);
+            }
+            $orden->load('detalle');
+            $orden->refrescarEstadoFacturacion();
 
             return $factura;
         });

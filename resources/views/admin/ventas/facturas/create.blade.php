@@ -44,14 +44,17 @@
                 <div x-show="flujo === 'factura'" x-cloak>
                 @php
                     $lineasIniciales = isset($factura)
-                        ? $factura->detalle->map(fn($d) => ['item_id'=>$d->item_id,'descripcion'=>$d->descripcion,'cantidad'=>$d->cantidad,'precio_unitario'=>$d->precio_unitario,'impuesto_id'=>$d->impuesto_id,'cuenta_ingreso_id'=>$d->cuenta_ingreso_id])->values()->toJson()
+                        ? $factura->detalle->map(fn($d) => ['item_id'=>$d->item_id,'descripcion'=>$d->descripcion,'cantidad'=>$d->cantidad,'precio_unitario'=>$d->precio_unitario,'descuento'=>$d->descuento,'impuesto_id'=>$d->impuesto_id,'cuenta_ingreso_id'=>$d->cuenta_ingreso_id])->values()->toJson()
                         : (old('lineas') ? collect(old('lineas'))->values()->toJson() : '[]');
+                    // El descuento general no se persiste por separado (el modelo solo guarda el descuento total
+                    // ya prorrateado por línea). Al editar se precarga el descuento por línea; el general parte de 0.
+                    $descuentoGeneralInicial = (float) old('descuento_general', 0);
                     $numeroManualGuardado = isset($factura) ? (string) data_get($factura->extra, 'numero_manual', '') : '';
                     $valorInicial  = old('numero_manual', $numeroManualGuardado !== '' ? $numeroManualGuardado : $numeroPreview);
                 @endphp
                 <form method="POST"
                       action="{{ isset($factura) ? route('admin.ventas.facturas.update', $factura) : route('admin.ventas.facturas.store') }}"
-                      x-data="facturaForm({{ $lineasIniciales }}, {{ $impuestos->toJson() }}, {{ $cuentasIngreso->toJson() }}, {{ $cuentaVentasId ?? 'null' }}, {{ $items->toJson() }})">
+                      x-data="facturaForm({{ $lineasIniciales }}, {{ $impuestos->toJson() }}, {{ $cuentasIngreso->toJson() }}, {{ $cuentaVentasId ?? 'null' }}, {{ $items->toJson() }}, {{ $descuentoGeneralInicial }})">
                     @csrf
                     @isset($factura) @method('PUT') @endisset
                     <input type="hidden" name="tipo_fel" value="01">
@@ -104,6 +107,7 @@
                                         <th class="py-2 pr-2 min-w-[16rem]">Artículo / Descripción</th>
                                         <th class="w-24 py-2 pr-2 text-right">Cant.</th>
                                         <th class="w-32 py-2 pr-2 text-right">Precio</th>
+                                        <th class="w-28 py-2 pr-2 text-right">Descuento</th>
                                         <th class="w-32 py-2 pr-2">ITBMS</th>
                                         <th class="w-28 py-2 pr-2 text-right">Total</th>
                                         <th class="w-8"></th>
@@ -159,6 +163,10 @@
                                                        class="block w-full rounded-md border-gray-300 text-right text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                             </td>
                                             <td class="py-2 pr-2">
+                                                <input type="number" step="0.01" min="0" :name="`lineas[${idx}][descuento]`" x-model.number="linea.descuento"
+                                                       class="block w-full rounded-md border-gray-300 text-right text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                            </td>
+                                            <td class="py-2 pr-2">
                                                 <select :name="`lineas[${idx}][impuesto_id]`" x-model.number="linea.impuesto_id"
                                                         class="block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                                     <template x-for="imp in impuestos" :key="imp.id">
@@ -176,16 +184,24 @@
                                 </tbody>
                                 <tfoot class="border-t-2 border-gray-200 text-sm">
                                     <tr>
-                                        <td colspan="4" class="py-1 pr-2 text-right text-gray-600">Subtotal</td>
+                                        <td colspan="5" class="py-1 pr-2 text-right text-gray-600">Subtotal</td>
                                         <td class="py-1 pr-2 text-right" x-text="fmt(subtotal())"></td><td></td>
                                     </tr>
                                     <tr>
-                                        <td colspan="4" class="py-1 pr-2 text-right text-gray-600">ITBMS</td>
+                                        <td colspan="3" class="py-1 pr-2 text-right text-gray-600">Descuento general</td>
+                                        <td colspan="2" class="py-1 pr-2">
+                                            <input type="number" step="0.01" min="0" name="descuento_general" x-model.number="descuentoGeneral"
+                                                   class="block w-full rounded-md border-gray-300 text-right text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        </td>
+                                        <td class="py-1 pr-2 text-right text-gray-600" x-text="'-' + fmt(descuentoTotal())"></td><td></td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="5" class="py-1 pr-2 text-right text-gray-600">ITBMS</td>
                                         <td class="py-1 pr-2 text-right" x-text="fmt(totalItbms())"></td><td></td>
                                     </tr>
                                     <tr class="font-semibold">
-                                        <td colspan="4" class="py-2 pr-2 text-right text-gray-700">Total</td>
-                                        <td class="py-2 pr-2 text-right" x-text="fmt(subtotal() + totalItbms())"></td><td></td>
+                                        <td colspan="5" class="py-2 pr-2 text-right text-gray-700">Total</td>
+                                        <td class="py-2 pr-2 text-right" x-text="fmt(totalDocumento())"></td><td></td>
                                     </tr>
                                 </tfoot>
                             </table>
@@ -398,16 +414,17 @@
     <style>[x-cloak]{display:none!important}</style>
 
     <script>
-        function facturaForm(lineasIniciales, impuestos, cuentasIngreso, cuentaVentasDefault, items) {
+        function facturaForm(lineasIniciales, impuestos, cuentasIngreso, cuentaVentasDefault, items, descuentoGeneralInicial) {
             const impuestoDefault = impuestos.find(i => i.porcentaje == 7)?.id ?? impuestos[0]?.id ?? null;
             const cuentaDefault = cuentaVentasDefault ?? null;
             const itemsById = Object.fromEntries(items.map(i => [i.id, i]));
             const etiquetaItem = (item) => item ? (item.codigo ? `${item.codigo} — ${item.nombre}` : item.nombre) : '';
-            const nueva = () => ({ item_id: null, descripcion: '', cantidad: 1, precio_unitario: 0, impuesto_id: impuestoDefault, cuenta_ingreso_id: cuentaDefault, busqueda: '', mostrarItems: false });
+            const nueva = () => ({ item_id: null, descripcion: '', cantidad: 1, precio_unitario: 0, descuento: 0, impuesto_id: impuestoDefault, cuenta_ingreso_id: cuentaDefault, busqueda: '', mostrarItems: false });
             const tasaMap = Object.fromEntries(impuestos.map(i => [i.id, parseFloat(i.porcentaje)]));
             return {
                 impuestos,
                 items,
+                descuentoGeneral: parseFloat(descuentoGeneralInicial) || 0,
                 lineas: lineasIniciales.length
                     ? lineasIniciales.map(l => {
                         const itemId = parseInt(l.item_id) || null;
@@ -416,6 +433,7 @@
                             descripcion: l.descripcion ?? '',
                             cantidad: parseFloat(l.cantidad) || 1,
                             precio_unitario: parseFloat(l.precio_unitario) || 0,
+                            descuento: parseFloat(l.descuento) || 0,
                             impuesto_id: parseInt(l.impuesto_id) || impuestoDefault,
                             cuenta_ingreso_id: parseInt(l.cuenta_ingreso_id) || cuentaDefault,
                             busqueda: itemId ? etiquetaItem(itemsById[itemId]) : '',
@@ -450,11 +468,60 @@
                     linea.busqueda     = '';
                     linea.mostrarItems = false;
                 },
+                // Base bruta de la línea (cantidad × precio), sin descuento.
                 base(l) { return Math.round((parseFloat(l.cantidad)||0)*(parseFloat(l.precio_unitario)||0)*100)/100; },
-                itbmsLinea(l) { const tasa = tasaMap[parseInt(l.impuesto_id)] ?? 0; return Math.round(this.base(l)*tasa)/100; },
-                totalLinea(l) { return this.base(l) + this.itbmsLinea(l); },
-                subtotal() { return this.lineas.reduce((s,l) => s + this.base(l), 0); },
-                totalItbms() { return this.lineas.reduce((s,l) => s + this.itbmsLinea(l), 0); },
+                // Réplica del cálculo NETO del backend (App\Services\CalculoDocumento):
+                // base neta = bruto − descuento de línea; el descuento general se prorratea
+                // por peso de la base neta; el ITBMS se calcula sobre la base ya neta.
+                _calc() {
+                    const r2 = (v) => Math.round(v * 100) / 100;
+                    const n = this.lineas.length;
+                    let sumaBaseNeta = 0;
+                    const filas = this.lineas.map((l, i) => {
+                        const bruto = this.base(l);
+                        let descLinea = r2(parseFloat(l.descuento) || 0);
+                        if (descLinea < 0) descLinea = 0;
+                        if (descLinea > bruto) descLinea = bruto;
+                        const baseNeta = r2(bruto - descLinea);
+                        sumaBaseNeta += baseNeta;
+                        const tasa = tasaMap[parseInt(l.impuesto_id)] ?? 0;
+                        return { i, bruto, descLinea, baseNeta, tasa };
+                    });
+                    let descGen = r2(Math.max(0, parseFloat(this.descuentoGeneral) || 0));
+                    if (descGen > sumaBaseNeta) descGen = sumaBaseNeta;
+                    let asignado = 0;
+                    filas.forEach((f, k) => {
+                        let porc = 0;
+                        if (descGen > 0 && sumaBaseNeta > 0) {
+                            if (k === n - 1) { porc = r2(descGen - asignado); }
+                            else { porc = r2(descGen * f.baseNeta / sumaBaseNeta); asignado += porc; }
+                        }
+                        f.descGeneral = porc;
+                        f.baseImponible = r2(f.baseNeta - porc);
+                        f.imp = r2(f.baseImponible * f.tasa / 100);
+                        f.descTotal = r2(f.descLinea + f.descGeneral);
+                        f.totalLinea = r2(f.baseImponible + f.imp);
+                    });
+                    const subtotal = r2(filas.reduce((s, f) => s + f.bruto, 0));
+                    const descuento = r2(filas.reduce((s, f) => s + f.descTotal, 0));
+                    const itbms = r2(filas.reduce((s, f) => s + f.imp, 0));
+                    return { filas, subtotal, descuento, itbms, total: r2(subtotal - descuento + itbms) };
+                },
+                // Total de la línea: base neta (con descuento de línea) + ITBMS, sin el prorrateo general.
+                totalLinea(l) {
+                    const r2 = (v) => Math.round(v * 100) / 100;
+                    const bruto = this.base(l);
+                    let descLinea = r2(parseFloat(l.descuento) || 0);
+                    if (descLinea < 0) descLinea = 0;
+                    if (descLinea > bruto) descLinea = bruto;
+                    const baseNeta = r2(bruto - descLinea);
+                    const tasa = tasaMap[parseInt(l.impuesto_id)] ?? 0;
+                    return r2(baseNeta + r2(baseNeta * tasa / 100));
+                },
+                subtotal() { return this._calc().subtotal; },
+                descuentoTotal() { return this._calc().descuento; },
+                totalItbms() { return this._calc().itbms; },
+                totalDocumento() { return this._calc().total; },
                 fmt(v) { return 'B/. '+(Math.round(v*100)/100).toFixed(2); },
             };
         }

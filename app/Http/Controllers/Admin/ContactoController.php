@@ -546,6 +546,7 @@ class ContactoController extends Controller
             'identificacion' => ['nullable', 'string', 'max:50'],
             'dv' => ['nullable', 'string', 'max:5'],
             'forma_pago' => ['nullable', Rule::in([Contacto::FORMA_PAGO_CONTADO, Contacto::FORMA_PAGO_CREDITO])],
+            'dias_credito' => ['nullable', 'integer', 'min:0', 'max:3650'],
             'email' => ['nullable', 'string', 'email', 'max:150'],
             'telefono' => ['nullable', 'string', 'max:50'],
             'direccion' => ['nullable', 'string'],
@@ -559,6 +560,11 @@ class ContactoController extends Controller
             'tipos' => ['required', 'array', 'min:1'],
             'tipos.*' => ['integer', 'exists:contact_tipos,id'],
         ]);
+
+        // Los días de crédito solo aplican a contactos a crédito.
+        if (($data['forma_pago'] ?? null) !== Contacto::FORMA_PAGO_CREDITO) {
+            $data['dias_credito'] = null;
+        }
 
         // identificacion + dv unicos por compania (cuando se indican)
         if (! empty($data['identificacion'])) {

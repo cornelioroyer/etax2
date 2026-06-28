@@ -13,7 +13,10 @@ use App\Imports\CxpSaldosInicialesImport;
 use App\Imports\CxpFacturasImport;
 use App\Jobs\ProcesarImportacionCxpFel;
 use App\Models\Compania;
+use App\Models\CompraOrden;
+use App\Models\CompraOrdenDetalle;
 use App\Models\Contacto;
+use App\Services\CalculoDocumento;
 use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
 use App\Models\AfiActivo;
@@ -183,7 +186,7 @@ class CxpFacturaController extends Controller
         $usuario = $request->user();
 
         $data = $this->datosValidados($request, $companiaId);
-        [$lineas, $subtotal, $impuesto, $total] = $this->calcularLineas($data['lineas']);
+        [$lineas, $subtotal, $impuesto, $total, $descuentoDoc] = $this->calcularLineas($data['lineas'], (float) ($data['descuento_general'] ?? 0));
 
         $tipo = $data['tipo_documento'];
 
@@ -194,7 +197,19 @@ class CxpFacturaController extends Controller
         $contado = in_array($tipo, CxpDocumento::tiposFacturaCargo(), true)
             && in_array($formaPago, ['CONTADO', 'TARJETA'], true);
 
-        $factura = DB::transaction(function () use ($companiaId, $data, $tipo, $lineas, $subtotal, $impuesto, $total, $usuario, $contado, $formaPago) {
+        // Vencimiento: contado vence el mismo día; a crédito usa la fecha indicada
+        // o, si no se indicó, fecha + días de crédito del proveedor (default 30).
+        if ($contado) {
+            $vencimiento = $data['fecha'];
+        } elseif (! empty($data['fecha_vencimiento'])) {
+            $vencimiento = $data['fecha_vencimiento'];
+        } else {
+            $proveedor = Contacto::where('compania_id', $companiaId)->find($data['proveedor_id']);
+            $dias = (int) ($proveedor?->dias_credito ?: 30);
+            $vencimiento = \Carbon\Carbon::parse($data['fecha'])->addDays($dias)->format('Y-m-d');
+        }
+
+        $factura = DB::transaction(function () use ($companiaId, $data, $tipo, $lineas, $subtotal, $impuesto, $total, $usuario, $contado, $formaPago, $vencimiento, $descuentoDoc) {
             $factura = CxpDocumento::create([
                 'compania_id' => $companiaId,
                 'proveedor_id' => $data['proveedor_id'],
@@ -202,9 +217,9 @@ class CxpFacturaController extends Controller
                 'numero' => $data['numero'],
                 'fecha' => $data['fecha'],
                 // En contado no hay crédito pendiente: vence el mismo día.
-                'fecha_vencimiento' => $contado ? $data['fecha'] : ($data['fecha_vencimiento'] ?? null),
+                'fecha_vencimiento' => $vencimiento,
                 'subtotal' => $subtotal,
-                'descuento' => 0,
+                'descuento' => $descuentoDoc,
                 'impuesto' => $impuesto,
                 'total' => $total,
                 'saldo' => $contado ? 0 : $total,
@@ -306,15 +321,24 @@ class CxpFacturaController extends Controller
 
         $usuario = $request->user();
         $data = $this->datosValidados($request, $companiaId, $documento->id, $documento->tipo_documento);
-        [$lineas, $subtotal, $impuesto, $total] = $this->calcularLineas($data['lineas']);
+        [$lineas, $subtotal, $impuesto, $total, $descuentoDoc] = $this->calcularLineas($data['lineas'], (float) ($data['descuento_general'] ?? 0));
 
-        DB::transaction(function () use ($documento, $data, $lineas, $subtotal, $impuesto, $total, $usuario) {
+        if (! empty($data['fecha_vencimiento'])) {
+            $vencimiento = $data['fecha_vencimiento'];
+        } else {
+            $proveedor = Contacto::where('compania_id', $companiaId)->find($data['proveedor_id']);
+            $dias = (int) ($proveedor?->dias_credito ?: 30);
+            $vencimiento = \Carbon\Carbon::parse($data['fecha'])->addDays($dias)->format('Y-m-d');
+        }
+
+        DB::transaction(function () use ($documento, $data, $lineas, $subtotal, $impuesto, $total, $usuario, $vencimiento, $descuentoDoc) {
             $documento->update([
                 'proveedor_id' => $data['proveedor_id'],
                 'numero' => $data['numero'],
                 'fecha' => $data['fecha'],
-                'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
+                'fecha_vencimiento' => $vencimiento,
                 'subtotal' => $subtotal,
+                'descuento' => $descuentoDoc,
                 'impuesto' => $impuesto,
                 'total' => $total,
                 'saldo' => $total,
@@ -388,6 +412,7 @@ class CxpFacturaController extends Controller
                 'nullable', 'integer',
                 Rule::exists('cgl_cuentas', 'id')->where('compania_id', $companiaId),
             ],
+            'descuento_general' => ['nullable', 'numeric', 'min:0', 'max:999999999'],
             'lineas' => ['required', 'array', 'min:1'],
             'lineas.*.item_id' => [
                 'nullable', 'integer',
@@ -396,6 +421,7 @@ class CxpFacturaController extends Controller
             'lineas.*.descripcion' => ['required', 'string', 'max:500'],
             'lineas.*.cantidad' => ['required', 'numeric', 'gt:0', 'max:999999999'],
             'lineas.*.precio_unitario' => ['required', 'numeric', 'gte:0', 'max:999999999'],
+            'lineas.*.descuento' => ['nullable', 'numeric', 'min:0', 'max:999999999'],
             'lineas.*.tasa_itbms' => ['required', 'integer', Rule::in(CxcFacturaController::TASAS_ITBMS)],
             'lineas.*.cuenta_id' => [
                 'required', 'integer',
@@ -435,42 +461,43 @@ class CxpFacturaController extends Controller
      *
      * @return array{0: array<int, array<string, mixed>>, 1: float, 2: float, 3: float}
      */
-    private function calcularLineas(array $lineasInput): array
+    private function calcularLineas(array $lineasInput, float $descuentoGeneral = 0.0): array
     {
-        $lineas = [];
-        $subtotal = 0.0;
-        $impuesto = 0.0;
-
-        foreach (array_values($lineasInput) as $i => $linea) {
-            $cantidad = round((float) $linea['cantidad'], 4);
-            $precio = round((float) $linea['precio_unitario'], 4);
-            $base = round($cantidad * $precio, 2);
-            $itbms = round($base * ((int) $linea['tasa_itbms']) / 100, 2);
-
-            $subtotal += $base;
-            $impuesto += $itbms;
-
-            $lineas[] = [
-                'linea' => $i + 1,
-                'item_id' => ! empty($linea['item_id']) ? (int) $linea['item_id'] : null,
-                'descripcion' => $linea['descripcion'],
-                'cantidad' => $cantidad,
-                'precio_unitario' => $precio,
-                'impuesto_monto' => $itbms,
-                'total_linea' => round($base + $itbms, 2),
-                'cuenta_id' => (int) $linea['cuenta_id'],
+        $entradas = [];
+        foreach (array_values($lineasInput) as $linea) {
+            $entradas[] = [
+                'item_id'         => ! empty($linea['item_id']) ? (int) $linea['item_id'] : null,
+                'descripcion'     => $linea['descripcion'],
+                'cantidad'        => $linea['cantidad'],
+                'precio_unitario' => $linea['precio_unitario'],
+                'descuento'       => $linea['descuento'] ?? 0,
+                'cuenta_id'       => (int) $linea['cuenta_id'],
+                'tasa'            => (float) ((int) $linea['tasa_itbms']),
             ];
         }
 
-        $subtotal = round($subtotal, 2);
-        $impuesto = round($impuesto, 2);
-        $total = round($subtotal + $impuesto, 2);
+        $calc = CalculoDocumento::calcular($entradas, $descuentoGeneral);
 
-        if ($total <= 0) {
+        if ($calc['total'] <= 0) {
             throw ValidationException::withMessages(['lineas' => 'El total de la factura debe ser mayor que cero.']);
         }
 
-        return [$lineas, $subtotal, $impuesto, $total];
+        $lineas = [];
+        foreach ($calc['lineas'] as $l) {
+            $lineas[] = [
+                'linea'           => $l['linea'],
+                'item_id'         => $l['item_id'],
+                'descripcion'     => $l['descripcion'],
+                'cantidad'        => $l['cantidad'],
+                'precio_unitario' => $l['precio_unitario'],
+                'descuento'       => $l['descuento'],
+                'impuesto_monto'  => $l['impuesto_monto'],
+                'total_linea'     => $l['total_linea'],
+                'cuenta_id'       => $l['cuenta_id'],
+            ];
+        }
+
+        return [$lineas, $calc['subtotal'], $calc['itbms'], $calc['total'], $calc['descuento']];
     }
 
     /**
@@ -2023,8 +2050,14 @@ class CxpFacturaController extends Controller
         DB::transaction(function () use ($documento, $usuario) {
             app(AsientoAutomatico::class)->anular($documento->asiento, $usuario);
 
-            // Si la factura subió inventario (compra de productos), bajarlo.
+            // Si la factura subió inventario (compra DIRECTA de productos), bajarlo.
+            // Las facturas desde OC no movieron inventario (entró en la recepción
+            // contra GRNI); su anulación solo revierte el asiento GRNI→CxP.
             app(InventarioCompras::class)->reversarPorDocumento('cxp_documentos', $documento->id, $usuario);
+
+            // Si proviene de una orden, devuelve lo facturado por línea para que
+            // vuelva a quedar facturable, y recalcula el estado de la orden.
+            $this->revertirFacturadoEnOrden($documento, $usuario);
 
             $documento->update([
                 'estado' => CxpDocumento::ESTADO_ANULADO,
@@ -2035,6 +2068,35 @@ class CxpFacturaController extends Controller
 
         return redirect()->route('admin.cxp.facturas.show', $documento)
             ->with('status', "Factura {$documento->numero} anulada.");
+    }
+
+    /**
+     * Devuelve a la orden de compra las cantidades facturadas por este documento
+     * (al anularlo): baja cantidad_facturada por línea, libera el enlace de compat
+     * y recalcula el estado de la orden. No hace nada si no proviene de una orden.
+     */
+    private function revertirFacturadoEnOrden(CxpDocumento $documento, $usuario): void
+    {
+        if (! $documento->orden_id) {
+            return;
+        }
+
+        $documento->loadMissing('detalle');
+        foreach ($documento->detalle as $d) {
+            if ($d->orden_detalle_id) {
+                CompraOrdenDetalle::where('id', $d->orden_detalle_id)
+                    ->update(['cantidad_facturada' => DB::raw('GREATEST(cantidad_facturada - '.(float) $d->cantidad.', 0)')]);
+            }
+        }
+
+        $orden = CompraOrden::find($documento->orden_id);
+        if ($orden) {
+            if ($orden->cxp_documento_id === $documento->id) {
+                $orden->update(['cxp_documento_id' => null]);
+            }
+            $orden->load('detalle');
+            $orden->refrescarEstadoFacturacion();
+        }
     }
 
     /**
@@ -2054,6 +2116,10 @@ class CxpFacturaController extends Controller
 
         if ($documento->esAnulado()) {
             return back()->withErrors(['documento' => 'La factura ya está anulada.']);
+        }
+
+        if ($documento->orden_id) {
+            return back()->withErrors(['documento' => 'Esta factura proviene de una orden de compra; anúlala y vuelve a facturar desde la orden para mantener el cuadre con la cuenta puente (GRNI).']);
         }
 
         if ($documento->aplicacionesComoDestino()->exists()) {

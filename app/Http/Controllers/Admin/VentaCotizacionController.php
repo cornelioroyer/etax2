@@ -18,6 +18,7 @@ use App\Models\VentaCotizacionDetalle;
 use App\Models\VentaFactura;
 use App\Models\VentaFacturaDetalle;
 use App\Services\AsientoAutomatico;
+use App\Services\CalculoDocumento;
 use App\Services\InventarioVentas;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -106,52 +107,43 @@ class VentaCotizacionController extends Controller
             'fecha'               => ['required', 'date'],
             'fecha_validez'       => ['nullable', 'date', 'after_or_equal:fecha'],
             'notas'               => ['nullable', 'string', 'max:1000'],
+            'descuento_general'   => ['nullable', 'numeric', 'min:0', 'max:999999999'],
             'lineas'              => ['required', 'array', 'min:1'],
             'lineas.*.item_id'        => ['nullable', 'integer', Rule::exists('item_productos_servicios', 'id')->where('compania_id', $companiaId)],
             'lineas.*.descripcion'    => ['required', 'string', 'max:500'],
             'lineas.*.cantidad'       => ['required', 'numeric', 'gt:0', 'max:999999999'],
             'lineas.*.precio_unitario'=> ['required', 'numeric', 'gte:0', 'max:999999999'],
+            'lineas.*.descuento'      => ['nullable', 'numeric', 'min:0', 'max:999999999'],
             'lineas.*.impuesto_id'    => ['required', 'integer', Rule::in($impuestosValidos)],
         ]);
 
         $impuestosMap = TaxImpuesto::itbmsGlobales()->keyBy('id');
 
-        $lineas  = [];
-        $subtotal = 0.0;
-        $itbms   = 0.0;
-
-        foreach (array_values($data['lineas']) as $i => $linea) {
-            $cantidad = round((float) $linea['cantidad'], 4);
-            $precio   = round((float) $linea['precio_unitario'], 4);
-            $base     = round($cantidad * $precio, 2);
-            $tasa     = (float) ($impuestosMap[(int) $linea['impuesto_id']]->porcentaje ?? 0);
-            $impMonto = round($base * $tasa / 100, 2);
-
-            $subtotal += $base;
-            $itbms    += $impMonto;
-
-            $lineas[] = [
-                'linea'           => $i + 1,
+        $entradas = [];
+        foreach (array_values($data['lineas']) as $linea) {
+            $entradas[] = [
                 'item_id'         => $linea['item_id'] ?? null,
                 'descripcion'     => $linea['descripcion'],
-                'cantidad'        => $cantidad,
-                'precio_unitario' => $precio,
-                'descuento'       => 0,
+                'cantidad'        => $linea['cantidad'],
+                'precio_unitario' => $linea['precio_unitario'],
+                'descuento'       => $linea['descuento'] ?? 0,
                 'impuesto_id'     => (int) $linea['impuesto_id'],
-                'impuesto_monto'  => $impMonto,
-                'total_linea'     => round($base + $impMonto, 2),
+                'tasa'            => (float) ($impuestosMap[(int) $linea['impuesto_id']]->porcentaje ?? 0),
             ];
         }
 
-        $subtotal = round($subtotal, 2);
-        $itbms    = round($itbms, 2);
-        $total    = round($subtotal + $itbms, 2);
+        $calc     = CalculoDocumento::calcular($entradas, (float) ($data['descuento_general'] ?? 0));
+        $lineas   = $calc['lineas'];
+        $subtotal = $calc['subtotal'];
+        $descuento= $calc['descuento'];
+        $itbms    = $calc['itbms'];
+        $total    = $calc['total'];
 
         if ($total <= 0) {
             throw ValidationException::withMessages(['lineas' => 'El total de la cotización debe ser mayor que cero.']);
         }
 
-        $cotizacion = DB::transaction(function () use ($companiaId, $data, $lineas, $subtotal, $itbms, $total, $request) {
+        $cotizacion = DB::transaction(function () use ($companiaId, $data, $lineas, $subtotal, $descuento, $itbms, $total, $request) {
             $cot = VentaCotizacion::create([
                 'compania_id'   => $companiaId,
                 'cliente_id'    => $data['cliente_id'],
@@ -159,7 +151,7 @@ class VentaCotizacionController extends Controller
                 'fecha'         => $data['fecha'],
                 'fecha_validez' => $data['fecha_validez'] ?? null,
                 'subtotal'      => $subtotal,
-                'descuento'     => 0,
+                'descuento'     => $descuento,
                 'itbms'         => $itbms,
                 'total'         => $total,
                 'estado'        => VentaCotizacion::ESTADO_BORRADOR,
@@ -185,6 +177,97 @@ class VentaCotizacionController extends Controller
         $cotizacion->load(['cliente', 'detalle.impuesto']);
 
         return view('admin.ventas.cotizaciones.show', ['cotizacion' => $cotizacion]);
+    }
+
+    /** Estados en los que la cotización aún se puede modificar (antes de facturar). */
+    private function esEditable(VentaCotizacion $cotizacion): bool
+    {
+        return ! in_array($cotizacion->estado, [
+            VentaCotizacion::ESTADO_FACTURADA,
+            VentaCotizacion::ESTADO_ANULADA,
+        ], true);
+    }
+
+    public function edit(Request $request, VentaCotizacion $cotizacion): View
+    {
+        abort_unless($cotizacion->compania_id === $this->companiaActivaId($request), 404);
+        abort_unless($this->esEditable($cotizacion), 403, 'Una cotización facturada o anulada no se puede modificar.');
+
+        $cotizacion->load('detalle');
+
+        return view('admin.ventas.cotizaciones.create', [
+            'cotizacion' => $cotizacion,
+            'clientes'   => $this->clientes($cotizacion->compania_id),
+            'impuestos'  => TaxImpuesto::itbmsGlobales(),
+            'items'      => $this->itemsVenta($cotizacion->compania_id),
+        ]);
+    }
+
+    public function update(Request $request, VentaCotizacion $cotizacion): RedirectResponse
+    {
+        abort_unless($cotizacion->compania_id === $this->companiaActivaId($request), 404);
+        if (! $this->esEditable($cotizacion)) {
+            return back()->withErrors(['cotizacion' => 'Una cotización facturada o anulada no se puede modificar.']);
+        }
+
+        $companiaId       = $cotizacion->compania_id;
+        $impuestosValidos = TaxImpuesto::itbmsGlobales()->pluck('id')->all();
+
+        $data = $request->validate([
+            'cliente_id'          => ['required', 'integer', Rule::exists('contact_contactos', 'id')->where('compania_id', $companiaId)],
+            'fecha'               => ['required', 'date'],
+            'fecha_validez'       => ['nullable', 'date', 'after_or_equal:fecha'],
+            'notas'               => ['nullable', 'string', 'max:1000'],
+            'descuento_general'   => ['nullable', 'numeric', 'min:0', 'max:999999999'],
+            'lineas'              => ['required', 'array', 'min:1'],
+            'lineas.*.item_id'        => ['nullable', 'integer', Rule::exists('item_productos_servicios', 'id')->where('compania_id', $companiaId)],
+            'lineas.*.descripcion'    => ['required', 'string', 'max:500'],
+            'lineas.*.cantidad'       => ['required', 'numeric', 'gt:0', 'max:999999999'],
+            'lineas.*.precio_unitario'=> ['required', 'numeric', 'gte:0', 'max:999999999'],
+            'lineas.*.descuento'      => ['nullable', 'numeric', 'min:0', 'max:999999999'],
+            'lineas.*.impuesto_id'    => ['required', 'integer', Rule::in($impuestosValidos)],
+        ]);
+
+        $impuestosMap = TaxImpuesto::itbmsGlobales()->keyBy('id');
+        $entradas = [];
+        foreach (array_values($data['lineas']) as $linea) {
+            $entradas[] = [
+                'item_id'         => $linea['item_id'] ?? null,
+                'descripcion'     => $linea['descripcion'],
+                'cantidad'        => $linea['cantidad'],
+                'precio_unitario' => $linea['precio_unitario'],
+                'descuento'       => $linea['descuento'] ?? 0,
+                'impuesto_id'     => (int) $linea['impuesto_id'],
+                'tasa'            => (float) ($impuestosMap[(int) $linea['impuesto_id']]->porcentaje ?? 0),
+            ];
+        }
+
+        $calc = CalculoDocumento::calcular($entradas, (float) ($data['descuento_general'] ?? 0));
+        if ($calc['total'] <= 0) {
+            throw ValidationException::withMessages(['lineas' => 'El total de la cotización debe ser mayor que cero.']);
+        }
+
+        DB::transaction(function () use ($cotizacion, $data, $calc, $request) {
+            $cotizacion->update([
+                'cliente_id'    => $data['cliente_id'],
+                'fecha'         => $data['fecha'],
+                'fecha_validez' => $data['fecha_validez'] ?? null,
+                'subtotal'      => $calc['subtotal'],
+                'descuento'     => $calc['descuento'],
+                'itbms'         => $calc['itbms'],
+                'total'         => $calc['total'],
+                'extra'         => array_filter(['notas' => $data['notas'] ?? null]),
+                'updated_by'    => $request->user()->email,
+            ]);
+
+            $cotizacion->detalle()->delete();
+            foreach ($calc['lineas'] as $linea) {
+                VentaCotizacionDetalle::create($linea + ['cotizacion_id' => $cotizacion->id, 'created_by' => $request->user()->email]);
+            }
+        });
+
+        return redirect()->route('admin.ventas.cotizaciones.show', $cotizacion)
+            ->with('status', "Cotización {$cotizacion->numero} actualizada.");
     }
 
     /** Avanza el estado: BORRADOR→ENVIADA, o cambia a ACEPTADA/RECHAZADA. */
@@ -272,7 +355,11 @@ class VentaCotizacionController extends Controller
         $invVentas = app(InventarioVentas::class);
         $almacenId = $invVentas->almacenPorDefecto($companiaId);
 
-        $factura = DB::transaction(function () use ($cotizacion, $data, $companiaId, $usuario, $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId, $invVentas, $almacenId) {
+        $cliente     = Contacto::where('compania_id', $companiaId)->find($cotizacion->cliente_id);
+        $vencimiento = $data['fecha_vencimiento']
+            ?? ($cliente && $cliente->esCredito() ? $cliente->calcularVencimiento($data['fecha']) : null);
+
+        $factura = DB::transaction(function () use ($cotizacion, $data, $companiaId, $usuario, $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId, $invVentas, $almacenId, $vencimiento) {
             $numero = VentaFactura::siguienteNumero($companiaId);
 
             // 1. ventas_facturas
@@ -281,7 +368,7 @@ class VentaCotizacionController extends Controller
                 'cliente_id'        => $cotizacion->cliente_id,
                 'numero'            => $numero,
                 'fecha'             => $data['fecha'],
-                'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
+                'fecha_vencimiento' => $vencimiento,
                 'subtotal'          => $cotizacion->subtotal,
                 'descuento'         => $cotizacion->descuento,
                 'itbms'             => $cotizacion->itbms,
@@ -317,9 +404,9 @@ class VentaCotizacionController extends Controller
                 'tipo_documento'    => CxcDocumento::TIPO_FACTURA,
                 'numero'            => $numero,
                 'fecha'             => $data['fecha'],
-                'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
+                'fecha_vencimiento' => $vencimiento,
                 'subtotal'          => $cotizacion->subtotal,
-                'descuento'         => 0,
+                'descuento'         => $cotizacion->descuento,
                 'impuesto'          => $cotizacion->itbms,
                 'total'             => $cotizacion->total,
                 'saldo'             => $cotizacion->total,
@@ -335,7 +422,7 @@ class VentaCotizacionController extends Controller
                     'descripcion'     => $linea->descripcion,
                     'cantidad'        => $linea->cantidad,
                     'precio_unitario' => $linea->precio_unitario,
-                    'descuento'       => 0,
+                    'descuento'       => $linea->descuento,
                     'impuesto_monto'  => $linea->impuesto_monto,
                     'total_linea'     => $linea->total_linea,
                     'cuenta_id'       => $cuentaVentasId,

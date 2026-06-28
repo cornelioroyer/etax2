@@ -52,6 +52,7 @@ class CxpDocumento extends Model
     protected $fillable = [
         'compania_id',
         'proveedor_id',
+        'orden_id',
         'tipo_documento',
         'numero',
         'referencia',
@@ -130,6 +131,12 @@ class CxpDocumento extends Model
     public function compraOrden(): HasOne
     {
         return $this->hasOne(CompraOrden::class, 'cxp_documento_id');
+    }
+
+    /** Orden de compra de origen (relación 1:N: una OC puede tener varias facturas). */
+    public function orden(): BelongsTo
+    {
+        return $this->belongsTo(CompraOrden::class, 'orden_id');
     }
 
     public function esAnulado(): bool

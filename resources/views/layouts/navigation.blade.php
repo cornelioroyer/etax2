@@ -320,6 +320,43 @@
 
         return collect($group['children'] ?? [])->contains(fn ($child) => $child['show']);
     });
+
+    // Fuente del menú:
+    //   - $arbolMenu (compartido por el View Composer de MenuBuilder) si la
+    //     tabla core_menu_items tiene datos → menú dirigido por BD, N niveles.
+    //   - en caso contrario, fallback: el array estático de arriba normalizado
+    //     a la misma forma, de modo que el render (partial recursivo) sea único.
+    $menu = $arbolMenu ?? [];
+
+    if (empty($menu)) {
+        $menu = $visibleGroups->map(function ($group) {
+            $children = collect($group['children'] ?? [])
+                ->filter(fn ($child) => $child['show'])
+                ->map(fn ($child) => [
+                    'label' => $child['label'],
+                    'icon' => null,
+                    'href' => $child['href'] ?? null,
+                    'dispatch' => $child['dispatch'] ?? null,
+                    'active' => $child['active'] ?? false,
+                    'children' => [],
+                ])
+                ->values()
+                ->all();
+
+            if (($group['href'] ?? null) === null && $children === []) {
+                return null; // grupo sin destino propio ni hijos visibles
+            }
+
+            return [
+                'label' => $group['label'],
+                'icon' => $group['icon'],
+                'href' => $group['href'] ?? null,
+                'dispatch' => null,
+                'active' => ($group['active'] ?? false) || collect($children)->contains('active', true),
+                'children' => $children,
+            ];
+        })->filter()->values()->all();
+    }
 @endphp
 
 <div x-show="sidebarOpen" x-cloak class="fixed inset-0 z-40 bg-slate-900/50 lg:hidden" @click="sidebarOpen = false"></div>
@@ -353,51 +390,7 @@
 
     <nav class="flex-1 overflow-y-auto px-3 py-4">
         <div class="space-y-1">
-            @foreach ($visibleGroups as $group)
-                @php
-                    $children = collect($group['children'] ?? [])->filter(fn ($child) => $child['show']);
-                    $isActive = $group['active'] ?? $children->contains(fn ($child) => $child['active']);
-                    $href = $group['href'] ?? null;
-                @endphp
-
-                <div x-data="{ open: {{ $isActive ? 'true' : 'false' }} }" x-show="menuQuery === '' || '{{ Str::lower($group['label']) }}'.includes(menuQuery.toLowerCase()) || $el.textContent.toLowerCase().includes(menuQuery.toLowerCase())">
-                    @if ($href)
-                        <a href="{{ $href }}" class="group flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium {{ $isActive ? 'bg-blue-600 text-white shadow' : 'text-blue-100 hover:bg-white/10 hover:text-white' }}">
-                            <svg class="h-5 w-5 shrink-0 {{ $isActive ? 'text-white' : 'text-blue-300 group-hover:text-white' }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="{{ $group['icon'] }}" />
-                            </svg>
-                            <span x-show="! sidebarCollapsed" class="truncate">{{ $group['label'] }}</span>
-                        </a>
-                    @else
-                        <button type="button" @click="open = ! open; if (sidebarCollapsed) sidebarCollapsed = false" class="group flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium {{ $isActive ? 'bg-blue-600 text-white shadow' : 'text-blue-100 hover:bg-white/10 hover:text-white' }}">
-                            <svg class="h-5 w-5 shrink-0 {{ $isActive ? 'text-white' : 'text-blue-300 group-hover:text-white' }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="{{ $group['icon'] }}" />
-                            </svg>
-                            <span x-show="! sidebarCollapsed" class="flex-1 truncate">{{ $group['label'] }}</span>
-                            <svg x-show="! sidebarCollapsed" :class="open ? 'rotate-90' : ''" class="h-4 w-4 shrink-0 text-blue-300 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7" /></svg>
-                        </button>
-                    @endif
-
-                    @if ($children->isNotEmpty())
-                        <div x-show="(! sidebarCollapsed && open) || menuQuery !== ''" class="mt-1 space-y-1 pl-8">
-                            @foreach ($children as $child)
-                                <a
-                                    href="{{ $child['href'] ?? '#' }}"
-                                    @if ($child['dispatch'] ?? null)
-                                        @click.prevent="$dispatch('{{ $child['dispatch'] }}')"
-                                    @elseif (! $child['href'])
-                                        @click.prevent
-                                    @endif
-                                    x-show="menuQuery === '' || '{{ Str::lower($child['label']) }}'.includes(menuQuery.toLowerCase())"
-                                    class="block rounded-md px-3 py-2 text-sm {{ $child['active'] ? 'bg-white/15 font-semibold text-white' : (($child['href'] ?? null) || ($child['dispatch'] ?? null) ? 'text-blue-200 hover:bg-white/10 hover:text-white' : 'text-blue-400/50') }}"
-                                >
-                                    {{ $child['label'] }}
-                                </a>
-                            @endforeach
-                        </div>
-                    @endif
-                </div>
-            @endforeach
+            @include('layouts.partials._menu-item', ['items' => $menu, 'nivel' => 0])
         </div>
     </nav>
 

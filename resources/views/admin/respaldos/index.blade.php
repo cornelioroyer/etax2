@@ -4,17 +4,28 @@
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">
                 Respaldo de datos — {{ $companiaActiva->nombre ?? '' }}
             </h2>
-            <form method="POST" action="{{ route('admin.respaldos.store') }}"
-                  onsubmit="return confirm('¿Generar un respaldo de los datos de esta compañía?');">
-                @csrf
-                <button type="submit" {{ $enCurso ? 'disabled' : '' }}
-                    class="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed">
-                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                    </svg>
-                    {{ $enCurso ? 'Respaldo en proceso…' : 'Generar respaldo' }}
-                </button>
-            </form>
+            <div class="flex items-center gap-2">
+                @if (auth()->user()?->is_admin)
+                    <a href="{{ route('admin.restauraciones.form') }}"
+                       class="inline-flex items-center gap-1.5 rounded-md border border-sky-300 bg-white px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50">
+                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 7.5 7.5 3m0 0L12 7.5M7.5 3v13.5M21 7.5v9A2.25 2.25 0 0 1 18.75 18.75H5.25" />
+                        </svg>
+                        Restaurar
+                    </a>
+                @endif
+                <form method="POST" action="{{ route('admin.respaldos.store') }}"
+                      onsubmit="return confirm('¿Generar un respaldo de los datos de esta compañía?');">
+                    @csrf
+                    <button type="submit" {{ $enCurso ? 'disabled' : '' }}
+                        class="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                        </svg>
+                        {{ $enCurso ? 'Respaldo en proceso…' : 'Generar respaldo' }}
+                    </button>
+                </form>
+            </div>
         </div>
     </x-slot>
 

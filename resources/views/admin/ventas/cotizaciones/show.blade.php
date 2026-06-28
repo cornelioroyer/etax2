@@ -123,6 +123,18 @@
                 <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-4"
                      x-data="{ emailOpen: false }">
 
+                    @unless (in_array($cotizacion->estado, [\App\Models\VentaCotizacion::ESTADO_FACTURADA, \App\Models\VentaCotizacion::ESTADO_ANULADA], true))
+                        @can('ventas.gestionar')
+                            <a href="{{ route('admin.ventas.cotizaciones.edit', $cotizacion) }}"
+                               class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+                                </svg>
+                                Editar
+                            </a>
+                        @endcan
+                    @endunless
+
                     <a href="{{ route('admin.ventas.cotizaciones.imprimir', $cotizacion) }}" target="_blank"
                        class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
@@ -184,6 +196,9 @@
                                 <th class="px-4 py-3">Descripción</th>
                                 <th class="px-4 py-3 text-right">Cant.</th>
                                 <th class="px-4 py-3 text-right">Precio</th>
+                                @if ((float) $cotizacion->descuento > 0)
+                                    <th class="px-4 py-3 text-right">Descuento</th>
+                                @endif
                                 <th class="px-4 py-3 text-right">ITBMS</th>
                                 <th class="px-4 py-3 text-right">Total</th>
                             </tr>
@@ -195,6 +210,9 @@
                                     <td class="px-4 py-3">{{ $linea->descripcion }}</td>
                                     <td class="px-4 py-3 text-right">{{ rtrim(rtrim(number_format((float) $linea->cantidad, 4), '0'), '.') }}</td>
                                     <td class="px-4 py-3 text-right">B/. {{ number_format((float) $linea->precio_unitario, 2) }}</td>
+                                    @if ((float) $cotizacion->descuento > 0)
+                                        <td class="px-4 py-3 text-right text-gray-600">{{ (float) $linea->descuento > 0 ? 'B/. '.number_format((float) $linea->descuento, 2) : '—' }}</td>
+                                    @endif
                                     <td class="px-4 py-3 text-right text-gray-600">
                                         {{ $linea->impuesto?->nombre ?? 'Exento' }}
                                         (B/. {{ number_format((float) $linea->impuesto_monto, 2) }})
@@ -203,19 +221,26 @@
                                 </tr>
                             @endforeach
                         </tbody>
+                        @php $colTot = (float) $cotizacion->descuento > 0 ? 6 : 5; @endphp
                         <tfoot class="border-t-2 border-gray-200 text-sm">
                             <tr>
-                                <td colspan="5" class="px-4 py-1 text-right text-gray-600">Subtotal</td>
+                                <td colspan="{{ $colTot }}" class="px-4 py-1 text-right text-gray-600">Subtotal</td>
                                 <td class="px-4 py-1 text-right">B/. {{ number_format((float) $cotizacion->subtotal, 2) }}</td>
                             </tr>
+                            @if ((float) $cotizacion->descuento > 0)
+                                <tr>
+                                    <td colspan="{{ $colTot }}" class="px-4 py-1 text-right text-gray-600">Descuento</td>
+                                    <td class="px-4 py-1 text-right text-gray-600">- B/. {{ number_format((float) $cotizacion->descuento, 2) }}</td>
+                                </tr>
+                            @endif
                             @if ((float) $cotizacion->itbms > 0)
                                 <tr>
-                                    <td colspan="5" class="px-4 py-1 text-right text-gray-600">ITBMS</td>
+                                    <td colspan="{{ $colTot }}" class="px-4 py-1 text-right text-gray-600">ITBMS</td>
                                     <td class="px-4 py-1 text-right">B/. {{ number_format((float) $cotizacion->itbms, 2) }}</td>
                                 </tr>
                             @endif
                             <tr class="font-semibold">
-                                <td colspan="5" class="px-4 py-2 text-right text-gray-700">Total</td>
+                                <td colspan="{{ $colTot }}" class="px-4 py-2 text-right text-gray-700">Total</td>
                                 <td class="px-4 py-2 text-right">B/. {{ number_format((float) $cotizacion->total, 2) }}</td>
                             </tr>
                         </tfoot>

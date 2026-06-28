@@ -184,6 +184,13 @@ class RoleController extends Controller
         return array_values(array_diff(array_unique($nombres), Role::PERMISOS_RESERVADOS));
     }
 
+    /**
+     * Prefijos de permiso que se muestran reunidos bajo el encabezado lógico
+     * "Seguridad" en la matriz de roles (agrupación solo visual; no son permisos
+     * nuevos ni cambian el modelo de seguridad).
+     */
+    private const GRUPO_SEGURIDAD = ['usuarios_compania', 'respaldos'];
+
     /** Permisos agrupados por módulo, sin los reservados de plataforma. */
     private function catalogoPermisos(): array
     {
@@ -197,7 +204,8 @@ class RoleController extends Controller
             if (in_array($p->name, Role::PERMISOS_RESERVADOS, true)) {
                 continue;
             }
-            $modulo = explode('.', $p->name)[0];
+            $prefijo = explode('.', $p->name)[0];
+            $modulo = in_array($prefijo, self::GRUPO_SEGURIDAD, true) ? 'seguridad' : $prefijo;
             $grupos[$modulo][] = $p;
         }
         ksort($grupos);

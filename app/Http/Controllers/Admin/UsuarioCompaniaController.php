@@ -161,7 +161,21 @@ class UsuarioCompaniaController extends Controller
             ->pluck('seg_permisos.name')
             ->all();
 
+        // Permisos del rol DENEGADOS puntualmente a este usuario (override negativo).
+        $permisosDenegados = DB::table('seg_usuarios_permisos_denegados')
+            ->join('seg_permisos', 'seg_permisos.id', '=', 'seg_usuarios_permisos_denegados.permiso_id')
+            ->where('seg_usuarios_permisos_denegados.model_type', User::class)
+            ->where('seg_usuarios_permisos_denegados.model_id', $user->id)
+            ->where('seg_usuarios_permisos_denegados.compania_id', $compania->id)
+            ->pluck('seg_permisos.name')
+            ->all();
+
+        // Se excluyen los permisos reservados de plataforma (companias.eliminar,
+        // zonas.*): un admin de compañía no los tiene y no debe poder otorgarlos
+        // ni denegarlos a otros (evita escalada de privilegios). Igual criterio
+        // que RoleController::permisosAdministrables().
         $todosLosPermisos = DB::table('seg_permisos')
+            ->whereNotIn('name', Role::PERMISOS_RESERVADOS)
             ->orderBy('name')
             ->get(['id', 'name']);
 
@@ -173,12 +187,13 @@ class UsuarioCompaniaController extends Controller
         }
 
         return view('admin.usuarios-compania.permisos', [
-            'usuario'         => $user,
-            'compania'        => $compania,
-            'rolNombre'       => $rolNombre,
-            'permisosDelRol'  => $permisosDelRol,
-            'permisosDirectos'=> $permisosDirectos,
-            'grupos'          => $grupos,
+            'usuario'          => $user,
+            'compania'         => $compania,
+            'rolNombre'        => $rolNombre,
+            'permisosDelRol'   => $permisosDelRol,
+            'permisosDirectos' => $permisosDirectos,
+            'permisosDenegados'=> $permisosDenegados,
+            'grupos'           => $grupos,
         ]);
     }
 
@@ -194,26 +209,68 @@ class UsuarioCompaniaController extends Controller
         }
 
         $data = $request->validate([
-            'permisos'   => ['nullable', 'array'],
-            'permisos.*' => ['integer', 'exists:seg_permisos,id'],
+            'permisos'    => ['nullable', 'array'],
+            'permisos.*'  => ['integer', 'exists:seg_permisos,id'],
+            'denegados'   => ['nullable', 'array'],
+            'denegados.*' => ['integer', 'exists:seg_permisos,id'],
         ]);
 
-        $permisosSeleccionados = $data['permisos'] ?? [];
+        // Defensa de servidor: descarta cualquier permiso reservado de plataforma
+        // aunque venga manipulado en el POST (no confiar solo en ocultarlo en la
+        // vista). Un admin de compañía nunca puede otorgar/denegar estos permisos.
+        $idsReservados = DB::table('seg_permisos')
+            ->whereIn('name', Role::PERMISOS_RESERVADOS)
+            ->pluck('id')
+            ->all();
 
-        DB::table('seg_usuarios_permisos')
-            ->where('model_type', User::class)
-            ->where('model_id', $user->id)
-            ->where('compania_id', $compania->id)
-            ->delete();
+        $denegadosSeleccionados = array_values(array_diff(
+            array_unique($data['denegados'] ?? []),
+            $idsReservados
+        ));
+        // Un permiso no puede ser a la vez extra y denegado: la denegación manda.
+        $permisosSeleccionados = array_values(array_diff(
+            array_unique($data['permisos'] ?? []),
+            $denegadosSeleccionados,
+            $idsReservados
+        ));
 
-        foreach ($permisosSeleccionados as $permisoId) {
-            DB::table('seg_usuarios_permisos')->insert([
-                'permiso_id'  => $permisoId,
-                'model_type'  => User::class,
-                'model_id'    => $user->id,
-                'compania_id' => $compania->id,
-            ]);
-        }
+        DB::transaction(function () use ($user, $compania, $permisosSeleccionados, $denegadosSeleccionados) {
+            // Permisos directos extra (más allá del rol).
+            DB::table('seg_usuarios_permisos')
+                ->where('model_type', User::class)
+                ->where('model_id', $user->id)
+                ->where('compania_id', $compania->id)
+                ->delete();
+
+            foreach ($permisosSeleccionados as $permisoId) {
+                DB::table('seg_usuarios_permisos')->insert([
+                    'permiso_id'  => $permisoId,
+                    'model_type'  => User::class,
+                    'model_id'    => $user->id,
+                    'compania_id' => $compania->id,
+                ]);
+            }
+
+            // Permisos del rol denegados puntualmente (override negativo).
+            DB::table('seg_usuarios_permisos_denegados')
+                ->where('model_type', User::class)
+                ->where('model_id', $user->id)
+                ->where('compania_id', $compania->id)
+                ->delete();
+
+            foreach ($denegadosSeleccionados as $permisoId) {
+                DB::table('seg_usuarios_permisos_denegados')->insert([
+                    'permiso_id'  => $permisoId,
+                    'model_type'  => User::class,
+                    'model_id'    => $user->id,
+                    'compania_id' => $compania->id,
+                ]);
+            }
+        });
+
+        // Refresca caches de permisos (Spatie y memoización de denegados).
+        app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+        $user->olvidarPermisosDenegados();
 
         return redirect()->route('admin.usuarios-compania.index')
             ->with('status', "Permisos de {$user->email} actualizados.");

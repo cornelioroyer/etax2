@@ -11,6 +11,7 @@ class CxpDocumentoDetalle extends Model
 
     protected $fillable = [
         'documento_id',
+        'orden_detalle_id',
         'linea',
         'item_id',
         'descripcion',

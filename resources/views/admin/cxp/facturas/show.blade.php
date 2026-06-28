@@ -167,6 +167,9 @@
                                 <th class="px-4 py-3">Descripción</th>
                                 <th class="px-4 py-3 text-right">Cant.</th>
                                 <th class="px-4 py-3 text-right">Precio</th>
+                                @if ((float) $factura->descuento > 0)
+                                    <th class="px-4 py-3 text-right">Descuento</th>
+                                @endif
                                 <th class="px-4 py-3 text-right">ITBMS</th>
                                 <th class="px-4 py-3 hidden md:table-cell">Cuenta</th>
                                 <th class="px-4 py-3 text-right">Total</th>
@@ -184,6 +187,9 @@
                                     <td class="px-4 py-3">{{ $linea->descripcion }}</td>
                                     <td class="px-4 py-3 text-right">{{ rtrim(rtrim(number_format((float) $linea->cantidad, 4), '0'), '.') }}</td>
                                     <td class="px-4 py-3 text-right">B/. {{ number_format((float) $linea->precio_unitario, 2) }}</td>
+                                    @if ((float) $factura->descuento > 0)
+                                        <td class="px-4 py-3 text-right text-gray-600">{{ (float) $linea->descuento > 0 ? 'B/. '.number_format((float) $linea->descuento, 2) : '—' }}</td>
+                                    @endif
                                     <td class="px-4 py-3 text-right">B/. {{ number_format((float) $linea->impuesto_monto, 2) }}</td>
                                     <td class="px-4 py-3 hidden md:table-cell text-gray-600">{{ $linea->cuenta ? $linea->cuenta->codigo.' — '.$linea->cuenta->nombre : '—' }}</td>
                                     <td class="px-4 py-3 text-right font-medium">B/. {{ number_format((float) $linea->total_linea, 2) }}</td>
@@ -210,17 +216,24 @@
                                 </tr>
                             @endforeach
                         </tbody>
+                        @php $colTot = (float) $factura->descuento > 0 ? 7 : 6; @endphp
                         <tfoot class="border-t-2 border-gray-200 text-sm">
                             <tr>
-                                <td colspan="6" class="px-4 py-1 text-right text-gray-600">Subtotal</td>
+                                <td colspan="{{ $colTot }}" class="px-4 py-1 text-right text-gray-600">Subtotal</td>
                                 <td class="px-4 py-1 text-right">B/. {{ number_format((float) $factura->subtotal, 2) }}</td>
                             </tr>
+                            @if ((float) $factura->descuento > 0)
+                                <tr>
+                                    <td colspan="{{ $colTot }}" class="px-4 py-1 text-right text-gray-600">Descuento</td>
+                                    <td class="px-4 py-1 text-right text-gray-600">- B/. {{ number_format((float) $factura->descuento, 2) }}</td>
+                                </tr>
+                            @endif
                             <tr>
-                                <td colspan="6" class="px-4 py-1 text-right text-gray-600">ITBMS</td>
+                                <td colspan="{{ $colTot }}" class="px-4 py-1 text-right text-gray-600">ITBMS</td>
                                 <td class="px-4 py-1 text-right">B/. {{ number_format((float) $factura->impuesto, 2) }}</td>
                             </tr>
                             <tr class="font-semibold">
-                                <td colspan="6" class="px-4 py-2 text-right text-gray-700">Total</td>
+                                <td colspan="{{ $colTot }}" class="px-4 py-2 text-right text-gray-700">Total</td>
                                 <td class="px-4 py-2 text-right">B/. {{ number_format((float) $factura->total, 2) }}</td>
                             </tr>
                         </tfoot>

@@ -34,6 +34,9 @@
                     <div><span class="text-gray-500">Teléfono</span><p>{{ $contacto->telefono ?? '—' }}</p></div>
                     <div><span class="text-gray-500">RUC / Cédula</span><p>{{ $contacto->identificacion ?? '—' }}{{ $contacto->dv ? ' DV '.$contacto->dv : '' }}</p></div>
                     <div><span class="text-gray-500">Forma de pago</span><p>{{ $contacto->forma_pago ? ucfirst(strtolower($contacto->forma_pago)) : '—' }}</p></div>
+                    @if ($contacto->forma_pago === \App\Models\Contacto::FORMA_PAGO_CREDITO)
+                    <div><span class="text-gray-500">Días de crédito</span><p>{{ $contacto->dias_credito ?? 30 }} días</p></div>
+                    @endif
                 </div>
             </div>
 

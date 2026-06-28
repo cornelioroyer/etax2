@@ -1,0 +1,71 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class Restauracion extends Model
+{
+    protected $table = 'restauraciones';
+
+    public const ESTADO_PENDIENTE = 'PENDIENTE';
+
+    public const ESTADO_PROCESANDO = 'PROCESANDO';
+
+    public const ESTADO_COMPLETADO = 'COMPLETADO';
+
+    public const ESTADO_FALLIDO = 'FALLIDO';
+
+    protected $fillable = [
+        'usuario',
+        'estado',
+        'respaldo_id',
+        'origen',
+        'compania_origen_id',
+        'compania_origen_nombre',
+        'archivo_tmp',
+        'compania_destino_nombre',
+        'compania_destino_id',
+        'total_tablas',
+        'tablas_procesadas',
+        'total_filas',
+        'reporte',
+        'mensaje_error',
+        'terminado_at',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'total_filas' => 'integer',
+            'total_tablas' => 'integer',
+            'tablas_procesadas' => 'integer',
+            'terminado_at' => 'datetime',
+        ];
+    }
+
+    public function companiaDestino(): BelongsTo
+    {
+        return $this->belongsTo(Compania::class, 'compania_destino_id');
+    }
+
+    public function respaldo(): BelongsTo
+    {
+        return $this->belongsTo(Respaldo::class, 'respaldo_id');
+    }
+
+    public function porcentaje(): int
+    {
+        if ($this->total_tablas > 0) {
+            return (int) min(100, round($this->tablas_procesadas / $this->total_tablas * 100));
+        }
+
+        return $this->estado === self::ESTADO_COMPLETADO ? 100 : 0;
+    }
+
+    public function terminado(): bool
+    {
+        return in_array($this->estado, [self::ESTADO_COMPLETADO, self::ESTADO_FALLIDO], true);
+    }
+}

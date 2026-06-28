@@ -24,7 +24,9 @@ use App\Http\Controllers\Admin\CxpNotaController;
 use App\Http\Controllers\Admin\CxpPagoController;
 use App\Http\Controllers\Admin\CxpRecurrenteController;
 use App\Http\Controllers\Admin\FacturaFelController;
+use App\Http\Controllers\Admin\MenuItemController;
 use App\Http\Controllers\Admin\RespaldoController;
+use App\Http\Controllers\Admin\RestauracionController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\ReporteComprobacionController;
 use App\Http\Controllers\Admin\ReporteBalanceController;
@@ -145,6 +147,16 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     // Catálogo de roles globales (solo super_admin).
     Route::resource('roles', RoleController::class)->except(['show']);
 
+    // Administración del menú lateral (core_menu_items, catálogo global).
+    Route::get('menu-items', [MenuItemController::class, 'index'])->name('menu-items.index');
+    Route::get('menu-items/crear', [MenuItemController::class, 'create'])->name('menu-items.create');
+    Route::post('menu-items', [MenuItemController::class, 'store'])->name('menu-items.store');
+    Route::get('menu-items/{menuItem}/editar', [MenuItemController::class, 'edit'])->whereNumber('menuItem')->name('menu-items.edit');
+    Route::put('menu-items/{menuItem}', [MenuItemController::class, 'update'])->whereNumber('menuItem')->name('menu-items.update');
+    Route::post('menu-items/{menuItem}/toggle', [MenuItemController::class, 'toggle'])->whereNumber('menuItem')->name('menu-items.toggle');
+    Route::post('menu-items/{menuItem}/mover', [MenuItemController::class, 'mover'])->whereNumber('menuItem')->name('menu-items.mover');
+    Route::delete('menu-items/{menuItem}', [MenuItemController::class, 'destroy'])->whereNumber('menuItem')->name('menu-items.destroy');
+
     // Bitácora de actividad de usuarios (solo super_admin).
     Route::get('auditoria', [AuditoriaController::class, 'index'])->name('auditoria.index');
     // Auditoría GLOBAL (todas las compañías), solo super_admin.
@@ -194,6 +206,12 @@ Route::middleware(['auth', 'permission:respaldos.gestionar'])->prefix('admin')->
     Route::get('respaldos/{respaldo}/estado', [RespaldoController::class, 'estado'])->whereNumber('respaldo')->name('respaldos.estado');
     Route::get('respaldos/{respaldo}/descargar', [RespaldoController::class, 'download'])->whereNumber('respaldo')->name('respaldos.download');
     Route::delete('respaldos/{respaldo}', [RespaldoController::class, 'destroy'])->whereNumber('respaldo')->name('respaldos.destroy');
+
+    // Restauración de un respaldo en una compañía NUEVA (además exige is_admin en
+    // el controlador: crear compañía es aprovisionamiento de sistema).
+    Route::get('restauraciones', [RestauracionController::class, 'form'])->name('restauraciones.form');
+    Route::post('restauraciones', [RestauracionController::class, 'store'])->name('restauraciones.store');
+    Route::get('restauraciones/{restauracion}/estado', [RestauracionController::class, 'estado'])->whereNumber('restauracion')->name('restauraciones.estado');
 });
 
 // Módulos protegidos por permisos (por compañía)
@@ -449,6 +467,8 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::middleware('permission:ventas.gestionar')->group(function () {
         Route::get('ventas/cotizaciones/nueva', [VentaCotizacionController::class, 'create'])->name('ventas.cotizaciones.create');
         Route::post('ventas/cotizaciones', [VentaCotizacionController::class, 'store'])->name('ventas.cotizaciones.store');
+        Route::get('ventas/cotizaciones/{cotizacion}/editar', [VentaCotizacionController::class, 'edit'])->whereNumber('cotizacion')->name('ventas.cotizaciones.edit');
+        Route::put('ventas/cotizaciones/{cotizacion}', [VentaCotizacionController::class, 'update'])->whereNumber('cotizacion')->name('ventas.cotizaciones.update');
         Route::post('ventas/cotizaciones/{cotizacion}/estado', [VentaCotizacionController::class, 'cambiarEstado'])->whereNumber('cotizacion')->name('ventas.cotizaciones.estado');
         Route::post('ventas/cotizaciones/{cotizacion}/anular', [VentaCotizacionController::class, 'anular'])->whereNumber('cotizacion')->name('ventas.cotizaciones.anular');
         Route::post('ventas/cotizaciones/{cotizacion}/facturar', [VentaCotizacionController::class, 'facturar'])->whereNumber('cotizacion')->name('ventas.cotizaciones.facturar');
@@ -464,6 +484,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::put('ventas/facturas/{factura}', [VentaFacturaController::class, 'update'])->whereNumber('factura')->name('ventas.facturas.update');
         Route::post('ventas/facturas/{factura}/emitir', [VentaFacturaController::class, 'emitir'])->whereNumber('factura')->name('ventas.facturas.emitir');
         Route::post('ventas/facturas/{factura}/emitir-fel', [VentaFacturaController::class, 'emitirFel'])->whereNumber('factura')->name('ventas.facturas.emitir-fel');
+        Route::post('ventas/facturas/{factura}/anular-fel', [VentaFacturaController::class, 'anularFel'])->whereNumber('factura')->name('ventas.facturas.anular-fel');
         Route::post('ventas/facturas/{factura}/anular', [VentaFacturaController::class, 'anular'])->whereNumber('factura')->name('ventas.facturas.anular');
         Route::post('ventas/facturas/{factura}/corregir', [VentaFacturaController::class, 'corregir'])->whereNumber('factura')->name('ventas.facturas.corregir');
         Route::post('ventas/facturas/{factura}/notas', [VentaFacturaController::class, 'actualizarNotas'])->whereNumber('factura')->name('ventas.facturas.notas');

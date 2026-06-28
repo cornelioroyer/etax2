@@ -21,7 +21,11 @@
                 <strong>{{ $usuario->email }}</strong> &mdash;
                 Rol: <span class="font-semibold">{{ $rolNombre === 'admin_compania' ? 'Administrador de compañía' : ($rolNombre === 'usuario' ? 'Usuario' : ($rolNombre ? ucfirst(str_replace('_', ' ', $rolNombre)) : 'Sin rol')) }}</span>
                 <br>
-                <span class="text-blue-500">Los permisos marcados con fondo gris vienen del rol y no se pueden quitar aquí. Los permisos adicionales se guardan individualmente.</span>
+                <span class="text-blue-500">
+                    Los permisos con fondo gris vienen del rol. Marca la casilla para <strong>denegárselos</strong> solo a este usuario
+                    (sin afectar a los demás ni cambiar el rol). Los permisos sin fondo son <strong>extras</strong>: márcalos para agregárselos
+                    además de su rol. Todo aplica únicamente a esta compañía.
+                </span>
             </div>
 
             <form method="POST" action="{{ route('admin.usuarios-compania.permisos.update', $usuario) }}">
@@ -66,29 +70,49 @@
                                     @php
                                         $delRol   = in_array($permiso->name, $permisosDelRol);
                                         $directo  = in_array($permiso->name, $permisosDirectos);
-                                        $checked  = $delRol || $directo;
+                                        $denegado = in_array($permiso->name, $permisosDenegados);
                                         $sufijo   = implode('.', array_slice(explode('.', $permiso->name), 1));
                                         $etiqueta = $accionEtiqueta[$sufijo] ?? ucfirst(str_replace('.', ' ', $sufijo));
                                     @endphp
-                                    <label class="flex items-center gap-3 px-4 py-3 cursor-pointer {{ $delRol ? 'bg-gray-50' : 'hover:bg-indigo-50' }}">
-                                        <input
-                                            type="checkbox"
-                                            name="permisos[]"
-                                            value="{{ $permiso->id }}"
-                                            @checked($checked)
-                                            @disabled($delRol)
-                                            class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
-                                        >
-                                        <span class="text-sm {{ $delRol ? 'text-gray-400' : 'text-gray-800' }}">
-                                            {{ $etiqueta }}
-                                            @if ($delRol)
-                                                <span class="ml-1 text-xs text-gray-400">(del rol)</span>
-                                            @elseif ($directo)
-                                                <span class="ml-1 text-xs text-indigo-500">(extra)</span>
-                                            @endif
-                                        </span>
-                                        <span class="ml-auto text-xs text-gray-300 font-mono">{{ $permiso->name }}</span>
-                                    </label>
+                                    @if ($delRol)
+                                        {{-- Permiso heredado del rol: se puede DENEGAR puntualmente a este usuario --}}
+                                        <label class="flex items-center gap-3 px-4 py-3 cursor-pointer {{ $denegado ? 'bg-red-50' : 'bg-gray-50' }}">
+                                            <input
+                                                type="checkbox"
+                                                name="denegados[]"
+                                                value="{{ $permiso->id }}"
+                                                @checked($denegado)
+                                                class="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                                            >
+                                            <span class="text-sm {{ $denegado ? 'text-red-600 line-through' : 'text-gray-700' }}">
+                                                {{ $etiqueta }}
+                                                @if ($denegado)
+                                                    <span class="ml-1 text-xs text-red-500 no-underline">(denegado a este usuario)</span>
+                                                @else
+                                                    <span class="ml-1 text-xs text-gray-400">(del rol — marcar para denegar)</span>
+                                                @endif
+                                            </span>
+                                            <span class="ml-auto text-xs text-gray-300 font-mono">{{ $permiso->name }}</span>
+                                        </label>
+                                    @else
+                                        {{-- Permiso fuera del rol: se puede AGREGAR como extra --}}
+                                        <label class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-indigo-50">
+                                            <input
+                                                type="checkbox"
+                                                name="permisos[]"
+                                                value="{{ $permiso->id }}"
+                                                @checked($directo)
+                                                class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                            >
+                                            <span class="text-sm text-gray-800">
+                                                {{ $etiqueta }}
+                                                @if ($directo)
+                                                    <span class="ml-1 text-xs text-indigo-500">(extra)</span>
+                                                @endif
+                                            </span>
+                                            <span class="ml-auto text-xs text-gray-300 font-mono">{{ $permiso->name }}</span>
+                                        </label>
+                                    @endif
                                 @endforeach
                             </div>
                         </div>

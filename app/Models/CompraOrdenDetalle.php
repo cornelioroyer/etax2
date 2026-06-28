@@ -16,6 +16,7 @@ class CompraOrdenDetalle extends Model
         'item_id',
         'descripcion',
         'cantidad',
+        'cantidad_facturada',
         'precio_unitario',
         'impuesto_id',
         'cuenta_id',
@@ -28,6 +29,7 @@ class CompraOrdenDetalle extends Model
     {
         return [
             'cantidad' => 'decimal:4',
+            'cantidad_facturada' => 'decimal:4',
             'precio_unitario' => 'decimal:4',
             'total_linea' => 'decimal:2',
         ];

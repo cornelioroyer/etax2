@@ -12,6 +12,7 @@ use App\Imports\VentasGenericoImport;
 use App\Jobs\ProcesarImportacionVentasFel;
 use App\Models\Compania;
 use App\Models\Contacto;
+use App\Services\CalculoDocumento;
 use App\Models\TipoContacto;
 use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
@@ -85,17 +86,25 @@ class VentaFacturaController extends Controller
             'fecha'                   => ['required', 'date'],
             'fecha_vencimiento'       => ['nullable', 'date', 'after_or_equal:fecha'],
             'notas'                   => ['nullable', 'string', 'max:1000'],
+            'descuento_general'       => ['nullable', 'numeric', 'min:0', 'max:999999999'],
             'lineas'                  => ['required', 'array', 'min:1'],
             'lineas.*.item_id'           => ['nullable', 'integer', 'exists:item_productos_servicios,id'],
             'lineas.*.descripcion'       => ['required', 'string', 'max:500'],
             'lineas.*.cantidad'          => ['required', 'numeric', 'min:0.0001'],
             'lineas.*.precio_unitario'   => ['required', 'numeric', 'min:0'],
+            'lineas.*.descuento'         => ['nullable', 'numeric', 'min:0', 'max:999999999'],
             'lineas.*.impuesto_id'       => ['required', 'integer', Rule::in(TaxImpuesto::itbmsGlobales()->pluck('id')->all())],
             'lineas.*.cuenta_ingreso_id' => ['nullable', 'integer', 'exists:cgl_cuentas,id'],
         ]);
 
         $usuario = $request->user();
         $accion  = $request->input('accion', 'emitir');
+
+        // Vencimiento automático: si el cliente es a crédito y no se indicó una
+        // fecha de vencimiento, se calcula como fecha + días de crédito del cliente.
+        $cliente     = Contacto::where('compania_id', $companiaId)->findOrFail($data['cliente_id']);
+        $vencimiento = $data['fecha_vencimiento']
+            ?? ($cliente->esCredito() ? $cliente->calcularVencimiento($data['fecha']) : null);
 
         // Numeración: automática (siguienteNumero) o manual escrita por el usuario.
         // Si es manual se valida tanto al emitir como al guardar borrador (en el
@@ -111,36 +120,33 @@ class VentaFacturaController extends Controller
 
         $impuestos = TaxImpuesto::whereIn('id', collect($data['lineas'])->pluck('impuesto_id')->unique())->get()->keyBy('id');
 
-        $subtotal = 0;
-        $itbms    = 0;
-        $lineasCalc = [];
-        foreach ($data['lineas'] as $i => $linea) {
-            $base        = round((float) $linea['cantidad'] * (float) $linea['precio_unitario'], 2);
-            $tasa        = (float) ($impuestos[$linea['impuesto_id']]->porcentaje ?? 0);
-            $impMonto    = round($base * $tasa / 100, 2);
-            $totalLinea  = round($base + $impMonto, 2);
-            $subtotal   += $base;
-            $itbms      += $impMonto;
-            $lineasCalc[] = array_merge($linea, ['base' => $base, 'impuesto_monto' => $impMonto, 'total_linea' => $totalLinea, 'linea' => $i + 1]);
+        $entradas = [];
+        foreach ($data['lineas'] as $linea) {
+            $entradas[] = array_merge($linea, [
+                'tasa' => (float) ($impuestos[$linea['impuesto_id']]->porcentaje ?? 0),
+            ]);
         }
-        $subtotal = round($subtotal, 2);
-        $itbms    = round($itbms, 2);
-        $total    = round($subtotal + $itbms, 2);
+        $calc       = CalculoDocumento::calcular($entradas, (float) ($data['descuento_general'] ?? 0));
+        $lineasCalc = $calc['lineas'];
+        $subtotal   = $calc['subtotal'];
+        $descuento  = $calc['descuento'];
+        $itbms      = $calc['itbms'];
+        $total      = $calc['total'];
 
         if ($accion === 'borrador') {
             if (VentaFactura::where('compania_id', $companiaId)->where('estado', VentaFactura::ESTADO_BORRADOR)->exists()) {
                 return back()->withInput()->withErrors(['factura' => 'Ya existe un borrador para esta compañía. Edítalo o emítelo antes de crear otro.']);
             }
 
-            $factura = DB::transaction(function () use ($companiaId, $data, $usuario, $lineasCalc, $subtotal, $itbms, $total, $numeracion, $numeroManual) {
+            $factura = DB::transaction(function () use ($companiaId, $data, $usuario, $lineasCalc, $subtotal, $descuento, $itbms, $total, $numeracion, $numeroManual, $vencimiento) {
                 $factura = VentaFactura::create([
                     'compania_id'       => $companiaId,
                     'cliente_id'        => $data['cliente_id'],
                     'numero'            => 'BORRADOR',
                     'fecha'             => $data['fecha'],
-                    'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
+                    'fecha_vencimiento' => $vencimiento,
                     'subtotal'          => $subtotal,
-                    'descuento'         => 0,
+                    'descuento'         => $descuento,
                     'itbms'             => $itbms,
                     'total'             => $total,
                     'saldo'             => $total,
@@ -157,7 +163,7 @@ class VentaFacturaController extends Controller
                         'descripcion'       => $linea['descripcion'],
                         'cantidad'          => $linea['cantidad'],
                         'precio_unitario'   => $linea['precio_unitario'],
-                        'descuento'         => 0,
+                        'descuento'         => $linea['descuento'] ?? 0,
                         'impuesto_id'       => $linea['impuesto_id'],
                         'impuesto_monto'    => $linea['impuesto_monto'],
                         'total_linea'       => $linea['total_linea'],
@@ -183,7 +189,7 @@ class VentaFacturaController extends Controller
         $invVentas = app(InventarioVentas::class);
         $almacenId = $invVentas->almacenPorDefecto($companiaId);
 
-        $factura = DB::transaction(function () use ($companiaId, $data, $usuario, $lineasCalc, $subtotal, $itbms, $total, $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId, $numeracion, $numeroManual, $invVentas, $almacenId) {
+        $factura = DB::transaction(function () use ($companiaId, $data, $usuario, $lineasCalc, $subtotal, $descuento, $itbms, $total, $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId, $numeracion, $numeroManual, $invVentas, $almacenId, $vencimiento) {
             $numero = $numeracion === 'manual' ? $numeroManual : VentaFactura::siguienteNumero($companiaId);
 
             $factura = VentaFactura::create([
@@ -191,9 +197,9 @@ class VentaFacturaController extends Controller
                 'cliente_id'        => $data['cliente_id'],
                 'numero'            => $numero,
                 'fecha'             => $data['fecha'],
-                'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
+                'fecha_vencimiento' => $vencimiento,
                 'subtotal'          => $subtotal,
-                'descuento'         => 0,
+                'descuento'         => $descuento,
                 'itbms'             => $itbms,
                 'total'             => $total,
                 'saldo'             => $total,
@@ -210,7 +216,7 @@ class VentaFacturaController extends Controller
                     'descripcion'       => $linea['descripcion'],
                     'cantidad'          => $linea['cantidad'],
                     'precio_unitario'   => $linea['precio_unitario'],
-                    'descuento'         => 0,
+                    'descuento'         => $linea['descuento'] ?? 0,
                     'impuesto_id'       => $linea['impuesto_id'],
                     'impuesto_monto'    => $linea['impuesto_monto'],
                     'total_linea'       => $linea['total_linea'],
@@ -225,9 +231,9 @@ class VentaFacturaController extends Controller
                 'tipo_documento'    => CxcDocumento::TIPO_FACTURA,
                 'numero'            => $numero,
                 'fecha'             => $data['fecha'],
-                'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
+                'fecha_vencimiento' => $vencimiento,
                 'subtotal'          => $subtotal,
-                'descuento'         => 0,
+                'descuento'         => $descuento,
                 'impuesto'          => $itbms,
                 'total'             => $total,
                 'saldo'             => $total,
@@ -242,7 +248,7 @@ class VentaFacturaController extends Controller
                     'descripcion'     => $linea['descripcion'],
                     'cantidad'        => $linea['cantidad'],
                     'precio_unitario' => $linea['precio_unitario'],
-                    'descuento'       => 0,
+                    'descuento'       => $linea['descuento'] ?? 0,
                     'impuesto_monto'  => $linea['impuesto_monto'],
                     'total_linea'     => $linea['total_linea'],
                     'cuenta_id'       => $linea['cuenta_ingreso_id'] ?? $cuentaVentasId,
@@ -483,6 +489,7 @@ class VentaFacturaController extends Controller
                 'descripcion' => $linea->descripcion,
                 'cantidad'    => (float) $linea->cantidad,
                 'precio'      => (float) $linea->precio_unitario,
+                'descuento'   => (float) $linea->descuento,
                 'tasa'        => $tasa,
             ];
         }
@@ -604,6 +611,68 @@ class VentaFacturaController extends Controller
         ]);
     }
 
+    /**
+     * Anula el documento electrónico (CAFE) de la factura ante la DGI/PAC. Debe
+     * hacerse ANTES de anular la factura legal, para no dejar un CAFE vivo en la
+     * DGI sin respaldo contable. Si el FEL no estaba AUTORIZADO (rechazado/
+     * pendiente) no hay CAFE válido y solo se marca ANULADO localmente.
+     */
+    public function anularFel(Request $request, VentaFactura $factura): RedirectResponse
+    {
+        abort_unless($factura->compania_id === $this->companiaActivaId($request), 404);
+        abort_unless($request->user()->can('fel.gestionar'), 403);
+
+        $fel = $factura->fel_documento_id ? FelDocumento::find($factura->fel_documento_id) : null;
+        if (! $fel) {
+            return back()->withErrors(['fel' => 'La factura no tiene un documento electrónico.']);
+        }
+        if ($fel->estado_fel === 'ANULADO') {
+            return back()->withErrors(['fel' => 'El documento electrónico ya está anulado.']);
+        }
+
+        $usuario = $request->user()->email;
+
+        // Sin CAFE autorizado no hay nada que anular en la DGI: se marca local.
+        if ($fel->estado_fel !== 'AUTORIZADO') {
+            $fel->update(['estado_fel' => 'ANULADO', 'updated_by' => $usuario]);
+
+            return back()->with('status', 'Documento electrónico marcado como anulado (no estaba autorizado en la DGI).');
+        }
+
+        $config = FelConfiguracion::firstWhere('compania_id', $factura->compania_id);
+        if (! $config || ! $config->token_empresa) {
+            return back()->withErrors(['fel' => 'No hay configuración FEL (tokens) para anular ante la DGI.']);
+        }
+
+        $motivo = trim((string) $request->input('motivo_anulacion', 'Anulación de la factura '.$factura->numero));
+
+        $datos = ['datosDocumento' => [
+            'codigoSucursalEmisor'   => $config->codigo_sucursal ?: '0000',
+            'numeroDocumentoFiscal'  => $fel->numero,
+            'puntoFacturacionFiscal' => $config->punto_facturacion ?: '001',
+            'tipoDocumento'          => $fel->tipo_documento ?: '01',
+            'tipoEmision'            => '01',
+        ]];
+
+        $resp = (new FelService($config))->anulacionDocumento($datos, $motivo);
+        $this->registrarEventoFel($fel, 'ANULACION', $resp, $usuario);
+
+        $codigo    = (string) ($resp['codigo'] ?? $resp['AnulacionResult']['codigo'] ?? '');
+        $resultado = $resp['AnulacionResult'] ?? $resp;
+        $exito = $codigo === '200'
+            || in_array(strtolower((string) ($resultado['resultado'] ?? '')), ['procesado', 'anulado'], true);
+
+        if (! $exito) {
+            $mensaje = $resultado['mensaje'] ?? $resp['mensaje'] ?? 'Sin detalle';
+
+            return back()->withErrors(['fel' => "La DGI no pudo anular el documento electrónico: {$mensaje}"]);
+        }
+
+        $fel->update(['estado_fel' => 'ANULADO', 'respuesta_dgi' => $resp, 'updated_by' => $usuario]);
+
+        return back()->with('status', "Documento electrónico (FEL {$fel->numero}) anulado en la DGI. Ahora puedes anular la factura.");
+    }
+
     public function edit(Request $request, VentaFactura $factura): View
     {
         abort_unless($factura->compania_id === $this->companiaActivaId($request), 404);
@@ -635,11 +704,13 @@ class VentaFacturaController extends Controller
             'fecha'                      => ['required', 'date'],
             'fecha_vencimiento'          => ['nullable', 'date', 'after_or_equal:fecha'],
             'notas'                      => ['nullable', 'string', 'max:1000'],
+            'descuento_general'          => ['nullable', 'numeric', 'min:0', 'max:999999999'],
             'lineas'                     => ['required', 'array', 'min:1'],
             'lineas.*.item_id'           => ['nullable', 'integer', 'exists:item_productos_servicios,id'],
             'lineas.*.descripcion'       => ['required', 'string', 'max:500'],
             'lineas.*.cantidad'          => ['required', 'numeric', 'min:0.0001'],
             'lineas.*.precio_unitario'   => ['required', 'numeric', 'min:0'],
+            'lineas.*.descuento'         => ['nullable', 'numeric', 'min:0', 'max:999999999'],
             'lineas.*.impuesto_id'       => ['required', 'integer', Rule::in(TaxImpuesto::itbmsGlobales()->pluck('id')->all())],
             'lineas.*.cuenta_ingreso_id' => ['nullable', 'integer', 'exists:cgl_cuentas,id'],
         ]);
@@ -658,25 +729,30 @@ class VentaFacturaController extends Controller
 
         $impuestos = TaxImpuesto::whereIn('id', collect($data['lineas'])->pluck('impuesto_id')->unique())->get()->keyBy('id');
 
-        $subtotal = 0; $itbms = 0; $lineasCalc = [];
-        foreach ($data['lineas'] as $i => $linea) {
-            $base       = round((float) $linea['cantidad'] * (float) $linea['precio_unitario'], 2);
-            $tasa       = (float) ($impuestos[$linea['impuesto_id']]->porcentaje ?? 0);
-            $impMonto   = round($base * $tasa / 100, 2);
-            $subtotal  += $base;
-            $itbms     += $impMonto;
-            $lineasCalc[] = array_merge($linea, ['base' => $base, 'impuesto_monto' => $impMonto, 'total_linea' => round($base + $impMonto, 2), 'linea' => $i + 1]);
+        $entradas = [];
+        foreach ($data['lineas'] as $linea) {
+            $entradas[] = array_merge($linea, [
+                'tasa' => (float) ($impuestos[$linea['impuesto_id']]->porcentaje ?? 0),
+            ]);
         }
-        $subtotal = round($subtotal, 2);
-        $itbms    = round($itbms, 2);
-        $total    = round($subtotal + $itbms, 2);
+        $calc       = CalculoDocumento::calcular($entradas, (float) ($data['descuento_general'] ?? 0));
+        $lineasCalc = $calc['lineas'];
+        $subtotal   = $calc['subtotal'];
+        $descuento  = $calc['descuento'];
+        $itbms      = $calc['itbms'];
+        $total      = $calc['total'];
 
-        DB::transaction(function () use ($factura, $data, $usuario, $lineasCalc, $subtotal, $itbms, $total, $numeracion, $numeroManual) {
+        $cliente     = Contacto::where('compania_id', $companiaId)->findOrFail($data['cliente_id']);
+        $vencimiento = $data['fecha_vencimiento']
+            ?? ($cliente->esCredito() ? $cliente->calcularVencimiento($data['fecha']) : null);
+
+        DB::transaction(function () use ($factura, $data, $usuario, $lineasCalc, $subtotal, $descuento, $itbms, $total, $numeracion, $numeroManual, $vencimiento) {
             $factura->update([
                 'cliente_id'        => $data['cliente_id'],
                 'fecha'             => $data['fecha'],
-                'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
+                'fecha_vencimiento' => $vencimiento,
                 'subtotal'          => $subtotal,
+                'descuento'         => $descuento,
                 'itbms'             => $itbms,
                 'total'             => $total,
                 'saldo'             => $total,
@@ -695,7 +771,7 @@ class VentaFacturaController extends Controller
                     'descripcion'       => $linea['descripcion'],
                     'cantidad'          => $linea['cantidad'],
                     'precio_unitario'   => $linea['precio_unitario'],
-                    'descuento'         => 0,
+                    'descuento'         => $linea['descuento'] ?? 0,
                     'impuesto_id'       => $linea['impuesto_id'],
                     'impuesto_monto'    => $linea['impuesto_monto'],
                     'total_linea'       => $linea['total_linea'],
@@ -763,6 +839,7 @@ class VentaFacturaController extends Controller
             'descripcion'       => $d->descripcion,
             'cantidad'          => $d->cantidad,
             'precio_unitario'   => $d->precio_unitario,
+            'descuento'         => (float) $d->descuento,
             'base'              => round((float) $d->total_linea - (float) $d->impuesto_monto, 2),
             'impuesto_id'       => $d->impuesto_id,
             'impuesto_monto'    => (float) $d->impuesto_monto,
@@ -791,7 +868,7 @@ class VentaFacturaController extends Controller
                 'fecha'             => $factura->fecha,
                 'fecha_vencimiento' => $factura->fecha_vencimiento,
                 'subtotal'          => $subtotal,
-                'descuento'         => 0,
+                'descuento'         => (float) $factura->descuento,
                 'impuesto'          => $itbms,
                 'total'             => $total,
                 'saldo'             => $total,
@@ -806,7 +883,7 @@ class VentaFacturaController extends Controller
                     'descripcion'     => $linea['descripcion'],
                     'cantidad'        => $linea['cantidad'],
                     'precio_unitario' => $linea['precio_unitario'],
-                    'descuento'       => 0,
+                    'descuento'       => $linea['descuento'] ?? 0,
                     'impuesto_monto'  => $linea['impuesto_monto'],
                     'total_linea'     => $linea['total_linea'],
                     'cuenta_id'       => $linea['cuenta_ingreso_id'] ?? $cuentaVentasId,
@@ -1265,6 +1342,15 @@ class VentaFacturaController extends Controller
             return back()->withErrors(['factura' => 'La factura ya está anulada.']);
         }
 
+        // Con un CAFE autorizado en la DGI, primero hay que anularlo (FEL) para no
+        // dejar un documento electrónico vivo sin respaldo contable.
+        if ($factura->fel_documento_id) {
+            $felDoc = FelDocumento::find($factura->fel_documento_id);
+            if ($felDoc && $felDoc->estado_fel === 'AUTORIZADO') {
+                return back()->withErrors(['factura' => 'Esta factura tiene un documento electrónico AUTORIZADO en la DGI. Anula primero el FEL (botón «Anular FEL»).']);
+            }
+        }
+
         if ($factura->cxcDocumento && $factura->cxcDocumento->aplicacionesComoDestino()->exists()) {
             return back()->withErrors(['factura' => 'La factura tiene cobros aplicados; anula primero los cobros en CxC.']);
         }
@@ -1325,6 +1411,15 @@ class VentaFacturaController extends Controller
 
         if ($factura->esAnulada()) {
             return back()->withErrors(['factura' => 'La factura ya está anulada.']);
+        }
+
+        // Con un CAFE autorizado en la DGI, primero hay que anularlo (FEL) para no
+        // dejar un documento electrónico vivo sin respaldo contable.
+        if ($factura->fel_documento_id) {
+            $felDoc = FelDocumento::find($factura->fel_documento_id);
+            if ($felDoc && $felDoc->estado_fel === 'AUTORIZADO') {
+                return back()->withErrors(['factura' => 'Esta factura tiene un documento electrónico AUTORIZADO en la DGI. Anula primero el FEL (botón «Anular FEL»).']);
+            }
         }
 
         if ($factura->cxcDocumento && $factura->cxcDocumento->aplicacionesComoDestino()->exists()) {

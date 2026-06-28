@@ -89,6 +89,38 @@ class InventarioCompras
     }
 
     /**
+     * Ajusta el VALOR de una existencia sin cambiar la cantidad (recalcula el
+     * costo promedio). Se usa cuando el costo facturado difiere del costo con que
+     * el bien entró por recepción (GRNI): el mayor recibe la varianza en la cuenta
+     * de inventario y aquí se refleja el mismo delta en el kárdex para preservar
+     * la igualdad kárdex (cantidad × costo_promedio) = saldo de inventario.
+     */
+    public function ajustarValorExistencia(int $companiaId, int $almacenId, int $itemId, float $deltaValor, $usuario): void
+    {
+        if (abs($deltaValor) < 0.00001) {
+            return;
+        }
+
+        $existencia = InvExistencia::where('almacen_id', $almacenId)
+            ->where('item_id', $itemId)
+            ->first();
+
+        if (! $existencia) {
+            return;
+        }
+
+        $cantidad = (float) $existencia->cantidad;
+        $valorActual = round($cantidad * (float) $existencia->costo_promedio, 4);
+        $nuevoValor = round($valorActual + $deltaValor, 4);
+        $nuevoCosto = abs($cantidad) > 0.00001 ? round($nuevoValor / $cantidad, 4) : (float) $existencia->costo_promedio;
+
+        $existencia->update([
+            'costo_promedio' => $nuevoCosto,
+            'updated_by'     => $usuario->email,
+        ]);
+    }
+
+    /**
      * Reversa las entradas de inventario asociadas a un documento. Idempotente:
      * ignora los movimientos ya anulados.
      */

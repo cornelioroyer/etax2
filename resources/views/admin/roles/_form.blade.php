@@ -23,6 +23,7 @@
         'presupuestos'      => 'Presupuestos',
         'reportes'          => 'Reportes',
         'respaldos'         => 'Respaldos',
+        'seguridad'         => 'Seguridad',
         'taller'            => 'Taller',
         'usuarios_compania' => 'Usuarios de compañía',
         'ventas'            => 'Ventas',
@@ -35,6 +36,13 @@
         'eliminar'                 => 'Eliminar',
         'gestionar'                => 'Gestionar (crear, editar, anular)',
         'campo.facturacion_fiscal' => 'Campo: Facturación Fiscal',
+    ];
+    // Etiquetas por permiso completo: desambiguan las filas dentro de grupos que
+    // reúnen varios prefijos (p. ej. "Seguridad" mezcla usuarios_compania y respaldos).
+    $permisoEtiqueta = [
+        'usuarios_compania.ver'       => 'Usuarios de compañía: ver',
+        'usuarios_compania.gestionar' => 'Usuarios de compañía: gestionar (crear, editar, anular)',
+        'respaldos.gestionar'         => 'Respaldos: gestionar',
     ];
 @endphp
 
@@ -81,7 +89,9 @@
                         @php
                             $checked  = in_array($permiso->name, $permisosDelRol, true);
                             $sufijo   = implode('.', array_slice(explode('.', $permiso->name), 1));
-                            $etiqueta = $accionEtiqueta[$sufijo] ?? ucfirst(str_replace('.', ' ', $sufijo));
+                            $etiqueta = $permisoEtiqueta[$permiso->name]
+                                ?? $accionEtiqueta[$sufijo]
+                                ?? ucfirst(str_replace('.', ' ', $sufijo));
                         @endphp
                         <label class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-indigo-50">
                             <input type="checkbox" name="permisos[]" value="{{ $permiso->name }}" @checked($checked)

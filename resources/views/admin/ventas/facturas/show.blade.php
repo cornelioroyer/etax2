@@ -162,6 +162,24 @@
                                     </button>
                                 </form>
                             @endif
+
+                            @if ($factura->fel_documento_id)
+                                @php $felDoc = \App\Models\FelDocumento::find($factura->fel_documento_id); @endphp
+                                @if ($felDoc && $felDoc->estado_fel === 'AUTORIZADO')
+                                    <form method="POST" action="{{ route('admin.ventas.facturas.anular-fel', $factura) }}"
+                                          onsubmit="return confirm('¿Anular el documento electrónico (CAFE) de la factura {{ $factura->numero }} ante la DGI? Es obligatorio antes de anular la factura.')">
+                                        @csrf
+                                        <button class="inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            Anular FEL (DGI)
+                                        </button>
+                                    </form>
+                                @elseif ($felDoc && $felDoc->estado_fel === 'ANULADO')
+                                    <span class="inline-flex items-center rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-500">FEL anulado</span>
+                                @endif
+                            @endif
                         @endcan
                     </div>
             </div>
@@ -268,6 +286,9 @@
                                 <th class="px-4 py-3">Descripción</th>
                                 <th class="px-4 py-3 text-right">Cant.</th>
                                 <th class="px-4 py-3 text-right">Precio</th>
+                                @if ((float) $factura->descuento > 0)
+                                    <th class="px-4 py-3 text-right">Descuento</th>
+                                @endif
                                 <th class="px-4 py-3 text-right">ITBMS</th>
                                 <th class="px-4 py-3 text-right">Total</th>
                             </tr>
@@ -279,6 +300,9 @@
                                     <td class="px-4 py-3">{{ $linea->descripcion }}</td>
                                     <td class="px-4 py-3 text-right">{{ rtrim(rtrim(number_format((float) $linea->cantidad, 4), '0'), '.') }}</td>
                                     <td class="px-4 py-3 text-right">B/. {{ number_format((float) $linea->precio_unitario, 2) }}</td>
+                                    @if ((float) $factura->descuento > 0)
+                                        <td class="px-4 py-3 text-right text-gray-600">{{ (float) $linea->descuento > 0 ? 'B/. '.number_format((float) $linea->descuento, 2) : '—' }}</td>
+                                    @endif
                                     <td class="px-4 py-3 text-right text-gray-600">
                                         {{ $linea->impuesto?->nombre ?? 'Exento' }}
                                         (B/. {{ number_format((float) $linea->impuesto_monto, 2) }})
@@ -287,19 +311,26 @@
                                 </tr>
                             @endforeach
                         </tbody>
+                        @php $colTot = (float) $factura->descuento > 0 ? 6 : 5; @endphp
                         <tfoot class="border-t-2 border-gray-200 text-sm">
                             <tr>
-                                <td colspan="5" class="px-4 py-1 text-right text-gray-600">Subtotal</td>
+                                <td colspan="{{ $colTot }}" class="px-4 py-1 text-right text-gray-600">Subtotal</td>
                                 <td class="px-4 py-1 text-right">B/. {{ number_format((float) $factura->subtotal, 2) }}</td>
                             </tr>
+                            @if ((float) $factura->descuento > 0)
+                                <tr>
+                                    <td colspan="{{ $colTot }}" class="px-4 py-1 text-right text-gray-600">Descuento</td>
+                                    <td class="px-4 py-1 text-right text-gray-600">- B/. {{ number_format((float) $factura->descuento, 2) }}</td>
+                                </tr>
+                            @endif
                             @if ((float) $factura->itbms > 0)
                                 <tr>
-                                    <td colspan="5" class="px-4 py-1 text-right text-gray-600">ITBMS</td>
+                                    <td colspan="{{ $colTot }}" class="px-4 py-1 text-right text-gray-600">ITBMS</td>
                                     <td class="px-4 py-1 text-right">B/. {{ number_format((float) $factura->itbms, 2) }}</td>
                                 </tr>
                             @endif
                             <tr class="font-semibold">
-                                <td colspan="5" class="px-4 py-2 text-right text-gray-700">Total</td>
+                                <td colspan="{{ $colTot }}" class="px-4 py-2 text-right text-gray-700">Total</td>
                                 <td class="px-4 py-2 text-right">B/. {{ number_format((float) $factura->total, 2) }}</td>
                             </tr>
                         </tfoot>

@@ -13,7 +13,7 @@
                 @endif
 
                 <form method="POST" action="{{ route('admin.cxp.facturas.store') }}"
-                      x-data="facturaCxp({{ old('lineas') ? collect(old('lineas'))->values()->toJson() : '[]' }}, {{ (int) ($cuentaGastoId ?? 0) }}, {{ $proveedores->pluck('cuenta_gasto_id', 'id')->toJson() }}, '{{ old('forma_pago', 'CREDITO') }}', '{{ old('cuenta_pago_id', $cuentaPagoId) }}', '{{ old('tipo_documento', 'FACTURA') }}')"
+                      x-data="facturaCxp({{ old('lineas') ? collect(old('lineas'))->values()->toJson() : '[]' }}, {{ (int) ($cuentaGastoId ?? 0) }}, {{ $proveedores->pluck('cuenta_gasto_id', 'id')->toJson() }}, '{{ old('forma_pago', 'CREDITO') }}', '{{ old('cuenta_pago_id', $cuentaPagoId) }}', '{{ old('tipo_documento', 'FACTURA') }}', {{ (float) old('descuento_general', 0) }})"
                       x-init="$nextTick(() => onProveedor('{{ old('proveedor_id') }}'))">
                     @csrf
 
@@ -113,6 +113,7 @@
                                         <th class="py-2 pr-2 min-w-[14rem]">Descripción</th>
                                         <th class="w-24 py-2 pr-2 text-right">Cant.</th>
                                         <th class="w-32 py-2 pr-2 text-right">Precio</th>
+                                        <th class="w-28 py-2 pr-2 text-right">Descuento</th>
                                         <th class="w-24 py-2 pr-2">ITBMS</th>
                                         <th class="py-2 pr-2 min-w-[14rem]">Cuenta contable (gasto / inventario / activo)</th>
                                         <th class="w-28 py-2 pr-2 text-right">Total</th>
@@ -160,6 +161,10 @@
                                                        class="block w-full rounded-md border-gray-300 text-right text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                             </td>
                                             <td class="py-2 pr-2">
+                                                <input type="number" step="0.01" min="0" :name="`lineas[${idx}][descuento]`" x-model.number="linea.descuento"
+                                                       class="block w-full rounded-md border-gray-300 text-right text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                            </td>
+                                            <td class="py-2 pr-2">
                                                 <select :name="`lineas[${idx}][tasa_itbms]`" x-model.number="linea.tasa_itbms"
                                                         class="block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                                     <option value="0">Exento</option>
@@ -197,18 +202,27 @@
                                 </tbody>
                                 <tfoot class="border-t-2 border-gray-200 text-sm">
                                     <tr>
-                                        <td colspan="5" class="py-1 pr-2 text-right text-gray-600">Subtotal</td>
+                                        <td colspan="6" class="py-1 pr-2 text-right text-gray-600">Subtotal</td>
                                         <td class="py-1 pr-2 text-right" x-text="fmt(subtotal())"></td>
                                         <td></td>
                                     </tr>
                                     <tr>
-                                        <td colspan="5" class="py-1 pr-2 text-right text-gray-600">ITBMS</td>
+                                        <td colspan="3" class="py-1 pr-2 text-right text-gray-600">Descuento general</td>
+                                        <td colspan="3" class="py-1 pr-2">
+                                            <input type="number" step="0.01" min="0" name="descuento_general" x-model.number="descuentoGeneral"
+                                                   class="block w-full rounded-md border-gray-300 text-right text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        </td>
+                                        <td class="py-1 pr-2 text-right text-gray-600" x-text="'-' + fmt(descuentoTotal())"></td>
+                                        <td></td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="6" class="py-1 pr-2 text-right text-gray-600">ITBMS</td>
                                         <td class="py-1 pr-2 text-right" x-text="fmt(itbms())"></td>
                                         <td></td>
                                     </tr>
                                     <tr class="font-semibold">
-                                        <td colspan="5" class="py-2 pr-2 text-right text-gray-700">Total</td>
-                                        <td class="py-2 pr-2 text-right" x-text="fmt(subtotal() + itbms())"></td>
+                                        <td colspan="6" class="py-2 pr-2 text-right text-gray-700">Total</td>
+                                        <td class="py-2 pr-2 text-right" x-text="fmt(totalDocumento())"></td>
                                         <td></td>
                                     </tr>
                                 </tfoot>
@@ -282,7 +296,7 @@
         const ARTICULOS_CXP = @json($articulosCxp);
         const CUENTA_INVENTARIO_DEFAULT = '{{ (int) ($cuentaInventarioId ?? 0) ?: '' }}';
 
-        function facturaCxp(lineasIniciales, cuentaGastoId, provCuentas, formaPagoInicial, cuentaPagoInicial, tipoInicial) {
+        function facturaCxp(lineasIniciales, cuentaGastoId, provCuentas, formaPagoInicial, cuentaPagoInicial, tipoInicial, descuentoGeneralInicial) {
             return {
                 cuentaGlobal: cuentaGastoId || '',
                 provCuentas: provCuentas || {},
@@ -290,9 +304,10 @@
                 tipo: tipoInicial || 'FACTURA',
                 formaPago: formaPagoInicial || 'CREDITO',
                 cuentaPago: cuentaPagoInicial || '',
+                descuentoGeneral: parseFloat(descuentoGeneralInicial) || 0,
                 esContadoPosible() { return ['FACTURA', 'REEMBOLSO', 'IMPORTACION'].includes(this.tipo); },
                 pagoInmediato() { return this.esContadoPosible() && ['CONTADO', 'TARJETA'].includes(this.formaPago); },
-                nueva() { return { item_id: null, busqueda: '', mostrarItems: false, descripcion: '', cantidad: 1, precio_unitario: 0, tasa_itbms: 7, cuenta_id: this.cuentaActual || '' }; },
+                nueva() { return { item_id: null, busqueda: '', mostrarItems: false, descripcion: '', cantidad: 1, precio_unitario: 0, descuento: 0, tasa_itbms: 7, cuenta_id: this.cuentaActual || '' }; },
                 lineas: lineasIniciales.length
                     ? lineasIniciales.map(l => {
                         const art = l.item_id ? ARTICULOS_CXP.find(a => a.id === String(l.item_id)) : null;
@@ -303,6 +318,7 @@
                             descripcion: l.descripcion ?? '',
                             cantidad: parseFloat(l.cantidad) || 1,
                             precio_unitario: parseFloat(l.precio_unitario) || 0,
+                            descuento: parseFloat(l.descuento) || 0,
                             tasa_itbms: parseInt(l.tasa_itbms) || 0,
                             cuenta_id: l.cuenta_id ?? '',
                         };
@@ -343,11 +359,57 @@
                     if (this.lineas.length === 0) this.lineas.push(this.nueva());
                 },
                 agregar() { this.lineas.push(this.nueva()); },
+                // Base bruta de la línea (cantidad × precio), sin descuento.
                 base(l) { return Math.round((parseFloat(l.cantidad) || 0) * (parseFloat(l.precio_unitario) || 0) * 100) / 100; },
-                itbmsLinea(l) { return Math.round(this.base(l) * (parseInt(l.tasa_itbms) || 0)) / 100; },
-                totalLinea(l) { return this.base(l) + this.itbmsLinea(l); },
-                subtotal() { return this.lineas.reduce((s, l) => s + this.base(l), 0); },
-                itbms() { return this.lineas.reduce((s, l) => s + this.itbmsLinea(l), 0); },
+                // Réplica del cálculo NETO del backend (App\Services\CalculoDocumento):
+                // base neta = bruto − descuento de línea; el descuento general se prorratea
+                // por peso de la base neta; el ITBMS se calcula sobre la base ya neta.
+                _calc() {
+                    const r2 = (v) => Math.round(v * 100) / 100;
+                    const n = this.lineas.length;
+                    let sumaBaseNeta = 0;
+                    const filas = this.lineas.map((l, i) => {
+                        const bruto = this.base(l);
+                        let descLinea = r2(parseFloat(l.descuento) || 0);
+                        if (descLinea < 0) descLinea = 0;
+                        if (descLinea > bruto) descLinea = bruto;
+                        const baseNeta = r2(bruto - descLinea);
+                        sumaBaseNeta += baseNeta;
+                        return { i, bruto, descLinea, baseNeta, tasa: parseInt(l.tasa_itbms) || 0 };
+                    });
+                    let descGen = r2(Math.max(0, parseFloat(this.descuentoGeneral) || 0));
+                    if (descGen > sumaBaseNeta) descGen = sumaBaseNeta;
+                    let asignado = 0;
+                    filas.forEach((f, k) => {
+                        let porc = 0;
+                        if (descGen > 0 && sumaBaseNeta > 0) {
+                            if (k === n - 1) { porc = r2(descGen - asignado); }
+                            else { porc = r2(descGen * f.baseNeta / sumaBaseNeta); asignado += porc; }
+                        }
+                        f.descGeneral = porc;
+                        f.baseImponible = r2(f.baseNeta - porc);
+                        f.imp = r2(f.baseImponible * f.tasa / 100);
+                        f.descTotal = r2(f.descLinea + f.descGeneral);
+                    });
+                    const subtotal = r2(filas.reduce((s, f) => s + f.bruto, 0));
+                    const descuento = r2(filas.reduce((s, f) => s + f.descTotal, 0));
+                    const itbmsT = r2(filas.reduce((s, f) => s + f.imp, 0));
+                    return { filas, subtotal, descuento, itbms: itbmsT, total: r2(subtotal - descuento + itbmsT) };
+                },
+                // Total de la línea: base neta (con descuento de línea) + ITBMS, sin el prorrateo general.
+                totalLinea(l) {
+                    const r2 = (v) => Math.round(v * 100) / 100;
+                    const bruto = this.base(l);
+                    let descLinea = r2(parseFloat(l.descuento) || 0);
+                    if (descLinea < 0) descLinea = 0;
+                    if (descLinea > bruto) descLinea = bruto;
+                    const baseNeta = r2(bruto - descLinea);
+                    return r2(baseNeta + r2(baseNeta * (parseInt(l.tasa_itbms) || 0) / 100));
+                },
+                subtotal() { return this._calc().subtotal; },
+                descuentoTotal() { return this._calc().descuento; },
+                itbms() { return this._calc().itbms; },
+                totalDocumento() { return this._calc().total; },
                 fmt(v) { return 'B/. ' + (Math.round(v * 100) / 100).toFixed(2); },
             };
         }

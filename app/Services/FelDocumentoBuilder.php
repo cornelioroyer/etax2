@@ -65,7 +65,7 @@ class FelDocumentoBuilder
         array $datos,
         int $numeroFiscal,
     ): array {
-        [$items, $totalNeto, $totalItbms] = $this->items($datos['items']);
+        [$items, $totalNeto, $totalItbms, $totalDescuento] = $this->items($datos['items']);
         $totalFactura = round($totalNeto + $totalItbms, 2);
 
         $tipoDocumento = $datos['tipo_documento'] ?? '01';
@@ -97,6 +97,7 @@ class FelDocumentoBuilder
             'listaItems' => ['item' => $items],
             'totalesSubTotales' => [
                 'totalPrecioNeto' => $this->n2($totalNeto),
+                'totalDescuento' => $this->n2($totalDescuento),
                 'totalITBMS' => $this->n2($totalItbms),
                 'totalMontoGravado' => $this->n2($totalItbms),
                 'totalFactura' => $this->n2($totalFactura),
@@ -160,12 +161,13 @@ class FelDocumentoBuilder
         ], fn ($v) => $v !== null && $v !== '');
     }
 
-    /** @return array{0: array, 1: float, 2: float} [items, totalNeto, totalItbms] */
+    /** @return array{0: array, 1: float, 2: float, 3: float} [items, totalNeto, totalItbms, totalDescuento] */
     private function items(array $lineas): array
     {
         $items = [];
         $totalNeto = 0.0;
         $totalItbms = 0.0;
+        $totalDescuento = 0.0;
 
         foreach ($lineas as $l) {
             $cantidad = (float) $l['cantidad'];
@@ -173,7 +175,17 @@ class FelDocumentoBuilder
             $tasa = $l['tasa'] ?? '01';
             $factor = self::TASAS_ITBMS[$tasa] ?? 0.07;
 
-            $precioItem = round($cantidad * $precio, 2);
+            // Descuento (monto total de la línea: descuento de línea + prorrateo
+            // del descuento general). La base gravada es el bruto menos descuento.
+            $descuento = round((float) ($l['descuento'] ?? 0), 2);
+            $bruto = round($cantidad * $precio, 2);
+            if ($descuento < 0) {
+                $descuento = 0.0;
+            }
+            if ($descuento > $bruto) {
+                $descuento = $bruto;
+            }
+            $precioItem = round($bruto - $descuento, 2); // base neta gravable
             $itbms = round($precioItem * $factor, 2);
 
             $items[] = array_filter([
@@ -185,6 +197,9 @@ class FelDocumentoBuilder
                 'codigoCPBS' => $l['cpbs'] ?? '8111',
                 'cantidad' => $this->n($cantidad, 2),
                 'precioUnitario' => $this->n($precio, 2),
+                // Descuento por unidad (monto), solo si aplica.
+                'precioUnitarioDescuento' => $descuento > 0 && $cantidad > 0
+                    ? $this->n(round($descuento / $cantidad, 2), 2) : null,
                 'precioItem' => $this->n($precioItem, 2),
                 'valorTotal' => $this->n($precioItem + $itbms, 2),
                 'tasaITBMS' => $tasa,
@@ -193,9 +208,10 @@ class FelDocumentoBuilder
 
             $totalNeto += $precioItem;
             $totalItbms += $itbms;
+            $totalDescuento += $descuento;
         }
 
-        return [$items, round($totalNeto, 2), round($totalItbms, 2)];
+        return [$items, round($totalNeto, 2), round($totalItbms, 2), round($totalDescuento, 2)];
     }
 
     private function n(float $v, int $dec): string

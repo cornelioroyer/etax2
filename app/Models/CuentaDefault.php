@@ -9,6 +9,14 @@ class CuentaDefault extends Model
 {
     protected $table = 'core_cuentas_default';
 
+    /**
+     * Cuenta puente GRNI (Mercancía recibida no facturada): pasivo donde se
+     * acredita el inventario recibido contra una orden de compra antes de que
+     * llegue la factura. Al facturar se debita esta cuenta contra CxP, dejándola
+     * en cero. La usan la recepción de mercancía y la factura desde orden.
+     */
+    public const CLAVE_GRNI = 'MERC_POR_FACTURAR';
+
     protected $fillable = [
         'compania_id',
         'clave',

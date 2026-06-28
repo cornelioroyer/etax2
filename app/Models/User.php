@@ -109,6 +109,53 @@ class User extends Authenticatable
     }
 
     /**
+     * Permisos DENEGADOS al usuario en una compañía (override negativo).
+     * Memoizado por compañía para no golpear la BD en cada llamada a can()
+     * desde el Gate::before. Devuelve nombres de permiso (ej. "ventas.crear").
+     *
+     * @var array<int, array<int, string>>
+     */
+    protected array $cachePermisosDenegados = [];
+
+    /**
+     * @return array<int, string>
+     */
+    public function permisosDenegados(int $companiaId): array
+    {
+        if (! array_key_exists($companiaId, $this->cachePermisosDenegados)) {
+            $this->cachePermisosDenegados[$companiaId] = DB::table('seg_usuarios_permisos_denegados')
+                ->join('seg_permisos', 'seg_permisos.id', '=', 'seg_usuarios_permisos_denegados.permiso_id')
+                ->where('seg_usuarios_permisos_denegados.model_type', self::class)
+                ->where('seg_usuarios_permisos_denegados.model_id', $this->id)
+                ->where('seg_usuarios_permisos_denegados.compania_id', $companiaId)
+                ->pluck('seg_permisos.name')
+                ->all();
+        }
+
+        return $this->cachePermisosDenegados[$companiaId];
+    }
+
+    /**
+     * ¿El permiso está denegado para este usuario en la compañía indicada?
+     */
+    public function tienePermisoDenegado(string $permiso, ?int $companiaId): bool
+    {
+        if (! $companiaId) {
+            return false;
+        }
+
+        return in_array($permiso, $this->permisosDenegados($companiaId), true);
+    }
+
+    /**
+     * Limpia la memoización de denegados (tras actualizarlos).
+     */
+    public function olvidarPermisosDenegados(): void
+    {
+        $this->cachePermisosDenegados = [];
+    }
+
+    /**
      * Compañías que este usuario administra (rol admin_compania).
      */
     public function companiasAdministradas(): Collection

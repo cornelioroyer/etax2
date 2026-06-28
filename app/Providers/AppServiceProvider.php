@@ -10,9 +10,11 @@ use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Contracts\Auth\Access\Authorizable;
 use Illuminate\Database\Eloquent\Model;
+use App\Services\MenuBuilder;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -62,6 +64,15 @@ class AppServiceProvider extends ServiceProvider
                 return false;
             }
 
+            // 2.5) Override negativo por usuario: un permiso denegado a este
+            // usuario en la compañía activa se rechaza aunque su rol lo otorgue.
+            // No afecta al super_admin (ya retornó arriba). Aislado por compañía.
+            if (str_contains($ability, '.')
+                && method_exists($user, 'tienePermisoDenegado')
+                && $user->tienePermisoDenegado($ability, $companiaActiva ? (int) $companiaActiva : null)) {
+                return false;
+            }
+
             // 3) Resolución estándar de spatie/permission (replicada).
             if (is_string($args[0] ?? null) && ! class_exists($args[0])) {
                 $guard = array_shift($args);
@@ -77,6 +88,13 @@ class AppServiceProvider extends ServiceProvider
         // Fechas en la interfaz: timestamps en GMT-5 (Panamá), fechas puras sin convertir.
         Blade::directive('fechaHora', fn ($expr) => "<?php echo \App\Support\Fechas::hora($expr); ?>");
         Blade::directive('fecha', fn ($expr) => "<?php echo \App\Support\Fechas::fecha($expr); ?>");
+
+        // Menú lateral dirigido por BD: solo se arma cuando se renderiza el menú.
+        // Si core_menu_items está vacía, MenuBuilder devuelve [] y el Blade cae
+        // al menú estático heredado (fallback sin riesgo).
+        View::composer('layouts.navigation', function ($view) {
+            $view->with('arbolMenu', app(MenuBuilder::class)->build());
+        });
 
         $this->registrarAuditoria();
     }
