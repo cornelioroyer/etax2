@@ -228,6 +228,62 @@
                 </div>
             </div>
 
+            {{-- Vista previa del asiento (solo en borrador, antes de contabilizar) --}}
+            @if ($previewAsiento)
+                <div class="bg-white p-6 shadow-sm sm:rounded-lg" x-data="{ abierto: true }">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-semibold text-gray-700">Vista previa del asiento de diario</h3>
+                            <p class="mt-1 text-xs text-gray-500">Así quedará el asiento al contabilizar este borrador. Todavía no afecta la contabilidad.</p>
+                        </div>
+                        <button type="button" @click="abierto = !abierto"
+                                class="text-xs font-medium text-blue-700 hover:underline"
+                                x-text="abierto ? 'Ocultar' : 'Mostrar'">Ocultar</button>
+                    </div>
+
+                    <div x-show="abierto" class="mt-4">
+                        @if (! empty($previewAsiento['error']))
+                            <div class="rounded-md bg-amber-50 p-3 text-sm text-amber-800">{{ $previewAsiento['error'] }}</div>
+                        @else
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                    <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                        <tr>
+                                            <th class="px-4 py-2">Cuenta</th>
+                                            <th class="px-4 py-2">Descripción</th>
+                                            <th class="px-4 py-2 text-right">Débito</th>
+                                            <th class="px-4 py-2 text-right">Crédito</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100">
+                                        @foreach ($previewAsiento['lineas'] as $l)
+                                            <tr>
+                                                <td class="px-4 py-2 text-gray-700">
+                                                    {{ $l['cuenta'] }}
+                                                    @if ($l['contacto'])
+                                                        <div class="text-xs text-gray-500">{{ $l['contacto'] }}</div>
+                                                    @endif
+                                                </td>
+                                                <td class="px-4 py-2 text-gray-600">{{ $l['descripcion'] }}</td>
+                                                <td class="px-4 py-2 text-right">{{ $l['debito'] > 0 ? 'B/. '.number_format($l['debito'], 2) : '' }}</td>
+                                                <td class="px-4 py-2 text-right">{{ $l['credito'] > 0 ? 'B/. '.number_format($l['credito'], 2) : '' }}</td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                    <tfoot class="border-t-2 border-gray-200 font-semibold text-gray-700">
+                                        <tr>
+                                            <td class="px-4 py-2 text-right" colspan="2">Totales</td>
+                                            <td class="px-4 py-2 text-right">B/. {{ number_format($previewAsiento['total_debito'], 2) }}</td>
+                                            <td class="px-4 py-2 text-right">B/. {{ number_format($previewAsiento['total_credito'], 2) }}</td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            @endif
+
             {{-- Pagos aplicados --}}
             <div class="bg-white p-6 shadow-sm sm:rounded-lg">
                 <h3 class="mb-3 text-sm font-semibold text-gray-700">Pagos aplicados</h3>

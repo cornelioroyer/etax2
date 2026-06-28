@@ -253,10 +253,18 @@ class CxpFacturaController extends Controller
             ->get(['id', 'codigo', 'descripcion', 'cxp_detalle_id'])
             ->keyBy('cxp_detalle_id');
 
+        // Vista previa del asiento: solo en borrador (una vez contabilizado ya
+        // existe el asiento real y el enlace "Ver asiento"). Reutiliza la misma
+        // construcción de líneas que el posteo, así no puede divergir.
+        $previewAsiento = $documento->esBorrador()
+            ? $this->previsualizarAsiento($documento)
+            : null;
+
         return view('admin.cxp.facturas.show', [
             'factura'            => $documento,
             'activosPorDetalle'  => $activosPorDetalle,
             'puedeGestionarAdjuntos' => $request->user()->can('cxp.gestionar'),
+            'previewAsiento'     => $previewAsiento,
         ]);
     }
 
@@ -472,6 +480,48 @@ class CxpFacturaController extends Controller
     private function contabilizarFactura(CxpDocumento $factura, $usuario): void
     {
         $companiaId = $factura->compania_id;
+        $etiqueta = $factura->etiquetaTipo();
+
+        $lineasAsiento = $this->construirLineasAsiento($factura);
+
+        $asiento = app(AsientoAutomatico::class)->postear(
+            $companiaId,
+            $factura->fecha->format('Y-m-d'),
+            "{$etiqueta} de compra {$factura->numero} — ".$factura->proveedor->nombre,
+            $factura->numero,
+            $lineasAsiento,
+            'CXP',
+            'cxp_documentos',
+            $factura->id,
+            $usuario,
+        );
+
+        $factura->update([
+            'asiento_id' => $asiento->id,
+            'estado' => CxpDocumento::ESTADO_PENDIENTE,
+            'updated_by' => $usuario->email,
+        ]);
+
+        // Sube existencias de las líneas que apuntan a un artículo de inventario.
+        $this->registrarEntradasInventario($factura, $usuario);
+    }
+
+    /**
+     * Construye las líneas del asiento de una factura/NC/ND de compra a partir
+     * de su detalle. Es la FUENTE ÚNICA de la dirección contable: la usan tanto
+     * la contabilización real ({@see contabilizarFactura}) como la vista previa
+     * del asiento en el borrador ({@see show}), de modo que la previsualización
+     * nunca difiera del asiento que finalmente se postea.
+     *
+     * Lanza ValidationException si faltan las cuentas default necesarias (CXP /
+     * ITBMS_CREDITO); el llamador de la vista previa lo captura para avisar en
+     * lugar de fallar.
+     *
+     * @return array<int, array{cuenta_id:int, contacto_id?:int, descripcion:string, debito:float, credito:float}>
+     */
+    private function construirLineasAsiento(CxpDocumento $factura): array
+    {
+        $companiaId = $factura->compania_id;
         $impuesto = round((float) $factura->impuesto, 2);
 
         $cuentaCxpId = CuentaDefault::idPara($companiaId, 'CXP');
@@ -552,26 +602,48 @@ class CxpFacturaController extends Controller
             ];
         }
 
-        $asiento = app(AsientoAutomatico::class)->postear(
-            $companiaId,
-            $factura->fecha->format('Y-m-d'),
-            "{$etiqueta} de compra {$factura->numero} — ".$factura->proveedor->nombre,
-            $factura->numero,
-            $lineasAsiento,
-            'CXP',
-            'cxp_documentos',
-            $factura->id,
-            $usuario,
-        );
+        return $lineasAsiento;
+    }
 
-        $factura->update([
-            'asiento_id' => $asiento->id,
-            'estado' => CxpDocumento::ESTADO_PENDIENTE,
-            'updated_by' => $usuario->email,
-        ]);
+    /**
+     * Arma la vista previa legible del asiento de un borrador (cuenta con
+     * código/nombre, contacto, débito/crédito) reutilizando exactamente las
+     * líneas que se postearían. Devuelve ['error' => mensaje] si faltan cuentas
+     * default, o ['lineas' => [...], 'total_debito' => x, 'total_credito' => x].
+     *
+     * @return array{lineas?: array<int, array<string, mixed>>, total_debito?: float, total_credito?: float, error?: string}
+     */
+    private function previsualizarAsiento(CxpDocumento $factura): array
+    {
+        try {
+            $lineas = $this->construirLineasAsiento($factura);
+        } catch (ValidationException $e) {
+            return ['error' => collect($e->errors())->flatten()->first()];
+        }
 
-        // Sube existencias de las líneas que apuntan a un artículo de inventario.
-        $this->registrarEntradasInventario($factura, $usuario);
+        $cuentas = CuentaContable::whereIn('id', collect($lineas)->pluck('cuenta_id')->unique())
+            ->get(['id', 'codigo', 'nombre'])
+            ->keyBy('id');
+
+        $proveedor = $factura->proveedor->nombre ?? null;
+
+        $filas = collect($lineas)->map(function (array $l) use ($cuentas, $proveedor) {
+            $cuenta = $cuentas->get($l['cuenta_id']);
+
+            return [
+                'cuenta'      => $cuenta ? $cuenta->codigo.' — '.$cuenta->nombre : '(cuenta #'.$l['cuenta_id'].')',
+                'contacto'    => ! empty($l['contacto_id']) ? $proveedor : null,
+                'descripcion' => $l['descripcion'] ?? '',
+                'debito'      => round((float) $l['debito'], 2),
+                'credito'     => round((float) $l['credito'], 2),
+            ];
+        });
+
+        return [
+            'lineas'        => $filas->all(),
+            'total_debito'  => round($filas->sum('debito'), 2),
+            'total_credito' => round($filas->sum('credito'), 2),
+        ];
     }
 
     /**
