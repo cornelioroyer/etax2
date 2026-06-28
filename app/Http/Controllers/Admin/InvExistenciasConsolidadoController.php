@@ -121,6 +121,7 @@ class InvExistenciasConsolidadoController extends Controller
             $id = (int) $r->item_id;
             if (! isset($items[$id])) {
                 $items[$id] = [
+                    'item_id'       => $id,
                     'codigo'        => $r->codigo,
                     'nombre'        => $r->nombre,
                     'tipo'          => $r->tipo,

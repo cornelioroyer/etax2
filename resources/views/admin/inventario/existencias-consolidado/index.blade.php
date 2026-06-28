@@ -73,6 +73,7 @@
                             <th class="px-4 py-3 text-right">Total</th>
                             <th class="px-4 py-3 text-right">Costo prom.</th>
                             <th class="px-4 py-3 text-right">Valor total</th>
+                            <th class="px-4 py-3"></th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
@@ -90,9 +91,13 @@
                                 <td class="px-4 py-3 text-right font-semibold {{ $f['totalCantidad'] < 0 ? 'text-red-600' : '' }}">{{ $cant($f['totalCantidad']) }}</td>
                                 <td class="px-4 py-3 text-right text-gray-600">{{ number_format((float) $f['costoProm'], 4) }}</td>
                                 <td class="px-4 py-3 text-right font-medium">{{ $money($f['valor']) }}</td>
+                                <td class="px-4 py-3 text-right">
+                                    <a href="{{ route('admin.inventario.kardex.index', array_filter(['item_id' => $f['item_id'], 'almacen_id' => $filtros['almacen_id']])) }}"
+                                       class="text-sm text-indigo-600 hover:text-indigo-800 whitespace-nowrap">Movimientos →</a>
+                                </td>
                             </tr>
                         @empty
-                            <tr><td colspan="{{ 6 + $columnas->count() }}" class="px-4 py-8 text-center text-gray-400">Sin existencias para los filtros seleccionados.</td></tr>
+                            <tr><td colspan="{{ 7 + $columnas->count() }}" class="px-4 py-8 text-center text-gray-400">Sin existencias para los filtros seleccionados.</td></tr>
                         @endforelse
                     </tbody>
                     @if (count($filas))
@@ -105,6 +110,7 @@
                                 <td class="px-4 py-2"></td>
                                 <td class="px-4 py-2"></td>
                                 <td class="px-4 py-2 text-right">{{ $money($totalValor) }}</td>
+                                <td class="px-4 py-2"></td>
                             </tr>
                         </tfoot>
                     @endif
