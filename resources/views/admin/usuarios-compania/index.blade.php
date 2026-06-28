@@ -23,7 +23,7 @@
                     <input name="password" type="password" placeholder="Contraseña (si es nuevo)" class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     <select name="rol" required class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                         @foreach ($roles as $rol)
-                            <option value="{{ $rol }}" @selected(old('rol', 'usuario') === $rol)>{{ $rol === 'admin_compania' ? 'Administrador de compañía' : 'Usuario' }}</option>
+                            <option value="{{ $rol->name }}" @selected(old('rol', 'usuario') === $rol->name)>{{ $rol->etiqueta() }}</option>
                         @endforeach
                     </select>
                     <button class="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700">Dar acceso</button>
@@ -51,14 +51,15 @@
                                 </td>
                                 <td class="px-4 py-4 sm:px-6">
                                     @if ($u->id === auth()->id() || ! auth()->user()->can('usuarios_compania.gestionar'))
-                                        <span class="text-sm text-gray-700">{{ $u->rol === 'admin_compania' ? 'Administrador de compañía' : 'Usuario' }}</span>
+                                        <span class="text-sm text-gray-700">{{ optional($roles->firstWhere('name', $u->rol))->etiqueta() ?? $u->rol }}</span>
                                     @else
                                         <form method="POST" action="{{ route('admin.usuarios-compania.update', $u->id) }}" class="inline">
                                             @csrf
                                             @method('PUT')
                                             <select name="rol" onchange="this.form.submit()" class="rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                                <option value="usuario" @selected($u->rol === 'usuario')>Usuario</option>
-                                                <option value="admin_compania" @selected($u->rol === 'admin_compania')>Administrador de compañía</option>
+                                                @foreach ($roles as $rol)
+                                                    <option value="{{ $rol->name }}" @selected($u->rol === $rol->name)>{{ $rol->etiqueta() }}</option>
+                                                @endforeach
                                             </select>
                                         </form>
                                     @endif

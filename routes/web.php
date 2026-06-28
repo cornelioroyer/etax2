@@ -25,6 +25,7 @@ use App\Http\Controllers\Admin\CxpPagoController;
 use App\Http\Controllers\Admin\CxpRecurrenteController;
 use App\Http\Controllers\Admin\FacturaFelController;
 use App\Http\Controllers\Admin\RespaldoController;
+use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\ReporteComprobacionController;
 use App\Http\Controllers\Admin\ReporteBalanceController;
 use App\Http\Controllers\Admin\ReporteComparativoController;
@@ -140,6 +141,9 @@ Route::middleware('auth')->group(function () {
 // Usuarios de plataforma (flag is_admin): solo super-admin.
 Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::resource('users', UserController::class)->except(['show']);
+
+    // Catálogo de roles globales (solo super_admin).
+    Route::resource('roles', RoleController::class)->except(['show']);
 
     // Bitácora de actividad de usuarios (solo super_admin).
     Route::get('auditoria', [AuditoriaController::class, 'index'])->name('auditoria.index');

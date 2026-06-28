@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -10,12 +11,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\View\View;
 use Spatie\Permission\Models\Permission;
-use Spatie\Permission\Models\Role;
 
 class UsuarioCompaniaController extends Controller
 {
-    private const ROLES_ASIGNABLES = ['admin_compania', 'usuario'];
-
     /**
      * Usuarios con acceso a la compañía activa.
      */
@@ -34,8 +32,21 @@ class UsuarioCompaniaController extends Controller
         return view('admin.usuarios-compania.index', [
             'usuarios' => $filas,
             'compania' => $compania,
-            'roles' => self::ROLES_ASIGNABLES,
+            'roles' => $this->rolesAsignables(),
         ]);
+    }
+
+    /**
+     * Catálogo de roles globales que se pueden asignar a un usuario en una compañía.
+     * Se administra en el módulo de Roles (RoleController).
+     */
+    private function rolesAsignables()
+    {
+        return Role::query()
+            ->whereNull('compania_id')
+            ->where('guard_name', 'web')
+            ->orderBy('name')
+            ->get(['id', 'name', 'descripcion']);
     }
 
     /**
@@ -49,7 +60,7 @@ class UsuarioCompaniaController extends Controller
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255'],
             'name' => ['nullable', 'string', 'max:255'],
             'password' => ['nullable', 'string', 'min:8'],
-            'rol' => ['required', 'in:'.implode(',', self::ROLES_ASIGNABLES)],
+            'rol' => ['required', 'in:'.$this->rolesAsignables()->pluck('name')->implode(',')],
         ]);
 
         $user = User::where('email', $data['email'])->first();
@@ -85,7 +96,7 @@ class UsuarioCompaniaController extends Controller
         $this->companiaActiva($request);
 
         $data = $request->validate([
-            'rol' => ['required', 'in:'.implode(',', self::ROLES_ASIGNABLES)],
+            'rol' => ['required', 'in:'.$this->rolesAsignables()->pluck('name')->implode(',')],
         ]);
 
         if ($user->is($request->user())) {

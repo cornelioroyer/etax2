@@ -19,7 +19,7 @@
 
             <div class="rounded-lg bg-blue-50 p-4 text-sm text-blue-700">
                 <strong>{{ $usuario->email }}</strong> &mdash;
-                Rol: <span class="font-semibold">{{ $rolNombre === 'admin_compania' ? 'Administrador de compañía' : ($rolNombre === 'usuario' ? 'Usuario' : 'Sin rol') }}</span>
+                Rol: <span class="font-semibold">{{ $rolNombre === 'admin_compania' ? 'Administrador de compañía' : ($rolNombre === 'usuario' ? 'Usuario' : ($rolNombre ? ucfirst(str_replace('_', ' ', $rolNombre)) : 'Sin rol')) }}</span>
                 <br>
                 <span class="text-blue-500">Los permisos marcados con fondo gris vienen del rol y no se pueden quitar aquí. Los permisos adicionales se guardan individualmente.</span>
             </div>
