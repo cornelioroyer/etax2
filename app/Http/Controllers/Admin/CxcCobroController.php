@@ -153,6 +153,7 @@ class CxcCobroController extends Controller
             ->where('cliente_id', $data['cliente_id'])
             ->whereIn('tipo_documento', CxcDocumento::tiposCobrables())
             ->whereIn('id', $aplicar->pluck('documento_id'))
+            ->orderBy('id')
             ->lockForUpdate()
             ->get()
             ->keyBy('id');

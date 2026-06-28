@@ -19,6 +19,7 @@ use App\Services\AsientoAutomatico;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Maatwebsite\Excel\Facades\Excel;
@@ -99,10 +100,16 @@ class VentaReciboController extends Controller
         $usuario    = $request->user();
 
         $data = $request->validate([
-            'cliente_id'      => ['required', 'integer'],
+            'cliente_id'      => [
+                'required', 'integer',
+                Rule::exists('contact_contactos', 'id')->where('compania_id', $companiaId),
+            ],
             'fecha'           => ['required', 'date'],
             'metodo_pago'     => ['nullable', 'string', 'max:50'],
-            'cuenta_cobro_id' => ['required', 'integer', 'exists:cgl_cuentas,id'],
+            'cuenta_cobro_id' => [
+                'required', 'integer',
+                Rule::exists('cgl_cuentas', 'id')->where('compania_id', $companiaId),
+            ],
             'referencia'      => ['nullable', 'string', 'max:100'],
             'facturas'        => ['required', 'array', 'min:1'],
             'facturas.*.id'   => ['required', 'integer'],
@@ -144,6 +151,18 @@ class VentaReciboController extends Controller
         $cuentaCxcId = CuentaDefault::idPara($companiaId, 'CXC');
 
         $recibo = DB::transaction(function () use ($companiaId, $data, $aplicar, $facturas, $total, $cuentaCxcId, $usuario) {
+            // Bloquear primero los cxc_documentos involucrados, en orden ascendente
+            // de id, para fijar un orden de adquisición de locks consistente con el
+            // camino CxC→Cobros (que también bloquea cxc_documentos y luego, vía
+            // sincronizarFacturaVenta, ventas_facturas). Evita el interbloqueo
+            // cruzado cuando un mismo conjunto de facturas se cobra a la vez desde
+            // ambas pantallas.
+            $cxcIds = $facturas->pluck('cxc_documento_id')->filter()->unique()->sort()->values();
+
+            if ($cxcIds->isNotEmpty()) {
+                CxcDocumento::whereIn('id', $cxcIds)->orderBy('id')->lockForUpdate()->get();
+            }
+
             // Crear el VentaRecibo
             $recibo = VentaRecibo::create([
                 'compania_id' => $companiaId,
@@ -292,7 +311,10 @@ class VentaReciboController extends Controller
                 if ($det->cxcDocumento) {
                     $cxcDoc = $det->cxcDocumento;
                     $cxcDoc->saldo      = round((float) $cxcDoc->saldo + (float) $det->monto, 2);
-                    $cxcDoc->estado     = CxcDocumento::ESTADO_PARCIAL;
+                    // Derivar el estado del saldo restaurado: si vuelve al total el
+                    // documento es PENDIENTE, no PARCIAL (el literal dejaba el
+                    // submayor de CxC mintiendo cuando se anulaba el único cobro).
+                    $cxcDoc->estado     = $cxcDoc->estadoSegunSaldo();
                     $cxcDoc->updated_by = $usuario->email;
                     $cxcDoc->save();
                 }

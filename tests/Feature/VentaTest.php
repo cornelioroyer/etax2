@@ -699,4 +699,110 @@ class VentaTest extends TestCase
         $this->assertSame('67.00', (string) $factura->saldo);
         $this->assertSame(VentaFactura::ESTADO_PARCIAL, $factura->estado);
     }
+
+    public function test_recibo_de_ventas_rechaza_cuenta_de_cobro_de_otra_compania(): void
+    {
+        // ALTO (aislamiento): el cobro por Ventas→Recibos validaba cuenta_cobro_id
+        // sin filtrar por compañía → podía debitar una cuenta de OTRA compañía.
+        $factura = $this->facturar($this->crearCotizacion(100, 'ITBMS_7')); // total 107
+
+        $otra = Compania::create(['nombre' => 'OTRA COMPANIA', 'activa' => true]);
+        $cuentaAjena = CuentaContable::create([
+            'compania_id' => $otra->id, 'codigo' => '10201', 'nombre' => 'Banco ajeno',
+            'nivel' => 3, 'naturaleza' => 'DEBITO', 'permite_movimiento' => true, 'conciliable' => false, 'activa' => true,
+        ]);
+
+        $this->actuar()->post(route('admin.ventas.recibos.store'), [
+            'cliente_id' => $this->cliente->id,
+            'fecha' => '2026-06-20',
+            'cuenta_cobro_id' => $cuentaAjena->id,
+            'facturas' => [['id' => $factura->id, 'monto' => 107]],
+        ])->assertSessionHasErrors('cuenta_cobro_id');
+
+        // La factura sigue intacta (no se cobró nada).
+        $factura->refresh();
+        $this->assertSame('107.00', (string) $factura->saldo);
+        $this->assertSame(VentaFactura::ESTADO_EMITIDA, $factura->estado);
+    }
+
+    public function test_anular_recibo_ventas_restaura_estado_cxc_a_pendiente(): void
+    {
+        // MEDIO: al anular el recibo, el cxc_documento espejo quedaba fijado en
+        // PARCIAL aunque el saldo volviera al total. Debe quedar PENDIENTE.
+        $factura = $this->facturar($this->crearCotizacion(100, 'ITBMS_7')); // total 107
+        $cxc = $factura->cxcDocumento;
+        $banco = $this->cuentaBanco();
+
+        // Cobro TOTAL por Ventas→Recibos.
+        $this->actuar()->post(route('admin.ventas.recibos.store'), [
+            'cliente_id' => $this->cliente->id,
+            'fecha' => '2026-06-20',
+            'cuenta_cobro_id' => $banco->id,
+            'facturas' => [['id' => $factura->id, 'monto' => 107]],
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame(CxcDocumento::ESTADO_PAGADO, $cxc->fresh()->estado);
+
+        $recibo = \App\Models\VentaRecibo::latest('id')->firstOrFail();
+        $this->actuar()->post(route('admin.ventas.recibos.anular', $recibo))->assertSessionHasNoErrors();
+
+        // Saldo restaurado al total → el espejo CxC debe ser PENDIENTE, no PARCIAL.
+        $cxc->refresh();
+        $this->assertSame('107.00', (string) $cxc->saldo);
+        $this->assertSame(CxcDocumento::ESTADO_PENDIENTE, $cxc->estado);
+
+        $factura->refresh();
+        $this->assertSame('107.00', (string) $factura->saldo);
+        $this->assertSame(VentaFactura::ESTADO_EMITIDA, $factura->estado);
+    }
+
+    public function test_nota_credito_sobre_factura_exenta_rechaza_itbms(): void
+    {
+        // MEDIO: una NC no puede revertir ITBMS que la factura nunca causó.
+        $factura = $this->facturar($this->crearCotizacion(100, 'ITBMS_0')); // exenta, total 100
+        $cxc = $factura->cxcDocumento;
+        $devoluciones = CuentaContable::create([
+            'compania_id' => $this->compania->id, 'codigo' => '40102', 'nombre' => 'Devoluciones en ventas',
+            'nivel' => 3, 'naturaleza' => 'DEBITO', 'permite_movimiento' => true, 'conciliable' => false, 'activa' => true,
+        ]);
+
+        $this->actuar()->post(route('admin.cxc.notas.store', ['tipo' => 'credito']), [
+            'tipo' => 'credito',
+            'cliente_id' => $this->cliente->id,
+            'fecha' => '2026-06-20',
+            'concepto' => 'Devolución con ITBMS indebido',
+            'cuenta_id' => $devoluciones->id,
+            'monto' => 50,
+            'tasa_itbms' => 7,
+            'factura_id' => $cxc->id,
+        ])->assertSessionHasErrors('tasa_itbms');
+
+        // No se aplicó nada a la factura exenta.
+        $this->assertSame('100.00', (string) $cxc->fresh()->saldo);
+    }
+
+    public function test_nota_credito_no_puede_exceder_el_itbms_de_la_factura(): void
+    {
+        // MEDIO (cota): el ITBMS de la NC no puede superar el de la factura origen.
+        $factura = $this->facturar($this->crearCotizacion(100, 'ITBMS_7')); // base 100, ITBMS 7, total 107
+        $cxc = $factura->cxcDocumento;
+        $devoluciones = CuentaContable::create([
+            'compania_id' => $this->compania->id, 'codigo' => '40102', 'nombre' => 'Devoluciones en ventas',
+            'nivel' => 3, 'naturaleza' => 'DEBITO', 'permite_movimiento' => true, 'conciliable' => false, 'activa' => true,
+        ]);
+
+        // NC base 80 al 10% → ITBMS 8 > 7 (de la factura). Total 88 ≤ saldo 107.
+        $this->actuar()->post(route('admin.cxc.notas.store', ['tipo' => 'credito']), [
+            'tipo' => 'credito',
+            'cliente_id' => $this->cliente->id,
+            'fecha' => '2026-06-20',
+            'concepto' => 'Crédito con ITBMS excesivo',
+            'cuenta_id' => $devoluciones->id,
+            'monto' => 80,
+            'tasa_itbms' => 10,
+            'factura_id' => $cxc->id,
+        ])->assertSessionHasErrors('tasa_itbms');
+
+        $this->assertSame('107.00', (string) $cxc->fresh()->saldo);
+    }
 }

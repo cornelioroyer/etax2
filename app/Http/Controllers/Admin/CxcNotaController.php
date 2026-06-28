@@ -197,6 +197,26 @@ class CxcNotaController extends Controller
                     'monto' => "El total de la nota (B/. ".number_format($total, 2).") excede el saldo de {$factura->numero} (B/. ".number_format((float) $factura->saldo, 2).').',
                 ]);
             }
+
+            // Coherencia de ITBMS: una NC no puede revertir ITBMS que la factura
+            // nunca causó. Si la factura se emitió exenta no se admite ITBMS, y el
+            // ITBMS de la nota no puede exceder el de la factura de origen (evita
+            // distorsionar el pasivo ITBMS_POR_PAGAR y el reporte fiscal).
+            // (Cota contra el ITBMS original de la factura; el control fino por
+            // NCs acumuladas queda para una mejora posterior.)
+            $itbmsFactura = round((float) $factura->impuesto, 2);
+
+            if ($itbms > 0 && $itbmsFactura <= 0.0) {
+                throw ValidationException::withMessages([
+                    'tasa_itbms' => "La factura {$factura->numero} se emitió exenta de ITBMS; la nota de crédito no puede incluir ITBMS.",
+                ]);
+            }
+
+            if ($itbms > $itbmsFactura + 0.004) {
+                throw ValidationException::withMessages([
+                    'tasa_itbms' => "El ITBMS de la nota (B/. ".number_format($itbms, 2).") excede el ITBMS de {$factura->numero} (B/. ".number_format($itbmsFactura, 2).').',
+                ]);
+            }
         }
 
         $nota = DB::transaction(function () use ($companiaId, $data, $tipo, $esCredito, $base, $itbms, $total, $cuentaCxcId, $cuentaItbmsId, $factura, $usuario) {
