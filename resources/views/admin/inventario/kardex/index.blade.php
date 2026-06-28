@@ -54,8 +54,11 @@
                             <th class="px-3 py-3">Almacén</th>
                             <th class="px-3 py-3">Tipo</th>
                             <th class="px-3 py-3">Doc. origen</th>
+                            <th class="px-3 py-3">Descripción</th>
                             <th class="px-3 py-3 text-right">Entrada Qty</th>
+                            <th class="px-3 py-3 text-right">Costo entrada</th>
                             <th class="px-3 py-3 text-right">Salida Qty</th>
+                            <th class="px-3 py-3 text-right">Costo salida</th>
                             <th class="px-3 py-3 text-right">Saldo Qty</th>
                             <th class="px-3 py-3 text-right">Costo prom.</th>
                         </tr>
@@ -73,17 +76,24 @@
                                     <span class="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded">{{ $k->tipo_movimiento }}</span>
                                 </td>
                                 <td class="px-3 py-2 text-xs text-gray-400">{{ $k->documento_origen ?? '—' }}</td>
+                                <td class="px-3 py-2 text-xs text-gray-500">{{ $k->descripcion ?? '—' }}</td>
                                 <td class="px-3 py-2 text-right {{ $k->entrada_cantidad > 0 ? 'text-green-700 font-medium' : 'text-gray-300' }}">
                                     {{ $k->entrada_cantidad > 0 ? number_format((float)$k->entrada_cantidad, 2) : '—' }}
                                 </td>
+                                <td class="px-3 py-2 text-right {{ $k->entrada_cantidad > 0 ? 'text-gray-600' : 'text-gray-300' }}">
+                                    {{ $k->entrada_cantidad > 0 ? number_format((float)$k->costo_entrada, 4) : '—' }}
+                                </td>
                                 <td class="px-3 py-2 text-right {{ $k->salida_cantidad > 0 ? 'text-red-600 font-medium' : 'text-gray-300' }}">
                                     {{ $k->salida_cantidad > 0 ? number_format((float)$k->salida_cantidad, 2) : '—' }}
+                                </td>
+                                <td class="px-3 py-2 text-right {{ $k->salida_cantidad > 0 ? 'text-gray-600' : 'text-gray-300' }}">
+                                    {{ $k->salida_cantidad > 0 ? number_format((float)$k->costo_salida, 4) : '—' }}
                                 </td>
                                 <td class="px-3 py-2 text-right font-bold">{{ number_format((float)$k->saldo_cantidad, 2) }}</td>
                                 <td class="px-3 py-2 text-right text-gray-500">{{ number_format((float)$k->costo_promedio, 4) }}</td>
                             </tr>
                         @empty
-                            <tr><td colspan="9" class="px-4 py-8 text-center text-gray-400">Sin movimientos en el período.</td></tr>
+                            <tr><td colspan="12" class="px-4 py-8 text-center text-gray-400">Sin movimientos en el período.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

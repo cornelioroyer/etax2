@@ -17,6 +17,7 @@
                             <th class="px-4 py-3 text-right">Cantidad</th>
                             <th class="px-4 py-3 text-right">Costo prom.</th>
                             <th class="px-4 py-3 text-right">Valor total</th>
+                            <th class="px-4 py-3"></th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
@@ -27,9 +28,13 @@
                                 <td class="px-4 py-3 text-right">{{ rtrim(rtrim(number_format((float) $ex->cantidad, 4), '0'), '.') }}</td>
                                 <td class="px-4 py-3 text-right">B/. {{ number_format((float) $ex->costo_promedio, 4) }}</td>
                                 <td class="px-4 py-3 text-right font-medium">B/. {{ number_format((float) $ex->cantidad * (float) $ex->costo_promedio, 2) }}</td>
+                                <td class="px-4 py-3 text-right">
+                                    <a href="{{ route('admin.inventario.kardex.index', ['item_id' => $ex->item_id, 'almacen_id' => $almacen->id]) }}"
+                                       class="text-sm text-indigo-600 hover:text-indigo-800 whitespace-nowrap">Movimientos →</a>
+                                </td>
                             </tr>
                         @empty
-                            <tr><td colspan="5" class="px-4 py-8 text-center text-gray-400">Sin existencias en este almacén.</td></tr>
+                            <tr><td colspan="6" class="px-4 py-8 text-center text-gray-400">Sin existencias en este almacén.</td></tr>
                         @endforelse
                     </tbody>
                     @if ($existencias->count())
@@ -37,6 +42,7 @@
                             <tr>
                                 <td colspan="4" class="px-4 py-2 text-right text-gray-700">Total inventario</td>
                                 <td class="px-4 py-2 text-right">B/. {{ number_format($existencias->sum(fn($e) => (float)$e->cantidad * (float)$e->costo_promedio), 2) }}</td>
+                                <td class="px-4 py-2"></td>
                             </tr>
                         </tfoot>
                     @endif

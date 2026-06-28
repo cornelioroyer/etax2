@@ -50,9 +50,18 @@ class InvKardexController extends Controller
             ->orderBy('m.fecha')->orderBy('m.id')->orderBy('d.id')
             ->get([
                 'm.id as mov_id', 'm.fecha', 'm.tipo_movimiento', 'm.documento_origen',
-                'm.documento_id', 'm.almacen_id', 'm.asiento_id',
+                'm.documento_id', 'm.almacen_id', 'm.asiento_id', 'm.descripcion',
                 'd.item_id', 'd.cantidad', 'd.costo_unitario',
             ]);
+
+        // Etiquetas amigables para el origen (la columna guarda el nombre técnico
+        // de la tabla/proceso que generó el movimiento). Lo no mapeado se muestra
+        // tal cual (defensivo ante orígenes futuros).
+        $origenLabels = [
+            'cxp_documentos' => 'Compra',
+            'ventas_facturas' => 'Venta',
+            'TRANSFERENCIA'  => 'Transferencia',
+        ];
 
         // Estado corriente por (item|almacén): cantidad y costo promedio.
         $estado = [];
@@ -65,6 +74,11 @@ class InvKardexController extends Controller
             $costo   = (float) $m->costo_unitario;
             $entrada = 0.0;
             $salida  = 0.0;
+            // Costo UNITARIO del movimiento: en la ENTRADA es el costo de compra;
+            // en la SALIDA es el costo promedio vigente al momento (lo que se
+            // descargó). Solo se llena el lado que aplica.
+            $costoEntrada = 0.0;
+            $costoSalida  = 0.0;
 
             switch ($m->tipo_movimiento) {
                 case 'ENTRADA':
@@ -72,21 +86,25 @@ class InvKardexController extends Controller
                     $st['costo'] = $nuevaQty > 0
                         ? round(($st['qty'] * $st['costo'] + $cant * $costo) / $nuevaQty, 4)
                         : $costo;
-                    $st['qty']  = $nuevaQty;
-                    $entrada    = $cant;
+                    $st['qty']    = $nuevaQty;
+                    $entrada      = $cant;
+                    $costoEntrada = $costo;
                     break;
 
                 case 'SALIDA':
-                    $st['qty'] = max(0, $st['qty'] - $cant);
-                    $salida    = $cant;
+                    $st['qty']   = max(0, $st['qty'] - $cant);
+                    $salida      = $cant;
+                    $costoSalida = $costo;
                     break;
 
                 case 'AJUSTE':
                     $delta = round($cant - $st['qty'], 4);
                     if ($delta >= 0) {
-                        $entrada = $delta;
+                        $entrada      = $delta;
+                        $costoEntrada = $costo;
                     } else {
-                        $salida = abs($delta);
+                        $salida      = abs($delta);
+                        $costoSalida = $costo;
                     }
                     $st['qty']   = $cant;
                     $st['costo'] = $costo;
@@ -94,8 +112,9 @@ class InvKardexController extends Controller
 
                 default:
                     // Defensivo: cualquier otro tipo se trata como entrada positiva.
-                    $st['qty'] += $cant;
-                    $entrada    = $cant;
+                    $st['qty']   += $cant;
+                    $entrada      = $cant;
+                    $costoEntrada = $costo;
                     break;
             }
 
@@ -107,10 +126,14 @@ class InvKardexController extends Controller
                 'almacen_id'       => (int) $m->almacen_id,
                 'tipo_movimiento'  => $m->tipo_movimiento,
                 'documento_origen' => $m->documento_origen
-                    ? $m->documento_origen.($m->documento_id ? ' #'.$m->documento_id : '')
+                    ? ($origenLabels[$m->documento_origen] ?? $m->documento_origen)
+                        .($m->documento_id ? ' #'.$m->documento_id : '')
                     : null,
+                'descripcion'      => $m->descripcion,
                 'entrada_cantidad' => $entrada,
+                'costo_entrada'    => $costoEntrada,
                 'salida_cantidad'  => $salida,
+                'costo_salida'     => $costoSalida,
                 'saldo_cantidad'   => $st['qty'],
                 'costo_promedio'   => $st['costo'],
             ];
