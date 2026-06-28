@@ -12,11 +12,13 @@ use App\Models\TaxImpuesto;
 use App\Models\CuentaDefault;
 use App\Models\CxcDocumento;
 use App\Models\CxcDocumentoDetalle;
+use App\Models\ItemProducto;
 use App\Models\VentaCotizacion;
 use App\Models\VentaCotizacionDetalle;
 use App\Models\VentaFactura;
 use App\Models\VentaFacturaDetalle;
 use App\Services\AsientoAutomatico;
+use App\Services\InventarioVentas;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -89,6 +91,7 @@ class VentaCotizacionController extends Controller
         return view('admin.ventas.cotizaciones.create', [
             'clientes'  => $this->clientes($companiaId),
             'impuestos' => TaxImpuesto::itbmsGlobales(),
+            'items'     => $this->itemsVenta($companiaId),
         ]);
     }
 
@@ -104,6 +107,7 @@ class VentaCotizacionController extends Controller
             'fecha_validez'       => ['nullable', 'date', 'after_or_equal:fecha'],
             'notas'               => ['nullable', 'string', 'max:1000'],
             'lineas'              => ['required', 'array', 'min:1'],
+            'lineas.*.item_id'        => ['nullable', 'integer', Rule::exists('item_productos_servicios', 'id')->where('compania_id', $companiaId)],
             'lineas.*.descripcion'    => ['required', 'string', 'max:500'],
             'lineas.*.cantidad'       => ['required', 'numeric', 'gt:0', 'max:999999999'],
             'lineas.*.precio_unitario'=> ['required', 'numeric', 'gte:0', 'max:999999999'],
@@ -128,6 +132,7 @@ class VentaCotizacionController extends Controller
 
             $lineas[] = [
                 'linea'           => $i + 1,
+                'item_id'         => $linea['item_id'] ?? null,
                 'descripcion'     => $linea['descripcion'],
                 'cantidad'        => $cantidad,
                 'precio_unitario' => $precio,
@@ -264,7 +269,10 @@ class VentaCotizacionController extends Controller
 
         $cotizacion->load('detalle.impuesto');
 
-        $factura = DB::transaction(function () use ($cotizacion, $data, $companiaId, $usuario, $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId) {
+        $invVentas = app(InventarioVentas::class);
+        $almacenId = $invVentas->almacenPorDefecto($companiaId);
+
+        $factura = DB::transaction(function () use ($cotizacion, $data, $companiaId, $usuario, $cuentaCxcId, $cuentaItbmsId, $cuentaVentasId, $invVentas, $almacenId) {
             $numero = VentaFactura::siguienteNumero($companiaId);
 
             // 1. ventas_facturas
@@ -289,6 +297,7 @@ class VentaCotizacionController extends Controller
                 VentaFacturaDetalle::create([
                     'factura_id'       => $factura->id,
                     'linea'            => $linea->linea,
+                    'item_id'          => $linea->item_id,
                     'descripcion'      => $linea->descripcion,
                     'cantidad'         => $linea->cantidad,
                     'precio_unitario'  => $linea->precio_unitario,
@@ -362,6 +371,12 @@ class VentaCotizacionController extends Controller
                 ];
             }
 
+            // Costo de ventas + salida de inventario para líneas con ítem
+            // inventariable (Dr Costo / Cr Inventario en el MISMO asiento).
+            $lineasInv = $cotizacion->detalle->map(fn ($l) => ['item_id' => $l->item_id, 'cantidad' => (float) $l->cantidad])->all();
+            $cogs = $invVentas->calcular($companiaId, $almacenId, $lineasInv);
+            $lineasAsiento = array_merge($lineasAsiento, $cogs['lineasAsiento']);
+
             $asiento = app(AsientoAutomatico::class)->postear(
                 $companiaId, $data['fecha'],
                 "Factura de venta {$numero} — ".$cotizacion->cliente->nombre,
@@ -372,6 +387,11 @@ class VentaCotizacionController extends Controller
             $factura->update(['cxc_documento_id' => $cxc->id, 'asiento_id' => $asiento->id]);
             $cxc->update(['asiento_id' => $asiento->id]);
             $cotizacion->update(['estado' => VentaCotizacion::ESTADO_FACTURADA, 'updated_by' => $usuario->email]);
+
+            // 6. Descontar existencias (salida de inventario) tras postear el asiento.
+            if ($almacenId && ! empty($cogs['detalle'])) {
+                $invVentas->registrar($companiaId, $almacenId, $data['fecha'], $cogs['detalle'], $asiento->id, InventarioVentas::ORIGEN_VENTAS, $factura->id, $usuario);
+            }
 
             return $factura;
         });
@@ -414,5 +434,13 @@ class VentaCotizacionController extends Controller
             ->whereHas('tipos', fn ($q) => $q->where('codigo', 'CLIENTE'))
             ->orderBy('nombre')
             ->get(['id', 'codigo', 'nombre']);
+    }
+
+    private function itemsVenta(int $companiaId)
+    {
+        return ItemProducto::where('compania_id', $companiaId)
+            ->where('activo', true)
+            ->orderBy('nombre')
+            ->get(['id', 'codigo', 'nombre', 'descripcion', 'precio_venta', 'impuesto_id', 'cuenta_ingreso_id']);
     }
 }

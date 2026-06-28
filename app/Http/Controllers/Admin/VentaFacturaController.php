@@ -15,6 +15,9 @@ use App\Models\Contacto;
 use App\Models\TipoContacto;
 use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
+use App\Models\FelConfiguracion;
+use App\Models\FelDocumento;
+use App\Models\FelDocumentoDetalle;
 use App\Models\ItemProducto;
 use App\Models\CxcDocumento;
 use App\Models\CxcDocumentoDetalle;
@@ -26,6 +29,8 @@ use App\Models\VentaNotaCredito;
 use App\Models\VentasImportacion;
 use App\Services\AsientoAutomatico;
 use App\Services\DgiFepConsulta;
+use App\Services\FelDocumentoBuilder;
+use App\Services\FelService;
 use App\Services\InventarioVentas;
 use App\Services\RucDigitoVerificador;
 use Illuminate\Http\JsonResponse;
@@ -430,6 +435,173 @@ class VentaFacturaController extends Controller
         ]);
 
         return back()->with('status', 'Notas actualizadas.');
+    }
+
+    /**
+     * Emite una factura de venta YA existente como Factura Electrónica (FEL)
+     * ante el PAC (The Factory HKA) / DGI, reutilizando sus líneas e impuestos.
+     * Al autorizar, vincula de regreso el documento FEL y el CUFE a la factura.
+     *
+     * Es el puente cotización → factura → factura electrónica: no se re-teclea
+     * nada y la factura legal y el CAFE quedan trazados (fel_documento_id, cufe).
+     */
+    public function emitirFel(Request $request, VentaFactura $factura): RedirectResponse
+    {
+        abort_unless($factura->compania_id === $this->companiaActivaId($request), 404);
+        abort_unless($request->user()->can('fel.gestionar'), 403);
+
+        if ($factura->fel_documento_id) {
+            return back()->withErrors(['fel' => 'Esta factura ya tiene un documento electrónico emitido.']);
+        }
+
+        if (! in_array($factura->estado, [VentaFactura::ESTADO_EMITIDA, VentaFactura::ESTADO_PARCIAL, VentaFactura::ESTADO_PAGADA], true)) {
+            return back()->withErrors(['fel' => 'Solo se pueden enviar a la DGI facturas emitidas (no borradores ni anuladas).']);
+        }
+
+        $config = FelConfiguracion::firstWhere('compania_id', $factura->compania_id);
+        if (! $config || ! $config->token_empresa) {
+            return redirect()->route('admin.fel.configuracion')
+                ->withErrors(['fel' => 'Configura primero los tokens de The Factory HKA.']);
+        }
+
+        $factura->load(['detalle.impuesto', 'cliente']);
+
+        if ($factura->detalle->isEmpty()) {
+            return back()->withErrors(['fel' => 'La factura no tiene líneas de detalle para facturar.']);
+        }
+
+        $compania = Compania::findOrFail($factura->compania_id);
+        $cliente  = $factura->cliente;
+        $usuario  = $request->user()->email;
+
+        // ── Mapear líneas de la factura a ítems FEL (tasa contable → código DGI) ──
+        $items = [];
+        foreach ($factura->detalle as $linea) {
+            $porcentaje = $linea->impuesto ? (int) round((float) $linea->impuesto->porcentaje) : 0;
+            $tasa = TaxImpuesto::DGI_CODIGO_POR_PORCENTAJE[$porcentaje] ?? '00';
+            $items[] = [
+                'descripcion' => $linea->descripcion,
+                'cantidad'    => (float) $linea->cantidad,
+                'precio'      => (float) $linea->precio_unitario,
+                'tasa'        => $tasa,
+            ];
+        }
+
+        $data = [
+            'tipo_documento'      => '01', // Factura de operación interna
+            'forma_pago'          => ($cliente?->forma_pago === 'CREDITO') ? '01' : '02',
+            'informacion_interes' => 'Factura '.$factura->numero,
+            'items'               => $items,
+        ];
+
+        $builder = new FelDocumentoBuilder();
+
+        // Salvaguarda contable: el total electrónico debe coincidir con la
+        // factura legal. Si hay descuentos por línea/cabecera o redondeos que el
+        // builder aún no replica, NO se emite un CAFE descuadrado: se detiene.
+        $preview  = $builder->facturaInterna($compania, $config, $cliente, $data, 0);
+        $totalFel = (float) $preview['totalesSubTotales']['totalFactura'];
+        if (abs($totalFel - (float) $factura->total) > 0.02) {
+            return back()->withErrors(['fel' => sprintf(
+                'El total electrónico (B/. %s) no coincide con el de la factura (B/. %s). '
+                .'Suele deberse a descuentos por línea o de cabecera que el documento electrónico aún no replica. '
+                .'Emítela manualmente en el módulo FEL mientras se cubre ese caso.',
+                number_format($totalFel, 2), number_format((float) $factura->total, 2)
+            )]);
+        }
+
+        // Número fiscal con bloqueo (consecutivo único del PAC).
+        $numeroFiscal = DB::transaction(fn () => $config->siguienteNumeroFiscal());
+        $documento    = $builder->facturaInterna($compania, $config, $cliente, $data, $numeroFiscal);
+        $totales      = $documento['totalesSubTotales'];
+
+        $fel = DB::transaction(function () use ($factura, $numeroFiscal, $cliente, $totales, $usuario) {
+            $fel = FelDocumento::create([
+                'compania_id'      => $factura->compania_id,
+                'tipo_documento'   => '01',
+                'documento_origen' => 'venta_factura',
+                'documento_id'     => $factura->id,
+                'numero'           => (string) $numeroFiscal,
+                'fecha'            => now()->toDateString(),
+                'cliente_id'       => $cliente?->id,
+                'subtotal'         => $totales['totalPrecioNeto'],
+                'itbms'            => $totales['totalITBMS'],
+                'total'            => $totales['totalFactura'],
+                'estado_fel'       => 'PENDIENTE',
+                'created_by'       => $usuario,
+            ]);
+
+            foreach ($factura->detalle->values() as $i => $linea) {
+                FelDocumentoDetalle::create([
+                    'fel_documento_id' => $fel->id,
+                    'linea'            => $i + 1,
+                    'descripcion'      => $linea->descripcion,
+                    'cantidad'         => $linea->cantidad,
+                    'precio_unitario'  => $linea->precio_unitario,
+                    'impuesto_monto'   => $linea->impuesto_monto,
+                    'total_linea'      => $linea->total_linea,
+                    'created_by'       => $usuario,
+                ]);
+            }
+
+            return $fel;
+        });
+
+        $resp = (new FelService($config))->enviar($documento);
+        $this->registrarEventoFel($fel, 'ENVIO', $resp, $usuario);
+
+        $codigo    = (string) ($resp['codigo'] ?? $resp['EnviarResult']['codigo'] ?? '');
+        $resultado = $resp['EnviarResult'] ?? $resp;
+
+        if ($codigo === '200' || ($resultado['resultado'] ?? '') === 'Procesado') {
+            $cufe = $resultado['cufe'] ?? null;
+
+            DB::transaction(function () use ($fel, $factura, $resp, $resultado, $cufe, $usuario) {
+                $fel->update([
+                    'estado_fel'    => 'AUTORIZADO',
+                    'cufe'          => $cufe,
+                    'qr'            => $resultado['qr'] ?? null,
+                    'respuesta_dgi' => $resp,
+                    'fecha_envio'   => now(),
+                    'updated_by'    => $usuario,
+                ]);
+
+                // Vínculo de regreso: la factura legal queda trazada al CAFE.
+                $factura->update([
+                    'fel_documento_id' => $fel->id,
+                    'cufe'             => $cufe,
+                    'updated_by'       => $usuario,
+                ]);
+            });
+
+            return redirect()->route('admin.ventas.facturas.show', $factura)
+                ->with('status', "Factura {$factura->numero} autorizada por la DGI (FEL {$numeroFiscal}). CUFE: ".substr((string) $cufe, 0, 40).'…');
+        }
+
+        $fel->update([
+            'estado_fel'    => 'RECHAZADO',
+            'respuesta_dgi' => $resp,
+            'fecha_envio'   => now(),
+            'updated_by'    => $usuario,
+        ]);
+
+        $mensaje = $resultado['mensaje'] ?? $resp['mensaje'] ?? 'Sin detalle';
+
+        return back()->withErrors(['fel' => "La DGI rechazó la factura {$factura->numero} (FEL {$numeroFiscal}): {$mensaje}"]);
+    }
+
+    /** Registra un evento de auditoría del documento FEL (espejo de FacturaFelController). */
+    private function registrarEventoFel(FelDocumento $fel, string $evento, array $respuesta, string $usuario): void
+    {
+        DB::table('fel_eventos')->insert([
+            'fel_documento_id' => $fel->id,
+            'evento'           => $evento,
+            'descripcion'      => $respuesta['mensaje'] ?? null,
+            'respuesta'        => json_encode($respuesta, JSON_UNESCAPED_UNICODE),
+            'created_at'       => now(),
+            'updated_at'       => now(),
+            'created_by'       => $usuario,
+        ]);
     }
 
     public function edit(Request $request, VentaFactura $factura): View

@@ -463,6 +463,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::get('ventas/facturas/{factura}/editar', [VentaFacturaController::class, 'edit'])->whereNumber('factura')->name('ventas.facturas.edit');
         Route::put('ventas/facturas/{factura}', [VentaFacturaController::class, 'update'])->whereNumber('factura')->name('ventas.facturas.update');
         Route::post('ventas/facturas/{factura}/emitir', [VentaFacturaController::class, 'emitir'])->whereNumber('factura')->name('ventas.facturas.emitir');
+        Route::post('ventas/facturas/{factura}/emitir-fel', [VentaFacturaController::class, 'emitirFel'])->whereNumber('factura')->name('ventas.facturas.emitir-fel');
         Route::post('ventas/facturas/{factura}/anular', [VentaFacturaController::class, 'anular'])->whereNumber('factura')->name('ventas.facturas.anular');
         Route::post('ventas/facturas/{factura}/corregir', [VentaFacturaController::class, 'corregir'])->whereNumber('factura')->name('ventas.facturas.corregir');
         Route::post('ventas/facturas/{factura}/notas', [VentaFacturaController::class, 'actualizarNotas'])->whereNumber('factura')->name('ventas.facturas.notas');
