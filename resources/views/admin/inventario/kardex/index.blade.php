@@ -60,6 +60,7 @@
                             <th class="px-3 py-3 text-right">Salida Qty</th>
                             <th class="px-3 py-3 text-right">Costo salida</th>
                             <th class="px-3 py-3 text-right">Saldo Qty</th>
+                            <th class="px-3 py-3 text-right">Saldo costo</th>
                             <th class="px-3 py-3 text-right">Costo prom.</th>
                         </tr>
                     </thead>
@@ -90,10 +91,11 @@
                                     {{ $k->salida_cantidad > 0 ? number_format((float)$k->costo_salida, 4) : '—' }}
                                 </td>
                                 <td class="px-3 py-2 text-right font-bold">{{ number_format((float)$k->saldo_cantidad, 2) }}</td>
+                                <td class="px-3 py-2 text-right font-semibold text-gray-700">{{ number_format((float)$k->saldo_costo, 2) }}</td>
                                 <td class="px-3 py-2 text-right text-gray-500">{{ number_format((float)$k->costo_promedio, 4) }}</td>
                             </tr>
                         @empty
-                            <tr><td colspan="12" class="px-4 py-8 text-center text-gray-400">Sin movimientos en el período.</td></tr>
+                            <tr><td colspan="13" class="px-4 py-8 text-center text-gray-400">Sin movimientos en el período.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

@@ -63,13 +63,17 @@ class InvKardexController extends Controller
             'TRANSFERENCIA'  => 'Transferencia',
         ];
 
-        // Estado corriente por (item|almacén): cantidad y costo promedio.
+        // Estado corriente por (item|almacén): cantidad y VALOR total (saldo del
+        // costo). El costo promedio NO se arrastra como unitario redondeado, sino
+        // que se deriva en cada fila como saldo_costo / saldo_cantidad: así el
+        // promedio siempre cuadra exactamente con el valor del inventario y no
+        // acumula error de redondeo movimiento a movimiento.
         $estado = [];
         $filas  = [];
 
         foreach ($movs as $m) {
             $key     = $m->item_id.'|'.$m->almacen_id;
-            $st      = $estado[$key] ?? ['qty' => 0.0, 'costo' => 0.0];
+            $st      = $estado[$key] ?? ['qty' => 0.0, 'valor' => 0.0];
             $cant    = (float) $m->cantidad;
             $costo   = (float) $m->costo_unitario;
             $entrada = 0.0;
@@ -82,17 +86,20 @@ class InvKardexController extends Controller
 
             switch ($m->tipo_movimiento) {
                 case 'ENTRADA':
-                    $nuevaQty   = $st['qty'] + $cant;
-                    $st['costo'] = $nuevaQty > 0
-                        ? round(($st['qty'] * $st['costo'] + $cant * $costo) / $nuevaQty, 4)
-                        : $costo;
-                    $st['qty']    = $nuevaQty;
+                    $st['qty']   += $cant;
+                    $st['valor'] += $cant * $costo;
                     $entrada      = $cant;
                     $costoEntrada = $costo;
                     break;
 
                 case 'SALIDA':
-                    $st['qty']   = max(0, $st['qty'] - $cant);
+                    // La salida descarga al costo promedio vigente, por lo que el
+                    // promedio no cambia: el valor se reduce proporcional a la
+                    // cantidad que queda. Si se agota/sobre-vende, el valor cae a 0.
+                    $promVigente = $st['qty'] > 0 ? $st['valor'] / $st['qty'] : 0.0;
+                    $nuevaQty    = max(0, $st['qty'] - $cant);
+                    $st['valor'] = round($promVigente * $nuevaQty, 4);
+                    $st['qty']   = $nuevaQty;
                     $salida      = $cant;
                     $costoSalida = $costo;
                     break;
@@ -106,19 +113,25 @@ class InvKardexController extends Controller
                         $salida      = abs($delta);
                         $costoSalida = $costo;
                     }
+                    // El ajuste fija cantidad y costo absolutos.
                     $st['qty']   = $cant;
-                    $st['costo'] = $costo;
+                    $st['valor'] = round($cant * $costo, 4);
                     break;
 
                 default:
                     // Defensivo: cualquier otro tipo se trata como entrada positiva.
                     $st['qty']   += $cant;
+                    $st['valor'] += $cant * $costo;
                     $entrada      = $cant;
                     $costoEntrada = $costo;
                     break;
             }
 
             $estado[$key] = $st;
+
+            // Costo promedio derivado del saldo del costo (regla solicitada:
+            // costo_promedio = saldo_costo / saldo_cantidad).
+            $costoPromedio = $st['qty'] != 0.0 ? round($st['valor'] / $st['qty'], 4) : 0.0;
 
             $filas[] = (object) [
                 'fecha'            => Carbon::parse($m->fecha),
@@ -135,7 +148,8 @@ class InvKardexController extends Controller
                 'salida_cantidad'  => $salida,
                 'costo_salida'     => $costoSalida,
                 'saldo_cantidad'   => $st['qty'],
-                'costo_promedio'   => $st['costo'],
+                'saldo_costo'      => round($st['valor'], 4),
+                'costo_promedio'   => $costoPromedio,
             ];
         }
 
