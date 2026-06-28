@@ -176,6 +176,7 @@
             'children' => [
                 ['label' => 'Productos / Servicios', 'href' => route('admin.items.index'), 'active' => request()->routeIs('admin.items.*'), 'show' => $can('inventario.ver')],
                 ['label' => 'Almacenes', 'href' => route('admin.inventario.almacenes.index'), 'active' => request()->routeIs('admin.inventario.almacenes.*'), 'show' => $can('inventario.ver')],
+                ['label' => 'Existencias (consolidado)', 'href' => route('admin.inventario.existencias.consolidado'), 'active' => request()->routeIs('admin.inventario.existencias.*'), 'show' => $can('inventario.ver')],
                 ['label' => 'Movimientos', 'href' => route('admin.inventario.movimientos.index'), 'active' => request()->routeIs('admin.inventario.movimientos.*'), 'show' => $can('inventario.ver')],
                 ['label' => 'Transferencias', 'href' => route('admin.inventario.transferencias.index'), 'active' => request()->routeIs('admin.inventario.transferencias.*'), 'show' => $can('inventario.ver')],
                 ['label' => 'Kardex', 'href' => route('admin.inventario.kardex.index'), 'active' => request()->routeIs('admin.inventario.kardex.*'), 'show' => $can('inventario.ver')],

@@ -42,6 +42,17 @@ return new class extends Migration
             });
         }
 
+        if (! Schema::hasTable('item_unidades_medida')) {
+            Schema::create('item_unidades_medida', function (Blueprint $table) {
+                $table->id();
+                $table->string('codigo', 30)->nullable();
+                $table->string('nombre', 100)->nullable();
+                $table->timestamps();
+                $table->string('created_by', 200)->nullable();
+                $table->string('updated_by', 200)->nullable();
+            });
+        }
+
         if (! Schema::hasTable('inv_almacenes')) {
             Schema::create('inv_almacenes', function (Blueprint $table) {
                 $table->id();
