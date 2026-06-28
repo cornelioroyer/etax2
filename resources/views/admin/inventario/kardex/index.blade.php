@@ -66,7 +66,7 @@
                     </thead>
                     <tbody class="divide-y divide-gray-100">
                         @forelse ($kardex as $k)
-                            <tr class="hover:bg-gray-50">
+                            <tr class="hover:bg-gray-50" @if($k->es_inicial ?? false) style="background-color:#fffbeb;font-style:italic" @endif>
                                 <td class="px-3 py-2">{{ $k->fecha->format('d/m/Y') }}</td>
                                 <td class="px-3 py-2">
                                     <p class="font-medium">{{ $k->item?->codigo }}</p>
@@ -74,7 +74,8 @@
                                 </td>
                                 <td class="px-3 py-2 text-gray-500">{{ $k->almacen?->nombre }}</td>
                                 <td class="px-3 py-2">
-                                    <span class="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded">{{ $k->tipo_movimiento }}</span>
+                                    <span class="text-xs font-mono px-1.5 py-0.5 rounded {{ ($k->es_inicial ?? false) ? '' : 'bg-gray-100' }}"
+                                          @if($k->es_inicial ?? false) style="background-color:#fef3c7;color:#92400e;font-style:normal" @endif>{{ $k->tipo_movimiento }}</span>
                                 </td>
                                 <td class="px-3 py-2 text-xs text-gray-400">{{ $k->documento_origen ?? '—' }}</td>
                                 <td class="px-3 py-2 text-xs text-gray-500">{{ $k->descripcion ?? '—' }}</td>

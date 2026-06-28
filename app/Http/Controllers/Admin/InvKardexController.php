@@ -68,8 +68,15 @@ class InvKardexController extends Controller
         // que se deriva en cada fila como saldo_costo / saldo_cantidad: así el
         // promedio siempre cuadra exactamente con el valor del inventario y no
         // acumula error de redondeo movimiento a movimiento.
-        $estado = [];
-        $filas  = [];
+        // Inicio del período visible: lo necesitamos dentro del bucle para
+        // capturar el saldo acumulado JUSTO ANTES de 'desde' (saldo inicial).
+        $desdeC = Carbon::parse($desde)->startOfDay();
+
+        $estado       = [];
+        $filas        = [];
+        // Saldo arrastrado por (item|almacén) al cierre del último movimiento
+        // anterior a 'desde'. Solo existe la clave si hubo movimientos previos.
+        $saldoInicial = [];
 
         foreach ($movs as $m) {
             $key     = $m->item_id.'|'.$m->almacen_id;
@@ -133,8 +140,19 @@ class InvKardexController extends Controller
             // costo_promedio = saldo_costo / saldo_cantidad).
             $costoPromedio = $st['qty'] != 0.0 ? round($st['valor'] / $st['qty'], 4) : 0.0;
 
+            $fechaMov = Carbon::parse($m->fecha);
+
+            // Si el movimiento es anterior al período visible, su estado resultante
+            // es candidato a saldo inicial (la última iteración previa a 'desde'
+            // deja el valor correcto, porque los movimientos vienen ordenados).
+            if ($fechaMov->lt($desdeC)) {
+                $saldoInicial[$key] = ['qty' => $st['qty'], 'valor' => $st['valor']];
+                continue; // no se lista; solo arrastra saldo
+            }
+
             $filas[] = (object) [
-                'fecha'            => Carbon::parse($m->fecha),
+                'es_inicial'       => false,
+                'fecha'            => $fechaMov,
                 'item_id'          => (int) $m->item_id,
                 'almacen_id'       => (int) $m->almacen_id,
                 'tipo_movimiento'  => $m->tipo_movimiento,
@@ -153,13 +171,46 @@ class InvKardexController extends Controller
             ];
         }
 
-        // Ventana visible: solo los movimientos dentro de [desde, hasta]. El
-        // saldo ya viene arrastrado desde la historia previa.
-        $desdeC = Carbon::parse($desde)->startOfDay();
-        $visibles = array_values(array_filter(
-            $filas,
-            fn ($f) => $f->fecha->gte($desdeC)
-        ));
+        // $filas ya contiene solo los movimientos dentro de [desde, hasta]
+        // (los anteriores solo arrastraron saldo, ver bucle).
+        $visibles = $filas;
+
+        // Filas de SALDO INICIAL: una por (item|almacén) con movimientos previos
+        // a 'desde'. Se muestran cuando hay un ítem filtrado (drill-down típico) o
+        // cuando ese par también tiene movimientos visibles en el período, para no
+        // ensuciar el listado global con ítems inactivos en el rango.
+        $keysVisibles = [];
+        foreach ($visibles as $f) {
+            $keysVisibles[$f->item_id.'|'.$f->almacen_id] = true;
+        }
+
+        $iniciales = [];
+        foreach ($saldoInicial as $key => $si) {
+            if ($itemId === null && ! isset($keysVisibles[$key])) {
+                continue;
+            }
+            [$iid, $aid] = array_map('intval', explode('|', $key));
+            $prom = $si['qty'] != 0.0 ? round($si['valor'] / $si['qty'], 4) : 0.0;
+            $iniciales[] = (object) [
+                'es_inicial'       => true,
+                'fecha'            => $desdeC->copy(),
+                'item_id'          => $iid,
+                'almacen_id'       => $aid,
+                'tipo_movimiento'  => 'SALDO INICIAL',
+                'documento_origen' => null,
+                'descripcion'      => 'Saldo arrastrado al '.$desdeC->format('d/m/Y'),
+                'entrada_cantidad' => 0.0,
+                'costo_entrada'    => 0.0,
+                'salida_cantidad'  => 0.0,
+                'costo_salida'     => 0.0,
+                'saldo_cantidad'   => $si['qty'],
+                'saldo_costo'      => round($si['valor'], 4),
+                'costo_promedio'   => $prom,
+            ];
+        }
+        // Ordenadas por ítem/almacén y antepuestas a los movimientos del período.
+        usort($iniciales, fn ($a, $b) => [$a->item_id, $a->almacen_id] <=> [$b->item_id, $b->almacen_id]);
+        $visibles = array_merge($iniciales, $visibles);
 
         // Relaciones para la vista (incluye ítems/almacenes inactivos por si el
         // movimiento histórico los referencia).
