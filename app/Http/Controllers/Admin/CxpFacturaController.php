@@ -842,7 +842,8 @@ class CxpFacturaController extends Controller
 
     /**
      * Verifica que la factura admita devolución de inventario. Devuelve un mensaje
-     * de error o null si procede. v1: solo cargos contabilizados con saldo pendiente.
+     * de error o null si procede. Solo cargos contabilizados (con o sin saldo):
+     * con saldo se reduce el saldo por pagar; ya pagada genera crédito a favor.
      */
     private function validarDevolucion(CxpDocumento $documento): ?string
     {
@@ -854,9 +855,6 @@ class CxpFacturaController extends Controller
         }
         if ($documento->esAbono()) {
             return 'Una nota de crédito no admite devolución de inventario.';
-        }
-        if (round((float) $documento->saldo, 2) <= 0) {
-            return 'La factura no tiene saldo pendiente; la devolución (v1) se aplica reduciendo el saldo por pagar.';
         }
 
         return null;
@@ -1050,13 +1048,16 @@ class CxpFacturaController extends Controller
         if (abs($variacion) > 0.004 && ! $cuentaGastoId) {
             throw ValidationException::withMessages(['documento' => 'La devolución tiene diferencia entre el precio de compra y el costo promedio, y falta la cuenta default GASTO_DEFAULT para registrarla.']);
         }
-        if ($total > round((float) $documento->saldo, 2) + 0.004) {
-            throw ValidationException::withMessages([
-                'lineas' => 'El total de la devolución (B/. '.number_format($total, 2).') excede el saldo de la factura (B/. '.number_format((float) $documento->saldo, 2).').',
-            ]);
-        }
 
         $nota = DB::transaction(function () use ($documento, $companiaId, $usuario, $data, $aDevolver, $almacenId, $cuentaCxpId, $cuentaItbmsId, $cuentaGastoId, $invPorCuenta, $totalBase, $totalItbms, $totalInv, $total, $variacion) {
+            // Bloquea la factura para leer su saldo sin carrera. Se aplica hasta el
+            // saldo pendiente; el remanente (típico de una factura ya pagada) queda
+            // como CRÉDITO A FAVOR del proveedor (saldo de la NC, aplicable en pagos).
+            $factura = CxpDocumento::whereKey($documento->id)->lockForUpdate()->first();
+            $saldoFactura = round((float) $factura->saldo, 2);
+            $aplicado = round(min($total, $saldoFactura), 2);
+            $remanente = round($total - $aplicado, 2);
+
             $nota = CxpDocumento::create([
                 'compania_id'    => $companiaId,
                 'proveedor_id'   => $documento->proveedor_id,
@@ -1067,8 +1068,8 @@ class CxpFacturaController extends Controller
                 'descuento'      => 0,
                 'impuesto'       => $totalItbms,
                 'total'          => $total,
-                'saldo'          => 0,
-                'estado'         => CxpDocumento::ESTADO_PAGADO,
+                'saldo'          => $remanente,
+                'estado'         => $remanente > 0.004 ? CxpDocumento::ESTADO_PENDIENTE : CxpDocumento::ESTADO_PAGADO,
                 'created_by'     => $usuario->email,
             ]);
 
@@ -1101,20 +1102,22 @@ class CxpFacturaController extends Controller
             );
             $nota->update(['asiento_id' => $asiento->id]);
 
-            // Aplica la NC a la factura (reduce su saldo).
-            CxpAplicacion::create([
-                'compania_id'         => $companiaId,
-                'proveedor_id'        => $documento->proveedor_id,
-                'documento_origen_id' => $nota->id,
-                'documento_destino_id' => $documento->id,
-                'fecha'               => $data['fecha'],
-                'monto_aplicado'      => $total,
-                'created_by'          => $usuario->email,
-            ]);
-            $documento->saldo = round((float) $documento->saldo - $total, 2);
-            $documento->estado = $documento->estadoSegunSaldo();
-            $documento->updated_by = $usuario->email;
-            $documento->save();
+            // Aplica a la factura solo lo que cubre su saldo pendiente (si lo hay).
+            if ($aplicado > 0.004) {
+                CxpAplicacion::create([
+                    'compania_id'         => $companiaId,
+                    'proveedor_id'        => $documento->proveedor_id,
+                    'documento_origen_id' => $nota->id,
+                    'documento_destino_id' => $documento->id,
+                    'fecha'               => $data['fecha'],
+                    'monto_aplicado'      => $aplicado,
+                    'created_by'          => $usuario->email,
+                ]);
+                $factura->saldo = round($saldoFactura - $aplicado, 2);
+                $factura->estado = $factura->estadoSegunSaldo();
+                $factura->updated_by = $usuario->email;
+                $factura->save();
+            }
 
             // Saca el inventario al costo PROMEDIO (sin asiento propio: ya va en el de la NC).
             $detalleInv = array_map(fn ($d) => [
@@ -1131,8 +1134,12 @@ class CxpFacturaController extends Controller
             return $nota;
         });
 
-        return redirect()->route('admin.cxp.notas.show', $nota)
-            ->with('status', "Devolución registrada: nota de crédito {$nota->numero} aplicada a {$documento->numero}; inventario y CxP actualizados.");
+        $saldoNota = round((float) $nota->saldo, 2);
+        $mensaje = $saldoNota > 0
+            ? "Devolución registrada: nota de crédito {$nota->numero} (crédito a favor de B/. ".number_format($saldoNota, 2)." disponible para futuros pagos al proveedor); inventario descontado."
+            : "Devolución registrada: nota de crédito {$nota->numero} aplicada a {$documento->numero}; inventario y CxP actualizados.";
+
+        return redirect()->route('admin.cxp.notas.show', $nota)->with('status', $mensaje);
     }
 
     /** Artículos activos de la compañía para el combobox de líneas de compra. */

@@ -6,6 +6,7 @@ use App\Models\Compania;
 use App\Models\Contacto;
 use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
+use App\Models\CxpAplicacion;
 use App\Models\CxpDocumento;
 use App\Models\InvAlmacen;
 use App\Models\InvExistencia;
@@ -153,6 +154,59 @@ class DevolucionCompraTest extends TestCase
         $factura->refresh();
         $this->assertEqualsWithDelta(535.0, (float) $factura->saldo, 0.01);
         $this->assertSame('ANULADO', $nc->fresh()->estado);
+    }
+
+    public function test_devolucion_de_factura_pagada_genera_credito_a_favor(): void
+    {
+        $factura = $this->comprar(10, 50, 7);                       // total 535, stock 10
+        $factura->update(['saldo' => 0, 'estado' => 'PAGADO']);     // simula pago total
+
+        $this->actuar()->post(route('admin.cxp.facturas.devolucion.store', $factura), [
+            'fecha' => '2026-06-15',
+            'lineas' => [['detalle_id' => $this->detalleProductoId($factura), 'cantidad' => 4]],
+        ])->assertSessionHasNoErrors();
+
+        // NC = crédito a favor: saldo = total 214, PENDIENTE; sin aplicación a la factura.
+        $nc = CxpDocumento::where('tipo_documento', CxpDocumento::TIPO_NOTA_CREDITO)->latest('id')->firstOrFail();
+        $this->assertEqualsWithDelta(214.0, (float) $nc->total, 0.01);
+        $this->assertEqualsWithDelta(214.0, (float) $nc->saldo, 0.01);
+        $this->assertSame('PENDIENTE', $nc->estado);
+        $this->assertSame(0, CxpAplicacion::where('documento_origen_id', $nc->id)->count());
+
+        // La factura sigue pagada; el inventario bajó a 6.
+        $factura->refresh();
+        $this->assertEqualsWithDelta(0.0, (float) $factura->saldo, 0.01);
+        $this->assertSame('PAGADO', $factura->estado);
+        $this->assertEqualsWithDelta(6.0, (float) $this->existencia()->cantidad, 0.001);
+
+        // Anular el crédito a favor repone el stock (no hay saldo de factura que tocar).
+        $this->actuar()->post(route('admin.cxp.notas.anular', $nc))->assertSessionHasNoErrors();
+        $this->assertEqualsWithDelta(10.0, (float) $this->existencia()->cantidad, 0.001);
+        $this->assertSame('ANULADO', $nc->fresh()->estado);
+    }
+
+    public function test_devolucion_excedente_aplica_saldo_y_deja_credito(): void
+    {
+        $factura = $this->comprar(10, 50, 7);                        // total 535
+        $factura->update(['saldo' => 100, 'estado' => 'PARCIAL']);   // simula pago parcial (quedan 100)
+
+        // Devuelve todo (10) = 535: cubre los 100 de saldo y deja 435 de crédito.
+        $this->actuar()->post(route('admin.cxp.facturas.devolucion.store', $factura), [
+            'fecha' => '2026-06-15',
+            'lineas' => [['detalle_id' => $this->detalleProductoId($factura), 'cantidad' => 10]],
+        ])->assertSessionHasNoErrors();
+
+        $nc = CxpDocumento::where('tipo_documento', CxpDocumento::TIPO_NOTA_CREDITO)->latest('id')->firstOrFail();
+        $this->assertEqualsWithDelta(535.0, (float) $nc->total, 0.01);
+        $this->assertEqualsWithDelta(435.0, (float) $nc->saldo, 0.01);     // remanente = crédito a favor
+        $this->assertSame('PENDIENTE', $nc->estado);
+
+        // Aplicó 100 a la factura → queda PAGADO; existencia 0.
+        $this->assertEqualsWithDelta(100.0, (float) CxpAplicacion::where('documento_origen_id', $nc->id)->value('monto_aplicado'), 0.01);
+        $factura->refresh();
+        $this->assertEqualsWithDelta(0.0, (float) $factura->saldo, 0.01);
+        $this->assertSame('PAGADO', $factura->estado);
+        $this->assertEqualsWithDelta(0.0, (float) $this->existencia()->cantidad, 0.001);
     }
 
     public function test_no_se_puede_devolver_mas_que_la_existencia(): void

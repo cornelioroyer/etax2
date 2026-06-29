@@ -23,8 +23,13 @@
                     Almacén: <span class="font-medium text-gray-800">{{ $almacen->nombre ?? '—' }}</span>
                 </p>
                 <p class="mt-2 text-gray-500">
-                    Se generará una <strong>nota de crédito</strong> aplicada a esta factura (reduce el saldo por pagar) y se
-                    descontará el inventario devuelto. El original queda en el historial.
+                    Se generará una <strong>nota de crédito</strong> y se descontará el inventario devuelto.
+                    @if (round((float) $factura->saldo, 2) > 0)
+                        Se aplicará al saldo por pagar de esta factura; cualquier excedente queda como <strong>crédito a favor</strong> del proveedor.
+                    @else
+                        La factura ya está pagada, así que la nota quedará como <strong>crédito a favor</strong> del proveedor (aplicable en futuros pagos).
+                    @endif
+                    El original queda en el historial.
                 </p>
             </div>
 
