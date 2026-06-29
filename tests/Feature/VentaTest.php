@@ -17,6 +17,7 @@ use App\Models\TipoContacto;
 use App\Models\User;
 use App\Models\VentaCotizacion;
 use App\Models\VentaFactura;
+use App\Models\VentaNotaCredito;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
@@ -584,6 +585,137 @@ class VentaTest extends TestCase
         $this->actuar()->post(route('admin.ventas.facturas.corregir', $factura))->assertSessionHasNoErrors();
         $this->assertEqualsWithDelta(3.0, (float) $exist->fresh()->cantidad, 0.001);
         $this->assertEqualsWithDelta(5.0, (float) $exist->fresh()->costo_promedio, 0.001);
+    }
+
+    /**
+     * Crea cuentas/defaults de Inventario, Costo de Ventas y Devoluciones, un
+     * almacén y un producto con 10 unidades a costo 5.
+     *
+     * @return array{0:ItemProducto,1:InvAlmacen,2:CuentaContable,3:CuentaContable,4:CuentaContable}
+     */
+    private function prepararInventarioYDevoluciones(): array
+    {
+        $mk = fn (string $cod, string $nom) => CuentaContable::create([
+            'compania_id' => $this->compania->id, 'codigo' => $cod, 'nombre' => $nom,
+            'nivel' => 3, 'naturaleza' => 'DEBITO', 'permite_movimiento' => true, 'conciliable' => false, 'activa' => true,
+        ]);
+        $inv   = $mk('10105', 'Inventario');
+        $costo = $mk('50101', 'Costo de ventas');
+        $devol = $mk('40901', 'Devoluciones y descuentos en ventas');
+        CuentaDefault::create(['compania_id' => $this->compania->id, 'clave' => 'INVENTARIO', 'cuenta_id' => $inv->id]);
+        CuentaDefault::create(['compania_id' => $this->compania->id, 'clave' => 'COSTO_VENTAS', 'cuenta_id' => $costo->id]);
+        CuentaDefault::create(['compania_id' => $this->compania->id, 'clave' => 'DESCUENTOS_VENTA', 'cuenta_id' => $devol->id]);
+
+        $almacen = InvAlmacen::create(['compania_id' => $this->compania->id, 'codigo' => 'ALM-01', 'nombre' => 'Principal', 'activo' => true]);
+        $item = ItemProducto::create([
+            'compania_id' => $this->compania->id, 'codigo' => 'PROD-001', 'nombre' => 'Producto X',
+            'tipo' => ItemProducto::TIPO_PRODUCTO, 'precio_venta' => 50, 'costo' => 5,
+            'cuenta_inventario_id' => $inv->id, 'cuenta_costo_venta_id' => $costo->id, 'activo' => true,
+        ]);
+        InvExistencia::create([
+            'compania_id' => $this->compania->id, 'almacen_id' => $almacen->id, 'item_id' => $item->id,
+            'cantidad' => 10, 'costo_promedio' => 5,
+        ]);
+
+        return [$item, $almacen, $inv, $costo, $devol];
+    }
+
+    private function venderProducto(ItemProducto $item, float $cantidad): VentaFactura
+    {
+        $this->actuar()->post(route('admin.ventas.facturas.store'), [
+            'cliente_id' => $this->cliente->id, 'fecha' => '2026-06-13', 'accion' => 'emitir',
+            'lineas' => [['item_id' => $item->id, 'descripcion' => 'Producto X', 'cantidad' => $cantidad, 'precio_unitario' => 50, 'impuesto_id' => $this->impuestoId('ITBMS_7')]],
+        ])->assertSessionHasNoErrors();
+
+        return VentaFactura::where('compania_id', $this->compania->id)->latest('id')->firstOrFail();
+    }
+
+    public function test_nota_credito_con_devolucion_repone_inventario_al_costo_de_salida(): void
+    {
+        [$item, $almacen, $inv, $costo, $devol] = $this->prepararInventarioYDevoluciones();
+        $factura = $this->venderProducto($item, 4); // existencia 10-4 = 6, salida a costo 5
+
+        // Prueba dura: subir el costo promedio actual a 8 ANTES de devolver. La entrada
+        // por devolución debe usar el costo de SALIDA (5), no el promedio actual (8).
+        InvExistencia::where('almacen_id', $almacen->id)->where('item_id', $item->id)->update(['costo_promedio' => 8]);
+
+        $this->actuar()->post(route('admin.ventas.notas-credito.store'), [
+            'cliente_id' => $this->cliente->id, 'fecha' => '2026-06-14',
+            'motivo' => 'Devolución de 4 unidades', 'total' => 200,
+            'cuenta_id' => $this->ventas->id,          // se forzará a la cuenta de Devoluciones
+            'factura_id' => $factura->id,
+            'devolucion' => [$item->id => 4],
+        ])->assertSessionHasNoErrors();
+
+        // Existencia repuesta: 6 + 4 = 10; valor = 6*8 + 4*5 = 68 → promedio 6.8.
+        $exist = InvExistencia::where('almacen_id', $almacen->id)->where('item_id', $item->id)->firstOrFail();
+        $this->assertEqualsWithDelta(10.0, (float) $exist->cantidad, 0.001);
+        $this->assertEqualsWithDelta(6.8, (float) $exist->costo_promedio, 0.001);
+
+        // Movimiento ENTRADA al costo de salida (5), no al promedio (8).
+        $nota = VentaNotaCredito::where('compania_id', $this->compania->id)->latest('id')->firstOrFail();
+        $mov = InvMovimiento::where('documento_origen', 'ventas_notas_credito')
+            ->where('documento_id', $nota->id)
+            ->where('tipo_movimiento', InvMovimiento::TIPO_ENTRADA)
+            ->firstOrFail();
+        $this->assertSame('CONFIRMADO', $mov->estado);
+        $this->assertEqualsWithDelta(4.0, (float) $mov->detalle->sum('cantidad'), 0.001);
+        $this->assertEqualsWithDelta(5.0, (float) $mov->detalle->first()->costo_unitario, 0.001);
+
+        // Asiento NC cuadrado: Dr Devoluciones 200 + Dr Inventario 20 / Cr CxC 200 + Cr Costo 20.
+        $asiento = Asiento::find($nota->asiento_id);
+        $this->assertEqualsWithDelta((float) $asiento->detalle->sum('debito'), (float) $asiento->detalle->sum('credito'), 0.001);
+        $this->assertEqualsWithDelta(220.0, (float) $asiento->detalle->sum('debito'), 0.001);
+        $this->assertEqualsWithDelta(20.0, (float) $asiento->detalle->where('cuenta_id', $inv->id)->sum('debito'), 0.001);
+        $this->assertEqualsWithDelta(20.0, (float) $asiento->detalle->where('cuenta_id', $costo->id)->sum('credito'), 0.001);
+        // El lado de ingreso se forzó a Devoluciones, no a la cuenta de Ventas.
+        $this->assertEqualsWithDelta(200.0, (float) $asiento->detalle->where('cuenta_id', $devol->id)->sum('debito'), 0.001);
+        $this->assertEqualsWithDelta(0.0, (float) $asiento->detalle->where('cuenta_id', $this->ventas->id)->sum('debito'), 0.001);
+    }
+
+    public function test_devolucion_de_mercancia_no_puede_exceder_lo_vendido(): void
+    {
+        [$item, $almacen] = $this->prepararInventarioYDevoluciones();
+        $factura = $this->venderProducto($item, 4); // disponible para devolver = 4
+
+        $this->actuar()->post(route('admin.ventas.notas-credito.store'), [
+            'cliente_id' => $this->cliente->id, 'fecha' => '2026-06-14',
+            'motivo' => 'Devolución excesiva', 'total' => 250,
+            'cuenta_id' => $this->ventas->id, 'factura_id' => $factura->id,
+            'devolucion' => [$item->id => 5], // más de lo vendido
+        ])->assertSessionHasErrors('devolucion');
+
+        // Existencia intacta (6) y sin movimiento de entrada.
+        $exist = InvExistencia::where('almacen_id', $almacen->id)->where('item_id', $item->id)->firstOrFail();
+        $this->assertEqualsWithDelta(6.0, (float) $exist->cantidad, 0.001);
+        $this->assertSame(0, InvMovimiento::where('documento_origen', 'ventas_notas_credito')
+            ->where('tipo_movimiento', InvMovimiento::TIPO_ENTRADA)->count());
+    }
+
+    public function test_anular_nota_credito_con_devolucion_revierte_la_entrada(): void
+    {
+        [$item, $almacen] = $this->prepararInventarioYDevoluciones();
+        $factura = $this->venderProducto($item, 4); // existencia 6 @ 5
+
+        $this->actuar()->post(route('admin.ventas.notas-credito.store'), [
+            'cliente_id' => $this->cliente->id, 'fecha' => '2026-06-14',
+            'motivo' => 'Devolución total', 'total' => 200,
+            'cuenta_id' => $this->ventas->id, 'factura_id' => $factura->id,
+            'devolucion' => [$item->id => 4],
+        ])->assertSessionHasNoErrors();
+
+        $exist = InvExistencia::where('almacen_id', $almacen->id)->where('item_id', $item->id)->firstOrFail();
+        $this->assertEqualsWithDelta(10.0, (float) $exist->cantidad, 0.001); // 6 + 4
+
+        $nota = VentaNotaCredito::where('compania_id', $this->compania->id)->latest('id')->firstOrFail();
+        $this->actuar()->post(route('admin.ventas.notas-credito.anular', $nota))->assertSessionHasNoErrors();
+
+        // La entrada se revierte: existencia vuelve a 6 @ 5; movimiento ANULADO.
+        $this->assertEqualsWithDelta(6.0, (float) $exist->fresh()->cantidad, 0.001);
+        $this->assertEqualsWithDelta(5.0, (float) $exist->fresh()->costo_promedio, 0.001);
+        $mov = InvMovimiento::where('documento_origen', 'ventas_notas_credito')
+            ->where('documento_id', $nota->id)->firstOrFail();
+        $this->assertSame('ANULADO', $mov->fresh()->estado);
     }
 
     public function test_emitir_factura_servicio_no_mueve_inventario(): void

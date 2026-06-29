@@ -29,6 +29,9 @@ class InventarioVentas
 {
     public const ORIGEN_VENTAS = 'ventas_facturas';
 
+    /** Devolución de mercancía registrada por una Nota de Crédito de venta. */
+    public const ORIGEN_DEVOLUCION = 'ventas_notas_credito';
+
     /** Almacén por defecto (1° activo) cuando el documento no especifica uno. */
     public function almacenPorDefecto(int $companiaId): ?int
     {
@@ -230,5 +233,208 @@ class InventarioVentas
 
             $mov->update(['estado' => 'ANULADO', 'updated_by' => $usuario->email]);
         }
+    }
+
+    /**
+     * Costos de SALIDA de una factura de venta: por cada ítem PRODUCTO que salió,
+     * devuelve el almacén, la cantidad vendida y el costo unitario CON QUE SALIÓ
+     * (el grabado en el movimiento, no el promedio actual). Es la fuente de verdad
+     * para que una devolución reingrese al mismo costo. Ignora movimientos anulados.
+     *
+     * @return array<int,array{item_id:int,almacen_id:int,cantidad:float,costo_unitario:float}>
+     */
+    public function costosDeSalidaPorFactura(int $facturaId): array
+    {
+        $movimientos = InvMovimiento::with('detalle')
+            ->where('documento_origen', self::ORIGEN_VENTAS)
+            ->where('documento_id', $facturaId)
+            ->where('tipo_movimiento', InvMovimiento::TIPO_SALIDA)
+            ->where('estado', '!=', 'ANULADO')
+            ->get();
+
+        $porItem = [];
+        foreach ($movimientos as $mov) {
+            foreach ($mov->detalle as $det) {
+                $itemId = (int) $det->item_id;
+                if (! isset($porItem[$itemId])) {
+                    $porItem[$itemId] = [
+                        'item_id'        => $itemId,
+                        'almacen_id'     => (int) $mov->almacen_id,
+                        'cantidad'       => 0.0,
+                        'costo_unitario' => round((float) $det->costo_unitario, 4),
+                    ];
+                }
+                $porItem[$itemId]['cantidad'] = round($porItem[$itemId]['cantidad'] + (float) $det->cantidad, 4);
+            }
+        }
+
+        return $porItem;
+    }
+
+    /**
+     * Cantidad ya devuelta por ítem para un conjunto de Notas de Crédito (sus
+     * movimientos de ENTRADA por devolución no anulados). Sirve para acotar las
+     * devoluciones parciales sucesivas a lo realmente vendido.
+     *
+     * @param  array<int,int>  $notaIds
+     * @return array<int,float>  item_id => cantidad devuelta
+     */
+    public function devueltoPorNotas(array $notaIds): array
+    {
+        if (empty($notaIds)) {
+            return [];
+        }
+
+        $movimientos = InvMovimiento::with('detalle')
+            ->where('documento_origen', self::ORIGEN_DEVOLUCION)
+            ->whereIn('documento_id', $notaIds)
+            ->where('tipo_movimiento', InvMovimiento::TIPO_ENTRADA)
+            ->where('estado', '!=', 'ANULADO')
+            ->get();
+
+        $porItem = [];
+        foreach ($movimientos as $mov) {
+            foreach ($mov->detalle as $det) {
+                $itemId = (int) $det->item_id;
+                $porItem[$itemId] = round(($porItem[$itemId] ?? 0) + (float) $det->cantidad, 4);
+            }
+        }
+
+        return $porItem;
+    }
+
+    /**
+     * Registra la ENTRADA de inventario por una devolución (Nota de Crédito). Crea
+     * el movimiento al costo de salida original y repone existencias por promedio
+     * ponderado (misma matemática de entrada que la reversa). La contabilidad
+     * (Dr Inventario / Cr Costo de Ventas) viaja en el asiento de la NC, así que el
+     * movimiento NO postea asiento propio: queda enlazado para trazabilidad/kárdex.
+     *
+     * @param  array<int,array{item_id:int,cantidad:float,costo_unitario:float}>  $detalle
+     */
+    public function registrarEntradaDevolucion(
+        int $companiaId,
+        int $almacenId,
+        string $fecha,
+        array $detalle,
+        ?int $asientoId,
+        int $notaId,
+        $usuario,
+    ): ?InvMovimiento {
+        $detalle = array_values(array_filter($detalle, fn ($d) => (float) $d['cantidad'] > 0));
+        if (empty($detalle)) {
+            return null;
+        }
+
+        $mov = InvMovimiento::create([
+            'compania_id'      => $companiaId,
+            'almacen_id'       => $almacenId,
+            'fecha'            => $fecha,
+            'tipo_movimiento'  => InvMovimiento::TIPO_ENTRADA,
+            'documento_origen' => self::ORIGEN_DEVOLUCION,
+            'documento_id'     => $notaId,
+            'descripcion'      => 'Devolución de mercancía (nota de crédito)',
+            'asiento_id'       => $asientoId,
+            'estado'           => 'CONFIRMADO',
+            'created_by'       => $usuario->email,
+        ]);
+
+        foreach ($detalle as $d) {
+            $cantidad = round((float) $d['cantidad'], 4);
+            $costo    = round((float) $d['costo_unitario'], 4);
+            $itemId   = (int) $d['item_id'];
+
+            InvMovimientoDetalle::create([
+                'movimiento_id'  => $mov->id,
+                'item_id'        => $itemId,
+                'cantidad'       => $cantidad,
+                'costo_unitario' => $costo,
+                'total'          => round($cantidad * $costo, 2),
+                'created_by'     => $usuario->email,
+            ]);
+
+            $this->reponerExistencia($companiaId, $almacenId, $itemId, $cantidad, $costo, $usuario);
+        }
+
+        return $mov;
+    }
+
+    /**
+     * Reversa la ENTRADA por devolución de una Nota de Crédito: descuenta de la
+     * existencia la cantidad reingresada (al costo con que entró) y marca el
+     * movimiento ANULADO. Idempotente: ignora los ya anulados.
+     */
+    public function reversarEntradaPorDocumento(string $documentoOrigen, int $documentoId, $usuario): void
+    {
+        $movimientos = InvMovimiento::with('detalle')
+            ->where('documento_origen', $documentoOrigen)
+            ->where('documento_id', $documentoId)
+            ->where('tipo_movimiento', InvMovimiento::TIPO_ENTRADA)
+            ->where('estado', '!=', 'ANULADO')
+            ->get();
+
+        foreach ($movimientos as $mov) {
+            foreach ($mov->detalle as $det) {
+                $existencia = InvExistencia::where('almacen_id', $mov->almacen_id)
+                    ->where('item_id', $det->item_id)
+                    ->first();
+                if (! $existencia) {
+                    continue;
+                }
+
+                // Quitar exactamente cantidad y valor que entró, para conservar el
+                // cuadre kárdex (cantidad × costo) ↔ mayor. El promedio se recalcula
+                // con el valor remanente (admite negativos, igual que en la entrada).
+                $qa     = (float) $existencia->cantidad;
+                $ca     = (float) $existencia->costo_promedio;
+                $cant   = (float) $det->cantidad;
+                $costo  = (float) $det->costo_unitario;
+                $nuevaCantidad = round($qa - $cant, 4);
+                $valorRem      = round($qa * $ca - $cant * $costo, 4);
+                $nuevoCosto    = $nuevaCantidad != 0.0 ? round($valorRem / $nuevaCantidad, 4) : $ca;
+
+                $existencia->update([
+                    'cantidad'       => $nuevaCantidad,
+                    'costo_promedio' => $nuevoCosto,
+                    'updated_by'     => $usuario->email,
+                ]);
+            }
+
+            $mov->update(['estado' => 'ANULADO', 'updated_by' => $usuario->email]);
+        }
+    }
+
+    /** Repone una existencia por promedio ponderado (entrada). Crea si no existe. */
+    private function reponerExistencia(int $companiaId, int $almacenId, int $itemId, float $cantidad, float $costo, $usuario): void
+    {
+        $existencia = InvExistencia::where('almacen_id', $almacenId)
+            ->where('item_id', $itemId)
+            ->first();
+
+        if (! $existencia) {
+            InvExistencia::create([
+                'compania_id'    => $companiaId,
+                'almacen_id'     => $almacenId,
+                'item_id'        => $itemId,
+                'cantidad'       => round($cantidad, 4),
+                'costo_promedio' => round($costo, 4),
+                'updated_by'     => $usuario->email,
+            ]);
+
+            return;
+        }
+
+        $qa = (float) $existencia->cantidad;
+        $ca = (float) $existencia->costo_promedio;
+        $nuevaCantidad = round($qa + $cantidad, 4);
+        $nuevoCosto    = $nuevaCantidad > 0
+            ? round(($qa * $ca + $cantidad * $costo) / $nuevaCantidad, 4)
+            : $ca;
+
+        $existencia->update([
+            'cantidad'       => $nuevaCantidad,
+            'costo_promedio' => $nuevoCosto,
+            'updated_by'     => $usuario->email,
+        ]);
     }
 }
