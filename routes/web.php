@@ -456,6 +456,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('inventario/almacenes/{almacen}/toggle', [InvAlmacenController::class, 'toggle'])->whereNumber('almacen')->name('inventario.almacenes.toggle');
         Route::get('inventario/movimientos/nuevo', [InvMovimientoController::class, 'create'])->name('inventario.movimientos.create');
         Route::post('inventario/movimientos', [InvMovimientoController::class, 'store'])->name('inventario.movimientos.store');
+        Route::post('inventario/movimientos/{movimiento}/reversar', [InvMovimientoController::class, 'reversar'])->whereNumber('movimiento')->name('inventario.movimientos.reversar');
     });
 
     Route::middleware('permission:ventas.ver')->group(function () {

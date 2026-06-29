@@ -4,12 +4,51 @@
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">
                 {{ ucfirst(strtolower($movimiento->tipo_movimiento)) }} — {{ $movimiento->fecha->format('d/m/Y') }}
             </h2>
-            <a href="{{ route('admin.inventario.movimientos.index') }}" class="text-sm text-gray-600 hover:text-gray-900">← Volver</a>
+            <div class="flex items-center gap-3">
+                @php
+                    $puedeReversar = $movimiento->estado !== 'ANULADO'
+                        && ! $movimiento->esReverso()
+                        && $movimiento->reversadoPor->isEmpty();
+                @endphp
+                @can('inventario.gestionar')
+                    @if ($puedeReversar)
+                        <form method="POST" action="{{ route('admin.inventario.movimientos.reversar', $movimiento) }}"
+                              onsubmit="return confirm('¿Reversar este movimiento? Se creará una transacción de compensación (movimiento inverso + asiento inverso); el original queda en el historial.');">
+                            @csrf
+                            <button type="submit" class="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">
+                                Reversar
+                            </button>
+                        </form>
+                    @endif
+                @endcan
+                <a href="{{ route('admin.inventario.movimientos.index') }}" class="text-sm text-gray-600 hover:text-gray-900">← Volver</a>
+            </div>
         </div>
     </x-slot>
 
     <div class="py-8">
         <div class="max-w-4xl mx-auto sm:px-6 lg:px-8 space-y-4">
+            @if (session('status'))
+                <div class="rounded-md bg-green-50 p-4 text-sm text-green-800">{{ session('status') }}</div>
+            @endif
+            @if ($errors->any())
+                <div class="rounded-md bg-red-50 p-4 text-sm text-red-800">
+                    @foreach ($errors->all() as $error)<div>{{ $error }}</div>@endforeach
+                </div>
+            @endif
+
+            @if ($movimiento->esReverso() && $movimiento->reversaDe)
+                <div class="rounded-md bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800">
+                    Este movimiento es el <strong>reverso</strong> de
+                    <a href="{{ route('admin.inventario.movimientos.show', $movimiento->reversaDe) }}" class="font-medium underline">el movimiento #{{ $movimiento->reversaDe->id }}</a>.
+                </div>
+            @elseif ($movimiento->reversadoPor->isNotEmpty())
+                <div class="rounded-md bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800">
+                    Este movimiento fue <strong>reversado</strong> por
+                    <a href="{{ route('admin.inventario.movimientos.show', $movimiento->reversadoPor->first()) }}" class="font-medium underline">el movimiento #{{ $movimiento->reversadoPor->first()->id }}</a>.
+                </div>
+            @endif
+
             <div class="bg-white p-6 shadow-sm sm:rounded-lg">
                 <dl class="grid grid-cols-2 gap-x-8 gap-y-3 text-sm sm:grid-cols-3">
                     <div>
