@@ -17,6 +17,7 @@ use App\Models\TaxImpuesto;
 use App\Models\TipoContacto;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class ComprasTest extends TestCase
@@ -357,12 +358,13 @@ class ComprasTest extends TestCase
         $this->assertSame('APROBADA', $orden->fresh()->estado);
     }
 
-    public function test_anular_compra_con_stock_ya_consumido_deja_existencia_negativa(): void
+    public function test_anular_compra_con_stock_ya_consumido_se_bloquea(): void
     {
-        // Política "inventario negativo consistente": anular una compra cuyo stock
-        // ya se consumió debe llevar la existencia a NEGATIVO (no pisarla en 0) para
-        // que el kárdex (cantidad × costo) cuadre con el crédito a Inventario del
-        // asiento anulado. Se prueba el servicio directamente (es el código tocado).
+        // Integridad: anular una compra cuyo stock YA se consumió/vendió dejaría el
+        // inventario negativo y un costo de ventas posteado SIN la compra que lo
+        // respalde. La anulación se BLOQUEA (el usuario debe emitir una devolución /
+        // nota de crédito de compra). La sobreventa hacia adelante (InventarioVentas)
+        // sigue permitiendo negativo: aquí solo se blinda el reverso hacia atrás.
         $almacen = InvAlmacen::create(['compania_id' => $this->compania->id, 'codigo' => 'ALM-01', 'nombre' => 'Principal', 'activo' => true]);
         $item = ItemProducto::create([
             'compania_id' => $this->compania->id, 'codigo' => 'PROD-001', 'nombre' => 'Producto X',
@@ -377,21 +379,49 @@ class ComprasTest extends TestCase
             [['item_id' => $item->id, 'cantidad' => 5, 'costo_unitario' => 5]],
             null, 'compras_facturas', 999, $this->admin,
         );
-        $exist = InvExistencia::where('almacen_id', $almacen->id)->where('item_id', $item->id)->firstOrFail();
-        $this->assertEqualsWithDelta(5.0, (float) $exist->cantidad, 0.001);
 
-        // Se vendieron 3 (stock baja a 2) ANTES de anular la compra.
+        // Se vendieron 3 (stock baja a 2) ANTES de intentar anular la compra.
+        $exist = InvExistencia::where('almacen_id', $almacen->id)->where('item_id', $item->id)->firstOrFail();
         $exist->update(['cantidad' => 2]);
 
-        // Anular la compra reversa la entrada de 5 → 2 - 5 = -3 (antes pisaba en 0).
-        $svc->reversarPorDocumento('compras_facturas', 999, $this->admin);
+        // Anular la compra (reversa de 5 sobre existencia 2 → -3) debe bloquearse.
+        try {
+            $svc->reversarPorDocumento('compras_facturas', 999, $this->admin);
+            $this->fail('Se esperaba ValidationException al anular una compra con stock ya consumido.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('documento', $e->errors());
+        }
 
+        // Nada cambió: existencia intacta en 2 y el movimiento sigue CONFIRMADO.
         $exist->refresh();
-        $this->assertEqualsWithDelta(-3.0, (float) $exist->cantidad, 0.001);
-        // Valor consistente: -3 × 5 = -15 = (valor previo 10) − (crédito a inventario 25).
-        $this->assertEqualsWithDelta(5.0, (float) $exist->costo_promedio, 0.001);
-
+        $this->assertEqualsWithDelta(2.0, (float) $exist->cantidad, 0.001);
         $mov = InvMovimiento::where('documento_origen', 'compras_facturas')->where('documento_id', 999)->firstOrFail();
+        $this->assertSame('CONFIRMADO', $mov->estado);
+    }
+
+    public function test_anular_compra_no_consumida_baja_existencia(): void
+    {
+        // Caso permitido: la mercancía sigue en stock (existencia >= cantidad de la
+        // compra), así que anular reversa la entrada sin dejar el inventario negativo.
+        $almacen = InvAlmacen::create(['compania_id' => $this->compania->id, 'codigo' => 'ALM-01', 'nombre' => 'Principal', 'activo' => true]);
+        $item = ItemProducto::create([
+            'compania_id' => $this->compania->id, 'codigo' => 'PROD-002', 'nombre' => 'Producto Y',
+            'tipo' => ItemProducto::TIPO_PRODUCTO, 'precio_venta' => 10, 'costo' => 5, 'activo' => true,
+        ]);
+
+        $svc = app(\App\Services\InventarioCompras::class);
+        $svc->registrarEntrada(
+            $this->compania->id, $almacen->id, '2026-06-12',
+            [['item_id' => $item->id, 'cantidad' => 5, 'costo_unitario' => 5]],
+            null, 'compras_facturas', 1001, $this->admin,
+        );
+
+        // Sin consumo: anular reversa los 5 → existencia 0, movimiento ANULADO.
+        $svc->reversarPorDocumento('compras_facturas', 1001, $this->admin);
+
+        $exist = InvExistencia::where('almacen_id', $almacen->id)->where('item_id', $item->id)->firstOrFail();
+        $this->assertEqualsWithDelta(0.0, (float) $exist->cantidad, 0.001);
+        $mov = InvMovimiento::where('documento_origen', 'compras_facturas')->where('documento_id', 1001)->firstOrFail();
         $this->assertSame('ANULADO', $mov->estado);
     }
 }

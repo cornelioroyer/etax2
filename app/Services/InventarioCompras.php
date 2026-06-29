@@ -2,9 +2,12 @@
 
 namespace App\Services;
 
+use App\Models\InvAlmacen;
 use App\Models\InvExistencia;
 use App\Models\InvMovimiento;
 use App\Models\InvMovimientoDetalle;
+use App\Models\ItemProducto;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Integración Inventario ↔ Compras (invoice-driven).
@@ -123,6 +126,12 @@ class InventarioCompras
     /**
      * Reversa las entradas de inventario asociadas a un documento. Idempotente:
      * ignora los movimientos ya anulados.
+     *
+     * Guarda de integridad: si la mercancía de la compra YA se consumió/vendió
+     * (la existencia quedaría negativa al reversar), se bloquea la anulación. De
+     * lo contrario quedaría un costo de ventas ya posteado sin la compra que lo
+     * respalda (inventario negativo huérfano). El usuario debe registrar una
+     * devolución / nota de crédito de compra en su lugar.
      */
     public function reversarPorDocumento(string $documentoOrigen, int $documentoId, $usuario): void
     {
@@ -132,6 +141,12 @@ class InventarioCompras
             ->where('tipo_movimiento', InvMovimiento::TIPO_ENTRADA)
             ->where('estado', '!=', 'ANULADO')
             ->get();
+
+        if ($movimientos->isEmpty()) {
+            return;
+        }
+
+        $this->validarReversaNoDejaNegativo($movimientos);
 
         foreach ($movimientos as $mov) {
             foreach ($mov->detalle as $det) {
@@ -173,5 +188,66 @@ class InventarioCompras
 
             $mov->update(['estado' => 'ANULADO', 'updated_by' => $usuario->email]);
         }
+    }
+
+    /**
+     * Verifica que reversar las entradas no lleve ninguna existencia por debajo de
+     * cero: la mercancía ya consumida no se puede "des-comprar". Acumula la cantidad
+     * a reversar por par (almacén, ítem) y la compara con la existencia actual; si
+     * alguna quedaría negativa, lanza ValidationException con el detalle legible.
+     *
+     * @param  \Illuminate\Support\Collection<int,InvMovimiento>  $movimientos
+     */
+    private function validarReversaNoDejaNegativo($movimientos): void
+    {
+        // Cantidad a reversar acumulada por "almacenId|itemId".
+        $requerido = [];
+        foreach ($movimientos as $mov) {
+            foreach ($mov->detalle as $det) {
+                $clave = $mov->almacen_id.'|'.$det->item_id;
+                $requerido[$clave] = round(($requerido[$clave] ?? 0) + (float) $det->cantidad, 4);
+            }
+        }
+
+        $conflictos = [];
+        foreach ($requerido as $clave => $cantidad) {
+            [$almacenId, $itemId] = array_map('intval', explode('|', $clave));
+            $disponible = (float) (InvExistencia::where('almacen_id', $almacenId)
+                ->where('item_id', $itemId)
+                ->value('cantidad') ?? 0);
+
+            if ($disponible - $cantidad < -0.0001) {
+                $conflictos[] = ['almacen_id' => $almacenId, 'item_id' => $itemId, 'disponible' => $disponible, 'requerido' => $cantidad];
+            }
+        }
+
+        if (empty($conflictos)) {
+            return;
+        }
+
+        // Enriquecer con códigos/nombres legibles para el mensaje.
+        $items     = ItemProducto::whereIn('id', array_column($conflictos, 'item_id'))->get(['id', 'codigo', 'nombre'])->keyBy('id');
+        $almacenes = InvAlmacen::whereIn('id', array_column($conflictos, 'almacen_id'))->get(['id', 'codigo'])->keyBy('id');
+
+        $detalle = array_map(function ($c) use ($items, $almacenes) {
+            $item    = $items[$c['item_id']] ?? null;
+            $almacen = $almacenes[$c['almacen_id']] ?? null;
+            $nombre  = $item ? trim($item->codigo.' '.$item->nombre) : 'ítem '.$c['item_id'];
+            $alm     = $almacen ? $almacen->codigo : 'almacén '.$c['almacen_id'];
+
+            return sprintf('«%s» en %s (hay %s, se requieren %s)', $nombre, $alm, $this->fmtCantidad($c['disponible']), $this->fmtCantidad($c['requerido']));
+        }, $conflictos);
+
+        throw ValidationException::withMessages([
+            'documento' => 'No se puede anular: la mercancía de esta compra ya fue consumida o vendida, '
+                .'por lo que el inventario quedaría negativo. Registre una devolución / nota de crédito de '
+                .'compra en lugar de anular. Detalle: '.implode('; ', $detalle).'.',
+        ]);
+    }
+
+    /** Formatea una cantidad de inventario sin ceros decimales sobrantes. */
+    private function fmtCantidad(float $n): string
+    {
+        return rtrim(rtrim(number_format($n, 4, '.', ''), '0'), '.');
     }
 }
