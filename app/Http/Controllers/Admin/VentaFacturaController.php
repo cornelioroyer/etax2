@@ -670,7 +670,7 @@ class VentaFacturaController extends Controller
 
         $fel->update(['estado_fel' => 'ANULADO', 'respuesta_dgi' => $resp, 'updated_by' => $usuario]);
 
-        return back()->with('status', "Documento electrónico (FEL {$fel->numero}) anulado en la DGI. Ahora puedes anular la factura.");
+        return back()->with('status', "Documento electrónico (FEL {$fel->numero}) anulado en la DGI. Para reversar la factura emite una Nota de Crédito.");
     }
 
     public function edit(Request $request, VentaFactura $factura): View
@@ -1334,64 +1334,22 @@ class VentaFacturaController extends Controller
             ?? $impuestosGlobales->first();
     }
 
+    /**
+     * Las facturas de venta NO se anulan directamente: es política contable/fiscal.
+     * Para reversar una factura emitida se emite una Nota de Crédito (devolución/
+     * anulación comercial) o, para un cargo adicional, una Nota de Débito. Así el
+     * documento original y su número fiscal/CAFE quedan intactos y trazables.
+     *
+     * El endpoint se conserva pero RECHAZA SIEMPRE (guarda de servidor): la UI ya
+     * no ofrece el botón «Anular», y esto blinda contra invocaciones directas o
+     * enlaces obsoletos. La corrección "en la fuente" sigue por «Editar» (corregir)
+     * para borradores y re-emisión.
+     */
     public function anular(Request $request, VentaFactura $factura): RedirectResponse
     {
         abort_unless($factura->compania_id === $this->companiaActivaId($request), 404);
 
-        if ($factura->esAnulada()) {
-            return back()->withErrors(['factura' => 'La factura ya está anulada.']);
-        }
-
-        // Con un CAFE autorizado en la DGI, primero hay que anularlo (FEL) para no
-        // dejar un documento electrónico vivo sin respaldo contable.
-        if ($factura->fel_documento_id) {
-            $felDoc = FelDocumento::find($factura->fel_documento_id);
-            if ($felDoc && $felDoc->estado_fel === 'AUTORIZADO') {
-                return back()->withErrors(['factura' => 'Esta factura tiene un documento electrónico AUTORIZADO en la DGI. Anula primero el FEL (botón «Anular FEL»).']);
-            }
-        }
-
-        if ($factura->cxcDocumento && $factura->cxcDocumento->aplicacionesComoDestino()->exists()) {
-            return back()->withErrors(['factura' => 'La factura tiene cobros aplicados; anula primero los cobros en CxC.']);
-        }
-
-        $usuario = $request->user();
-
-        DB::transaction(function () use ($factura, $usuario) {
-            // Anular el asiento contable
-            if ($factura->asiento) {
-                app(AsientoAutomatico::class)->anular($factura->asiento, $usuario);
-            }
-
-            // Reponer inventario de las salidas por venta (si las hubo)
-            app(InventarioVentas::class)->reversarPorDocumento(InventarioVentas::ORIGEN_VENTAS, $factura->id, $usuario);
-
-            // Anular el cxc_documentos vinculado
-            if ($factura->cxcDocumento) {
-                $factura->cxcDocumento->update([
-                    'estado'     => 'ANULADO',
-                    'saldo'      => 0,
-                    'updated_by' => $usuario->email,
-                ]);
-            }
-
-            $factura->update([
-                'estado'     => VentaFactura::ESTADO_ANULADA,
-                'saldo'      => 0,
-                'updated_by' => $usuario->email,
-            ]);
-
-            // Revertir la cotización a ACEPTADA si viene de una
-            if ($factura->cotizacion_id) {
-                $factura->cotizacion->update([
-                    'estado'     => VentaCotizacion::ESTADO_ACEPTADA,
-                    'updated_by' => $usuario->email,
-                ]);
-            }
-        });
-
-        return redirect()->route('admin.ventas.facturas.show', $factura)
-            ->with('status', "Factura {$factura->numero} anulada.");
+        return back()->withErrors(['factura' => "Las facturas de venta no se anulan. Para reversar la factura {$factura->numero} emite una Nota de Crédito (o una Nota de Débito para un cargo adicional)."]);
     }
 
     /**

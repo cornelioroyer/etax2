@@ -139,13 +139,13 @@
                                         </button>
                                     </form>
                                 @endunless
-                                <form method="POST" action="{{ route('admin.ventas.facturas.anular', $factura) }}"
-                                      onsubmit="return confirm('¿Anular la factura {{ $factura->numero }}? También se anulará el asiento contable.')">
-                                    @csrf
-                                    <button class="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">
-                                        Anular
-                                    </button>
-                                </form>
+                                {{-- Las facturas de venta NO se anulan directamente: para reversarlas se
+                                     emite una Nota de Crédito (devolución/anulación) o una Nota de Débito
+                                     (cargo adicional), conservando el documento original en el historial. --}}
+                                <a href="{{ route('admin.ventas.notas-credito.create', ['cliente_id' => $factura->cliente_id]) }}"
+                                   class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                                    Emitir Nota de Crédito
+                                </a>
                             @endif
                         @endcan
 

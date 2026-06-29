@@ -239,22 +239,22 @@ class VentaTest extends TestCase
         $this->assertSame('FACTURADA', $cot->fresh()->estado);
     }
 
-    public function test_anular_factura_revierte_asiento_cxc_y_cotizacion(): void
+    public function test_factura_de_venta_no_se_anula_directamente(): void
     {
+        // Política contable/fiscal: una factura de venta emitida NO se anula —
+        // se reversa con Nota de Crédito/Débito. El endpoint rechaza siempre y la
+        // factura, su asiento y su CxC quedan intactos.
         $cot = $this->crearCotizacion(100, 'ITBMS_7');
         $factura = $this->facturar($cot);
 
         $this->actuar()->post(route('admin.ventas.facturas.anular', $factura))
-            ->assertSessionHasNoErrors();
+            ->assertSessionHasErrors('factura');
 
         $factura->refresh();
-        $this->assertSame('ANULADA', $factura->estado);
-        $this->assertSame('0.00', (string) $factura->saldo);
-        $this->assertSame('ANULADO', $factura->asiento->estado);
-        $this->assertSame('ANULADO', $factura->cxcDocumento->estado);
-
-        // La cotización vuelve a ACEPTADA para poder re-facturar
-        $this->assertSame('ACEPTADA', $cot->fresh()->estado);
+        $this->assertSame('EMITIDA', $factura->estado);
+        $this->assertNotSame('ANULADO', $factura->asiento->estado);
+        $this->assertNotSame('ANULADO', $factura->cxcDocumento->estado);
+        $this->assertSame('FACTURADA', $cot->fresh()->estado);
     }
 
     public function test_facturar_sin_cuenta_default_cxc_es_rechazado(): void
@@ -513,8 +513,9 @@ class VentaTest extends TestCase
         $this->assertSame('CONFIRMADO', $mov->estado);
         $this->assertSame($factura->asiento_id, $mov->asiento_id);
 
-        // Anular repone el stock y marca el movimiento ANULADO.
-        $this->actuar()->post(route('admin.ventas.facturas.anular', $factura))->assertSessionHasNoErrors();
+        // La factura ya no se anula directamente; la reversa con reposición de
+        // stock ocurre al «Editar» (corregir), que anula la actual y crea un borrador.
+        $this->actuar()->post(route('admin.ventas.facturas.corregir', $factura))->assertSessionHasNoErrors();
         $this->assertEqualsWithDelta(10.0, (float) $exist->fresh()->cantidad, 0.001);
         $this->assertSame('ANULADO', $mov->fresh()->estado);
     }
@@ -578,8 +579,9 @@ class VentaTest extends TestCase
             ->firstOrFail();
         $this->assertEqualsWithDelta(5.0, (float) $mov->detalle->sum('cantidad'), 0.001);
 
-        // Anular repone el negativo: -2 + 5 = 3 (estado original), costo promedio 5.
-        $this->actuar()->post(route('admin.ventas.facturas.anular', $factura))->assertSessionHasNoErrors();
+        // La reversa (vía «Editar»/corregir, ya no por anular) repone el negativo:
+        // -2 + 5 = 3 (estado original), costo promedio 5.
+        $this->actuar()->post(route('admin.ventas.facturas.corregir', $factura))->assertSessionHasNoErrors();
         $this->assertEqualsWithDelta(3.0, (float) $exist->fresh()->cantidad, 0.001);
         $this->assertEqualsWithDelta(5.0, (float) $exist->fresh()->costo_promedio, 0.001);
     }
