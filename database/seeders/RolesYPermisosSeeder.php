@@ -65,6 +65,10 @@ class RolesYPermisosSeeder extends Seeder
             'cxc.gestionar',
             'cxp.ver',
             'cxp.gestionar',
+            // Permiso granular: registrar facturas de compra por QR/CUFE (quedan
+            // en BORRADOR). Subconjunto de cxp.gestionar; permite dar captura por
+            // QR a un usuario sin otorgarle toda la gestión de CxP.
+            'cxp.registrar_qr',
             'fel.ver',
             'fel.gestionar',
             'usuarios_compania.ver',

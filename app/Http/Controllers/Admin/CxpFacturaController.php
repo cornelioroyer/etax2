@@ -1455,7 +1455,7 @@ class CxpFacturaController extends Controller
 
     public function desdeCufe(Request $request): RedirectResponse
     {
-        abort_unless($request->user()->can('cxp.gestionar'), 403);
+        abort_unless($request->user()->canAny(['cxp.gestionar', 'cxp.registrar_qr']), 403);
         $companiaId = $this->companiaActivaId($request);
         $usuario    = $request->user();
 

@@ -93,7 +93,19 @@ class MenuBuilder
         }
 
         if ($fila->permiso) {
-            return $user->is_admin || $user->can($fila->permiso);
+            if ($user->is_admin) {
+                return true;
+            }
+
+            // El permiso puede declarar varias alternativas separadas por '|'
+            // (OR), igual que el middleware de Spatie. Visible si cumple alguna.
+            foreach (explode('|', $fila->permiso) as $permiso) {
+                if ($user->can(trim($permiso))) {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         return true;

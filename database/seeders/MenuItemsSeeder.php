@@ -81,7 +81,7 @@ class MenuItemsSeeder extends Seeder
                     ['clave' => 'compras.proveedores', 'etiqueta' => 'Proveedores', 'permiso' => 'contactos.ver', 'ruta_nombre' => 'admin.contactos.index', 'ruta_params' => ['tipo' => 'PROVEEDOR'], 'ruta_activa_patron' => 'admin.contactos.*', 'activa_query_key' => 'tipo', 'activa_query_val' => 'PROVEEDOR'],
                     ['clave' => 'compras.ordenes', 'etiqueta' => 'Órdenes de compra', 'permiso' => 'compras.ver', 'ruta_nombre' => 'admin.compras.ordenes.index', 'ruta_activa_patron' => 'admin.compras.ordenes.*'],
                     ['clave' => 'compras.facturas', 'etiqueta' => 'Facturas de compra', 'permiso' => 'cxp.ver', 'ruta_nombre' => 'admin.cxp.facturas.index', 'ruta_activa_patron' => 'admin.cxp.facturas.*'],
-                    ['clave' => 'compras.qr_cufe', 'etiqueta' => 'Registrar por QR / CUFE', 'permiso' => 'cxp.gestionar', 'ruta_nombre' => 'admin.cxp.facturas.desde-cufe.form', 'ruta_activa_patron' => 'admin.cxp.facturas.desde-cufe*'],
+                    ['clave' => 'compras.qr_cufe', 'etiqueta' => 'Registrar por QR / CUFE', 'permiso' => 'cxp.gestionar|cxp.registrar_qr', 'ruta_nombre' => 'admin.cxp.facturas.desde-cufe.form', 'ruta_activa_patron' => 'admin.cxp.facturas.desde-cufe*'],
                 ],
             ],
             [

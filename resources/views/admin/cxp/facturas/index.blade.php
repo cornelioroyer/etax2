@@ -18,10 +18,16 @@
                             class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
                         Importar saldos iniciales
                     </button>
+                @endcan
+                {{-- Registrar por QR: permiso granular propio, también disponible
+                     para quien solo tenga cxp.registrar_qr (sin toda la gestión de CxP). --}}
+                @canany(['cxp.gestionar', 'cxp.registrar_qr'])
                     <a href="{{ route('admin.cxp.facturas.desde-cufe.form') }}"
                        style="display:inline-flex;align-items:center;border-radius:0.375rem;border:1px solid #d1d5db;background:#fff;padding:0.5rem 1rem;font-size:0.875rem;font-weight:600;color:#374151;">
                         Registrar por QR
                     </a>
+                @endcanany
+                @can('cxp.gestionar')
                     <a href="{{ route('admin.cxp.facturas.create') }}"
                        class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
                         + Nueva factura

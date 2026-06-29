@@ -317,6 +317,17 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::get('cxp/recurrentes/{recurrente}', [CxpRecurrenteController::class, 'show'])->whereNumber('recurrente')->name('cxp.recurrentes.show');
     });
 
+    // Registrar factura de compra por QR/CUFE. Permiso granular propio
+    // (cxp.registrar_qr) ADEMÁS de cxp.gestionar: un usuario de captura puede
+    // escanear facturas (quedan en BORRADOR) sin tener toda la gestión de CxP.
+    // Contabilizarlas sigue requiriendo cxp.gestionar.
+    Route::middleware('permission:cxp.gestionar|cxp.registrar_qr')->group(function () {
+        Route::get('cxp/facturas/desde-cufe', [CxpFacturaController::class, 'desdeCufeForm'])->name('cxp.facturas.desde-cufe.form');
+        Route::post('cxp/facturas/desde-cufe', [CxpFacturaController::class, 'desdeCufe'])->name('cxp.facturas.desde-cufe');
+        Route::post('cxp/facturas/consultar-cufe', [CxpFacturaController::class, 'consultarCufe'])->name('cxp.facturas.consultar-cufe');
+        Route::post('cxp/facturas/cufe-desde-foto', [CxpFacturaController::class, 'cufeDesdeFoto'])->name('cxp.facturas.cufe-desde-foto');
+    });
+
     Route::middleware('permission:cxp.gestionar')->group(function () {
         // Facturas recurrentes (plantillas que generan facturas de compra BORRADOR por vencimiento)
         Route::get('cxp/recurrentes/nueva', [CxpRecurrenteController::class, 'create'])->name('cxp.recurrentes.create');
@@ -334,10 +345,6 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('cxp/notas/{documento}/contabilizar', [CxpNotaController::class, 'contabilizar'])->whereNumber('documento')->name('cxp.notas.contabilizar');
         Route::delete('cxp/notas/{documento}', [CxpNotaController::class, 'destroy'])->whereNumber('documento')->name('cxp.notas.destroy');
         Route::get('cxp/facturas/nueva', [CxpFacturaController::class, 'create'])->name('cxp.facturas.create');
-        Route::get('cxp/facturas/desde-cufe', [CxpFacturaController::class, 'desdeCufeForm'])->name('cxp.facturas.desde-cufe.form');
-        Route::post('cxp/facturas/desde-cufe', [CxpFacturaController::class, 'desdeCufe'])->name('cxp.facturas.desde-cufe');
-        Route::post('cxp/facturas/consultar-cufe', [CxpFacturaController::class, 'consultarCufe'])->name('cxp.facturas.consultar-cufe');
-        Route::post('cxp/facturas/cufe-desde-foto', [CxpFacturaController::class, 'cufeDesdeFoto'])->name('cxp.facturas.cufe-desde-foto');
         Route::get('cxp/facturas/{factura}/archivo', [CxpFacturaController::class, 'archivo'])->whereNumber('factura')->name('cxp.facturas.archivo');
         Route::post('cxp/facturas/importar', [CxpFacturaController::class, 'importar'])->name('cxp.facturas.importar');
         Route::get('cxp/facturas/importar/{importacion}/progreso', [CxpFacturaController::class, 'importarProgreso'])->whereNumber('importacion')->name('cxp.facturas.importar.progreso');
