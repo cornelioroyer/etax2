@@ -131,6 +131,12 @@
                                         </button>
                                     </form>
                                 @endunless
+                                @if (! empty($puedeDevolver))
+                                    <a href="{{ route('admin.cxp.facturas.devolucion', $factura) }}"
+                                       class="rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100">
+                                        Devolver al proveedor
+                                    </a>
+                                @endif
                                 <form method="POST" action="{{ route('admin.cxp.facturas.anular', $factura) }}"
                                       onsubmit="return confirm('¿Anular {{ $tipoLabelLow }} {{ $factura->numero }}? También se anulará su asiento contable.');">
                                     @csrf

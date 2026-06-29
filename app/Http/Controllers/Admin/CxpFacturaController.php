@@ -20,10 +20,12 @@ use App\Services\CalculoDocumento;
 use App\Models\CuentaContable;
 use App\Models\CuentaDefault;
 use App\Models\AfiActivo;
+use App\Models\CxpAplicacion;
 use App\Models\CxpDocumento;
 use App\Models\CxpDocumentoDetalle;
 use App\Models\CxpImportacion;
 use App\Models\InvAlmacen;
+use App\Models\InvExistencia;
 use App\Models\ItemProducto;
 use App\Models\TipoContacto;
 use App\Models\TipoDocumento;
@@ -31,6 +33,7 @@ use App\Services\AdjuntoService;
 use App\Services\AsientoAutomatico;
 use App\Services\DgiFepConsulta;
 use App\Services\InventarioCompras;
+use App\Services\InventarioVentas;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -275,11 +278,17 @@ class CxpFacturaController extends Controller
             ? $this->previsualizarAsiento($documento)
             : null;
 
+        // ¿Se puede ofrecer "Devolver al proveedor"? Factura contabilizada (cargo,
+        // no abono) con saldo pendiente y al menos un producto inventariable.
+        $puedeDevolver = $this->validarDevolucion($documento) === null
+            && ! empty($this->lineasDevolubles($documento, $this->almacenDevolucion($documento->compania_id)));
+
         return view('admin.cxp.facturas.show', [
             'factura'            => $documento,
             'activosPorDetalle'  => $activosPorDetalle,
             'puedeGestionarAdjuntos' => $request->user()->can('cxp.gestionar'),
             'previewAsiento'     => $previewAsiento,
+            'puedeDevolver'      => $puedeDevolver,
         ]);
     }
 
@@ -817,6 +826,313 @@ class CxpFacturaController extends Controller
             $factura->id,
             $usuario,
         );
+    }
+
+    /**
+     * Almacén de la devolución: el primer almacén activo (misma convención con que
+     * el inventario ENTRÓ al facturar/recepcionar). null si la compañía no tiene.
+     */
+    private function almacenDevolucion(int $companiaId): ?int
+    {
+        return InvAlmacen::where('compania_id', $companiaId)
+            ->where('activo', true)
+            ->orderBy('codigo')
+            ->value('id');
+    }
+
+    /**
+     * Verifica que la factura admita devolución de inventario. Devuelve un mensaje
+     * de error o null si procede. v1: solo cargos contabilizados con saldo pendiente.
+     */
+    private function validarDevolucion(CxpDocumento $documento): ?string
+    {
+        if ($documento->esBorrador()) {
+            return 'La factura está en borrador; contabilízala antes de devolver.';
+        }
+        if ($documento->esAnulado()) {
+            return 'La factura está anulada.';
+        }
+        if ($documento->esAbono()) {
+            return 'Una nota de crédito no admite devolución de inventario.';
+        }
+        if (round((float) $documento->saldo, 2) <= 0) {
+            return 'La factura no tiene saldo pendiente; la devolución (v1) se aplica reduciendo el saldo por pagar.';
+        }
+
+        return null;
+    }
+
+    /**
+     * Líneas de producto de la factura que pueden devolverse, con su costo de
+     * compra, ITBMS de la línea, existencia actual y el máximo devolvible
+     * (min entre lo comprado y lo disponible en stock).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function lineasDevolubles(CxpDocumento $documento, ?int $almacenId): array
+    {
+        if (! $almacenId) {
+            return [];
+        }
+
+        $documento->loadMissing('detalle');
+        $itemIds = $documento->detalle->pluck('item_id')->filter()->unique();
+        if ($itemIds->isEmpty()) {
+            return [];
+        }
+
+        $items = ItemProducto::whereIn('id', $itemIds)
+            ->where('compania_id', $documento->compania_id)
+            ->get(['id', 'codigo', 'nombre', 'tipo', 'cuenta_inventario_id'])
+            ->keyBy('id');
+
+        $existencias = InvExistencia::where('almacen_id', $almacenId)
+            ->whereIn('item_id', $itemIds)
+            ->get(['item_id', 'cantidad', 'costo_promedio'])
+            ->keyBy('item_id');
+
+        $lineas = [];
+        foreach ($documento->detalle as $d) {
+            if (! $d->item_id) {
+                continue;
+            }
+            $item = $items->get($d->item_id);
+            if (! $item || $item->tipo !== ItemProducto::TIPO_PRODUCTO) {
+                continue;
+            }
+            $cantidad = (float) $d->cantidad;
+            if ($cantidad <= 0) {
+                continue;
+            }
+            $base = round((float) $d->total_linea - (float) $d->impuesto_monto, 2);
+            $existencia = $existencias->get($d->item_id);
+            $disponible = (float) ($existencia->cantidad ?? 0);
+            $maxDevolver = round(min($cantidad, max(0.0, $disponible)), 4);
+            if ($maxDevolver <= 0) {
+                continue;
+            }
+
+            $lineas[] = [
+                'detalle_id'           => (int) $d->id,
+                'item_id'              => (int) $d->item_id,
+                'codigo'               => $item->codigo,
+                'nombre'               => $item->nombre,
+                'descripcion'          => $d->descripcion,
+                'cantidad'             => $cantidad,
+                'costo_compra'         => round($base / $cantidad, 4),
+                'itbms_linea'          => round((float) $d->impuesto_monto, 2),
+                'disponible'           => $disponible,
+                'max_devolver'         => $maxDevolver,
+                'costo_promedio'       => (float) ($existencia->costo_promedio ?? round($base / $cantidad, 4)),
+                'cuenta_inventario_id' => $item->cuenta_inventario_id,
+            ];
+        }
+
+        return $lineas;
+    }
+
+    /** Formulario guiado de devolución al proveedor (NC de CxP que devuelve stock). */
+    public function devolucionForm(Request $request, CxpDocumento $documento): View|RedirectResponse
+    {
+        $this->autorizarFactura($request, $documento);
+
+        if ($err = $this->validarDevolucion($documento)) {
+            return redirect()->route('admin.cxp.facturas.show', $documento)->withErrors(['documento' => $err]);
+        }
+
+        $almacenId = $this->almacenDevolucion($documento->compania_id);
+        $lineas = $this->lineasDevolubles($documento, $almacenId);
+
+        if (empty($lineas)) {
+            return redirect()->route('admin.cxp.facturas.show', $documento)
+                ->withErrors(['documento' => 'Esta factura no tiene productos inventariables con existencia para devolver.']);
+        }
+
+        return view('admin.cxp.facturas.devolucion', [
+            'factura' => $documento->load('proveedor'),
+            'lineas'  => $lineas,
+            'almacen' => InvAlmacen::find($almacenId),
+        ]);
+    }
+
+    /**
+     * Registra la devolución: crea una NOTA DE CRÉDITO de CxP aplicada a la factura
+     * (reduce el saldo por pagar) y mueve el inventario hacia AFUERA.
+     *
+     * Contabilidad (costeo promedio): Dr CxP (precio de compra + ITBMS, lo que el
+     * proveedor acredita) / Cr Inventario (al costo PROMEDIO vigente) / Cr ITBMS
+     * crédito / y la diferencia precio−promedio a GASTO_DEFAULT (variación de costo).
+     * Así el crédito a Inventario == baja de existencia (kárdex ≡ mayor).
+     */
+    public function devolucionStore(Request $request, CxpDocumento $documento): RedirectResponse
+    {
+        $this->autorizarFactura($request, $documento);
+        $companiaId = $documento->compania_id;
+        $usuario = $request->user();
+
+        if ($err = $this->validarDevolucion($documento)) {
+            return redirect()->route('admin.cxp.facturas.show', $documento)->withErrors(['documento' => $err]);
+        }
+
+        $data = $request->validate([
+            'fecha'               => ['required', 'date'],
+            'lineas'              => ['required', 'array', 'min:1'],
+            'lineas.*.detalle_id' => ['required', 'integer'],
+            'lineas.*.cantidad'   => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        $almacenId = $this->almacenDevolucion($companiaId);
+        if (! $almacenId) {
+            return back()->withErrors(['documento' => 'La compañía no tiene un almacén activo para mover el inventario.']);
+        }
+
+        $disponibles = collect($this->lineasDevolubles($documento, $almacenId))->keyBy('detalle_id');
+
+        // Filtra y valida lo que se devuelve.
+        $aDevolver = [];
+        foreach ($data['lineas'] as $l) {
+            $qty = round((float) ($l['cantidad'] ?? 0), 4);
+            if ($qty <= 0) {
+                continue;
+            }
+            $info = $disponibles->get((int) $l['detalle_id']);
+            if (! $info) {
+                throw ValidationException::withMessages(['lineas' => 'Una de las líneas no es devolvible.']);
+            }
+            if ($qty > $info['max_devolver'] + 0.0001) {
+                throw ValidationException::withMessages([
+                    'lineas' => "No puede devolver {$qty} de «{$info['nombre']}»: el máximo es {$info['max_devolver']} (entre lo comprado y la existencia).",
+                ]);
+            }
+            $aDevolver[] = $info + ['devolver' => $qty];
+        }
+
+        if (empty($aDevolver)) {
+            return back()->withErrors(['lineas' => 'Indique al menos una cantidad a devolver.']);
+        }
+
+        $cuentaCxpId   = CuentaDefault::idPara($companiaId, 'CXP');
+        $cuentaItbmsId = CuentaDefault::idPara($companiaId, 'ITBMS_CREDITO');
+        $cuentaInvDef  = CuentaDefault::idPara($companiaId, 'INVENTARIO');
+        $cuentaGastoId = CuentaDefault::idPara($companiaId, 'GASTO_DEFAULT');
+
+        if (! $cuentaCxpId) {
+            throw ValidationException::withMessages(['documento' => 'La compañía no tiene configurada la cuenta default CXP.']);
+        }
+
+        // Totales: base (precio de compra), ITBMS proporcional, inventario (promedio).
+        $totalBase = 0.0;
+        $totalItbms = 0.0;
+        $totalInv = 0.0;
+        $invPorCuenta = [];
+        foreach ($aDevolver as $d) {
+            $base  = round($d['costo_compra'] * $d['devolver'], 2);
+            $itbms = $d['cantidad'] > 0 ? round($d['itbms_linea'] * $d['devolver'] / $d['cantidad'], 2) : 0.0;
+            $inv   = round($d['costo_promedio'] * $d['devolver'], 2);
+            $cuentaInv = $d['cuenta_inventario_id'] ?? $cuentaInvDef;
+            if (! $cuentaInv) {
+                throw ValidationException::withMessages(['documento' => 'Falta la cuenta de inventario del ítem «'.$d['nombre'].'» y no hay default INVENTARIO.']);
+            }
+            $totalBase += $base;
+            $totalItbms += $itbms;
+            $totalInv += $inv;
+            $invPorCuenta[$cuentaInv] = round(($invPorCuenta[$cuentaInv] ?? 0) + $inv, 2);
+        }
+        $totalBase = round($totalBase, 2);
+        $totalItbms = round($totalItbms, 2);
+        $totalInv = round($totalInv, 2);
+        $total = round($totalBase + $totalItbms, 2);
+        $variacion = round($totalBase - $totalInv, 2);
+
+        if ($totalItbms > 0 && ! $cuentaItbmsId) {
+            throw ValidationException::withMessages(['documento' => 'La compañía no tiene configurada la cuenta default ITBMS_CREDITO.']);
+        }
+        if (abs($variacion) > 0.004 && ! $cuentaGastoId) {
+            throw ValidationException::withMessages(['documento' => 'La devolución tiene diferencia entre el precio de compra y el costo promedio, y falta la cuenta default GASTO_DEFAULT para registrarla.']);
+        }
+        if ($total > round((float) $documento->saldo, 2) + 0.004) {
+            throw ValidationException::withMessages([
+                'lineas' => 'El total de la devolución (B/. '.number_format($total, 2).') excede el saldo de la factura (B/. '.number_format((float) $documento->saldo, 2).').',
+            ]);
+        }
+
+        $nota = DB::transaction(function () use ($documento, $companiaId, $usuario, $data, $aDevolver, $almacenId, $cuentaCxpId, $cuentaItbmsId, $cuentaGastoId, $invPorCuenta, $totalBase, $totalItbms, $totalInv, $total, $variacion) {
+            $nota = CxpDocumento::create([
+                'compania_id'    => $companiaId,
+                'proveedor_id'   => $documento->proveedor_id,
+                'tipo_documento' => CxpDocumento::TIPO_NOTA_CREDITO,
+                'numero'         => CxpDocumento::siguienteNumeroNota($companiaId, CxpDocumento::TIPO_NOTA_CREDITO),
+                'fecha'          => $data['fecha'],
+                'subtotal'       => $totalBase,
+                'descuento'      => 0,
+                'impuesto'       => $totalItbms,
+                'total'          => $total,
+                'saldo'          => 0,
+                'estado'         => CxpDocumento::ESTADO_PAGADO,
+                'created_by'     => $usuario->email,
+            ]);
+
+            // Dr CxP (total) / Cr Inventario (promedio, por cuenta) / Cr ITBMS / variación.
+            $lineas = [[
+                'cuenta_id'   => $cuentaCxpId,
+                'contacto_id' => $documento->proveedor_id,
+                'descripcion' => "Devolución (NC {$nota->numero}) — factura {$documento->numero}",
+                'debito'      => $total,
+                'credito'     => 0,
+            ]];
+            foreach ($invPorCuenta as $cuentaInv => $monto) {
+                if ($monto > 0) {
+                    $lineas[] = ['cuenta_id' => (int) $cuentaInv, 'descripcion' => 'Inventario devuelto', 'debito' => 0, 'credito' => $monto];
+                }
+            }
+            if ($totalItbms > 0) {
+                $lineas[] = ['cuenta_id' => $cuentaItbmsId, 'descripcion' => "ITBMS devolución {$nota->numero}", 'debito' => 0, 'credito' => $totalItbms];
+            }
+            if (abs($variacion) > 0.004) {
+                $lineas[] = $variacion > 0
+                    ? ['cuenta_id' => $cuentaGastoId, 'descripcion' => 'Diferencia de costo en devolución', 'debito' => 0, 'credito' => $variacion]
+                    : ['cuenta_id' => $cuentaGastoId, 'descripcion' => 'Diferencia de costo en devolución', 'debito' => abs($variacion), 'credito' => 0];
+            }
+
+            $asiento = app(AsientoAutomatico::class)->postear(
+                $companiaId, $data['fecha'],
+                "Devolución de compra {$nota->numero} — ".($documento->proveedor->nombre ?? '')." (factura {$documento->numero})",
+                $nota->numero, $lineas, 'CXP', 'cxp_documentos', $nota->id, $usuario,
+            );
+            $nota->update(['asiento_id' => $asiento->id]);
+
+            // Aplica la NC a la factura (reduce su saldo).
+            CxpAplicacion::create([
+                'compania_id'         => $companiaId,
+                'proveedor_id'        => $documento->proveedor_id,
+                'documento_origen_id' => $nota->id,
+                'documento_destino_id' => $documento->id,
+                'fecha'               => $data['fecha'],
+                'monto_aplicado'      => $total,
+                'created_by'          => $usuario->email,
+            ]);
+            $documento->saldo = round((float) $documento->saldo - $total, 2);
+            $documento->estado = $documento->estadoSegunSaldo();
+            $documento->updated_by = $usuario->email;
+            $documento->save();
+
+            // Saca el inventario al costo PROMEDIO (sin asiento propio: ya va en el de la NC).
+            $detalleInv = array_map(fn ($d) => [
+                'item_id'        => $d['item_id'],
+                'cantidad'       => $d['devolver'],
+                'costo_unitario' => $d['costo_promedio'],
+            ], $aDevolver);
+
+            app(InventarioVentas::class)->registrar(
+                $companiaId, $almacenId, $data['fecha'], $detalleInv,
+                $asiento->id, 'cxp_documentos', $nota->id, $usuario,
+            );
+
+            return $nota;
+        });
+
+        return redirect()->route('admin.cxp.notas.show', $nota)
+            ->with('status', "Devolución registrada: nota de crédito {$nota->numero} aplicada a {$documento->numero}; inventario y CxP actualizados.");
     }
 
     /** Artículos activos de la compañía para el combobox de líneas de compra. */

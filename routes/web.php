@@ -353,6 +353,8 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::delete('cxp/facturas/{documento}', [CxpFacturaController::class, 'destroy'])->whereNumber('documento')->name('cxp.facturas.destroy');
         Route::post('cxp/facturas/{documento}/anular', [CxpFacturaController::class, 'anular'])->whereNumber('documento')->name('cxp.facturas.anular');
         Route::post('cxp/facturas/{documento}/corregir', [CxpFacturaController::class, 'corregir'])->whereNumber('documento')->name('cxp.facturas.corregir');
+        Route::get('cxp/facturas/{documento}/devolucion', [CxpFacturaController::class, 'devolucionForm'])->whereNumber('documento')->name('cxp.facturas.devolucion');
+        Route::post('cxp/facturas/{documento}/devolucion', [CxpFacturaController::class, 'devolucionStore'])->whereNumber('documento')->name('cxp.facturas.devolucion.store');
         Route::post('cxp/facturas/bulk', [CxpFacturaController::class, 'bulk'])->name('cxp.facturas.bulk');
         Route::get('cxp/pagos/importar/plantilla', [CxpPagoController::class, 'importarPlantilla'])->name('cxp.pagos.importar.plantilla');
         Route::post('cxp/pagos/importar', [CxpPagoController::class, 'importar'])->name('cxp.pagos.importar');

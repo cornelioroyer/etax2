@@ -13,6 +13,7 @@ use App\Models\CxpAplicacion;
 use App\Models\CxpDocumento;
 use App\Models\TaxImpuesto;
 use App\Services\AsientoAutomatico;
+use App\Services\InventarioVentas;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -492,6 +493,11 @@ class CxpNotaController extends Controller
             }
 
             app(AsientoAutomatico::class)->anular($documento->asiento, $usuario);
+
+            // Si la nota provino de una DEVOLUCIÓN de compra, movió inventario hacia
+            // afuera (SALIDA enlazada a esta nota). Anularla repone ese stock. Para
+            // las NC normales (sin movimiento de inventario) es un no-op.
+            app(InventarioVentas::class)->reversarPorDocumento('cxp_documentos', $documento->id, $usuario);
 
             $documento->update([
                 'estado' => CxpDocumento::ESTADO_ANULADO,
