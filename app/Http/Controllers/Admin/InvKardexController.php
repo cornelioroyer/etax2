@@ -6,6 +6,8 @@ use App\Http\Controllers\Concerns\ConCompaniaActiva;
 use App\Http\Controllers\Controller;
 use App\Models\InvAlmacen;
 use App\Models\ItemProducto;
+use App\Services\RecalculadorCostosInventario;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
@@ -237,5 +239,98 @@ class InvKardexController extends Controller
         $almacenes = InvAlmacen::where('compania_id', $companiaId)->where('activo', true)->orderBy('codigo')->get();
 
         return view('admin.inventario.kardex.index', compact('kardex', 'items', 'almacenes', 'itemId', 'almacenId', 'desde', 'hasta'));
+    }
+
+    /**
+     * Previsualiza (SOLO LECTURA) el recálculo de costos por promedio ponderado en
+     * orden de fecha para el filtro vigente (ítem/almacén). Devuelve el plan: qué
+     * salidas se corregirían, el estado final de existencias y el asiento de ajuste
+     * que se postearía. No muta nada.
+     */
+    public function recalcularPreview(Request $request, RecalculadorCostosInventario $recalc): JsonResponse
+    {
+        $companiaId = $this->companiaActivaId($request);
+        $itemId     = $request->integer('item_id') ?: null;
+        $almacenId  = $request->integer('almacen_id') ?: null;
+
+        $plan = $recalc->analizar($companiaId, $itemId, $almacenId);
+
+        return response()->json($this->resumenPlan($plan, $companiaId, $request->user(), $recalc));
+    }
+
+    /**
+     * Aplica el recálculo: corrige el costo grabado de las salidas, deja las
+     * existencias en su estado correcto y postea UN asiento de ajuste por la
+     * diferencia (sin tocar los asientos originales). Idempotente.
+     */
+    public function recalcularAplicar(Request $request, RecalculadorCostosInventario $recalc): JsonResponse
+    {
+        $companiaId = $this->companiaActivaId($request);
+        $itemId     = $request->integer('item_id') ?: null;
+        $almacenId  = $request->integer('almacen_id') ?: null;
+        $usuario    = $request->user();
+
+        $plan = $recalc->analizar($companiaId, $itemId, $almacenId);
+        if ($plan['sinCambios']) {
+            return response()->json(['sinCambios' => true, 'mensaje' => 'Los costos ya están correctos. No había nada que recalcular.']);
+        }
+
+        $fecha   = $recalc->fechaAjuste($companiaId, $plan, null, $usuario);
+        $asiento = DB::transaction(fn () => $recalc->aplicar($companiaId, $plan, $fecha, $usuario));
+
+        return response()->json([
+            'sinCambios' => false,
+            'corregidas' => count($plan['cambios']),
+            'asiento'    => $asiento ? ['numero' => $asiento->numero, 'fecha' => $fecha] : null,
+            'mensaje'    => $asiento
+                ? "Recalculado. Asiento de ajuste {$asiento->numero} posteado el {$fecha}."
+                : 'Recalculado: costos y existencias corregidos (sin asiento, neto cero).',
+        ]);
+    }
+
+    /**
+     * Arma un resumen JSON-amigable del plan de recálculo para la previsualización.
+     * Limita las existencias mostradas a los ítems que efectivamente se corrigen.
+     */
+    private function resumenPlan(array $plan, int $companiaId, $usuario, RecalculadorCostosInventario $recalc): array
+    {
+        if ($plan['sinCambios']) {
+            return ['sinCambios' => true, 'mensaje' => 'Los costos ya están correctos. No hay nada que recalcular.'];
+        }
+
+        $itemIds = array_values(array_unique(array_map(fn ($c) => $c->item_id, $plan['cambios'])));
+        $nombres = ItemProducto::whereIn('id', $itemIds)->pluck('codigo', 'id');
+        $fecha   = $recalc->fechaAjuste($companiaId, $plan, null, $usuario);
+
+        $existencias = array_values(array_filter(
+            $plan['existencias'],
+            fn ($e) => in_array($e['item_id'], $itemIds, true),
+        ));
+
+        return [
+            'sinCambios' => false,
+            'fecha'      => $fecha,
+            'neto'       => round(array_sum($plan['netoPorItem']), 2),
+            'cambios'    => array_map(fn ($c) => [
+                'fecha'       => substr((string) $c->fecha, 0, 10),
+                'documento'   => $c->doc,
+                'item'        => $nombres[$c->item_id] ?? (string) $c->item_id,
+                'cantidad'    => (float) $c->cantidad,
+                'costo_viejo' => (float) $c->costo_viejo,
+                'costo_nuevo' => (float) $c->costo_nuevo,
+                'delta'       => (float) $c->delta,
+            ], array_values($plan['cambios'])),
+            'existencias' => array_map(fn ($e) => [
+                'item'        => $nombres[$e['item_id']] ?? (string) $e['item_id'],
+                'cantidad'    => $e['cantidad'],
+                'prom_actual' => $e['costo_promedio_actual'],
+                'prom_nuevo'  => $e['costo_promedio'],
+            ], $existencias),
+            'asiento'    => array_map(fn ($l) => [
+                'descripcion' => $l['descripcion'],
+                'debito'      => (float) $l['debito'],
+                'credito'     => (float) $l['credito'],
+            ], array_values($plan['ajusteLineas'])),
+        ];
     }
 }

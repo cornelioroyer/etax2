@@ -195,6 +195,9 @@ Route::middleware(['auth', 'permission:usuarios_compania.gestionar'])->prefix('a
         ->parameters(['usuarios-compania' => 'user']);
     Route::get('usuarios-compania/{user}/permisos', [UsuarioCompaniaController::class, 'editarPermisos'])->name('usuarios-compania.permisos.edit');
     Route::put('usuarios-compania/{user}/permisos', [UsuarioCompaniaController::class, 'actualizarPermisos'])->name('usuarios-compania.permisos.update');
+    // Acceso GLOBAL (todas las compañías): el controlador exige is_admin.
+    Route::post('usuarios-compania-global', [UsuarioCompaniaController::class, 'storeGlobal'])->name('usuarios-compania.global.store');
+    Route::delete('usuarios-compania-global/{user}', [UsuarioCompaniaController::class, 'destroyGlobal'])->whereNumber('user')->name('usuarios-compania.global.destroy');
 });
 
 // Respaldos de la compañía: solo admin de la compañía (permiso respaldos.gestionar).
@@ -603,6 +606,9 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::middleware('permission:inventario.gestionar')->group(function () {
         Route::get('inventario/transferencias/nueva', [InvTransferenciaController::class, 'create'])->name('inventario.transferencias.create');
         Route::post('inventario/transferencias', [InvTransferenciaController::class, 'store'])->name('inventario.transferencias.store');
+        // Kardex: recálculo de costos por promedio ponderado por fecha (preview + aplicar).
+        Route::post('inventario/kardex/recalcular/preview', [InvKardexController::class, 'recalcularPreview'])->name('inventario.kardex.recalcular.preview');
+        Route::post('inventario/kardex/recalcular/aplicar', [InvKardexController::class, 'recalcularAplicar'])->name('inventario.kardex.recalcular.aplicar');
         // Lista de precios de items
         Route::post('items/{item}/precios', [ItemPrecioController::class, 'store'])->whereNumber('item')->name('items.precios.store');
         Route::put('items/{item}/precios/{precio}', [ItemPrecioController::class, 'update'])->whereNumber(['item', 'precio'])->name('items.precios.update');

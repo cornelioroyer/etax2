@@ -6,7 +6,9 @@ use App\Models\Asiento;
 use App\Models\CuentaDefault;
 use App\Models\InvExistencia;
 use App\Models\ItemProducto;
+use App\Models\PeriodoContable;
 use App\Models\User;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -48,14 +50,19 @@ class RecalculadorCostosInventario
      *   itemsSinCuenta: array<int, int>,
      *   sinCambios: bool
      * }
+     *
+     * @param  int|array<int,int>|null  $itemId  Un ítem, una lista de ítems, o null = todos.
      */
-    public function analizar(int $companiaId, ?int $itemId = null, ?int $almacenId = null): array
+    public function analizar(int $companiaId, int|array|null $itemId = null, ?int $almacenId = null): array
     {
+        // Normaliza el filtro de ítems: acepta un id, una lista o null (todos).
+        $itemIds = $itemId === null ? null : array_values(array_filter(array_map('intval', (array) $itemId)));
+
         $movs = DB::table('inv_movimientos_detalle as d')
             ->join('inv_movimientos as m', 'm.id', '=', 'd.movimiento_id')
             ->where('m.compania_id', $companiaId)
             ->where('m.estado', '!=', 'ANULADO')
-            ->when($itemId, fn ($q) => $q->where('d.item_id', $itemId))
+            ->when($itemIds, fn ($q) => $q->whereIn('d.item_id', $itemIds))
             ->when($almacenId, fn ($q) => $q->where('m.almacen_id', $almacenId))
             ->orderBy('m.fecha')->orderBy('m.id')->orderBy('d.id')
             ->get([
@@ -190,6 +197,23 @@ class RecalculadorCostosInventario
             'itemsSinCuenta' => array_values($itemsSinCuenta),
             'sinCambios'     => empty($cambios),
         ];
+    }
+
+    /**
+     * Fecha en que conviene postear el asiento de ajuste de un plan: la de la
+     * ÚLTIMA salida corregida (período donde el costo de ventas estuvo mal
+     * valuado) SI ese período está abierto; de lo contrario hoy. Evita intentar
+     * postear en un período cerrado (lo rechazaría AsientoAutomatico). Si el plan
+     * no corrige salidas, usa $fallback (o hoy).
+     */
+    public function fechaAjuste(int $companiaId, array $plan, ?string $fallback, $usuario): string
+    {
+        $fechas = array_map(fn ($c) => substr((string) $c->fecha, 0, 10), $plan['cambios']);
+        $ideal  = empty($fechas) ? ($fallback ?? now()->toDateString()) : max($fechas);
+
+        $periodo = PeriodoContable::paraFecha($companiaId, Carbon::parse($ideal), $usuario->email ?? null);
+
+        return $periodo->estaAbierto() ? $ideal : now()->toDateString();
     }
 
     /**
