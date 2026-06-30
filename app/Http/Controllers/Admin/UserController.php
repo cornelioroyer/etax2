@@ -164,7 +164,11 @@ class UserController extends Controller
 
         app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
 
-        return redirect()->route('admin.users.roles', $user)->with('status', 'Acceso a la compañía quitado.');
+        $reinstaurado = $user->garantizarRolMinimo();
+
+        return redirect()->route('admin.users.roles', $user)->with('status', $reinstaurado
+            ? 'Acceso a la compañía quitado. El usuario quedaba sin roles, así que se le reasignó el rol base «Usuario» en la compañía por defecto.'
+            : 'Acceso a la compañía quitado.');
     }
 
     /**
@@ -186,7 +190,11 @@ class UserController extends Controller
             app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
         }
 
-        return redirect()->route('admin.users.roles', $user)->with('status', 'Rol quitado.');
+        $reinstaurado = $user->garantizarRolMinimo();
+
+        return redirect()->route('admin.users.roles', $user)->with('status', $reinstaurado
+            ? 'Rol quitado. El usuario quedaba sin roles, así que se le reasignó el rol base «Usuario» en la compañía por defecto.'
+            : 'Rol quitado.');
     }
 
     /**
@@ -262,8 +270,12 @@ class UserController extends Controller
 
         app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
 
+        $reinstaurado = $user->garantizarRolMinimo();
+
         return redirect()->route('admin.users.companias', $user)
-            ->with('status', 'Compañía quitada del usuario.');
+            ->with('status', $reinstaurado
+                ? 'Compañía quitada del usuario. Quedaba sin roles, así que se le reasignó el rol base «Usuario» en la compañía por defecto.'
+                : 'Compañía quitada del usuario.');
     }
 
     /**

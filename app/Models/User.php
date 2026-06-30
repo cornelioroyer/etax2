@@ -54,6 +54,9 @@ class User extends Authenticatable
         ];
     }
 
+    /** Rol base mínimo: todo usuario debe conservar al menos este rol. */
+    public const ROL_BASE = 'usuario';
+
     /**
      * Garantiza que el usuario tenga acceso a la compañía por defecto
      * (rol "usuario" en la compañía 1) si aún no tiene ningún rol.
@@ -61,30 +64,46 @@ class User extends Authenticatable
      */
     public function asegurarAccesoDefault(int $companiaId = 1): void
     {
-        $yaTieneRol = DB::table('seg_usuarios_roles')
+        $this->garantizarRolMinimo($companiaId);
+    }
+
+    /**
+     * Invariante "rol mínimo": ningún usuario puede quedar SIN ningún rol.
+     * Si el usuario no tiene rol alguno —ni por compañía (seg_usuarios_roles)
+     * ni global (seg_usuarios_roles_globales)— se le reasigna el rol base
+     * "usuario" en la compañía por defecto. NO fuerza el rol base cuando el
+     * usuario ya tiene otro rol, de modo que respeta los roles restrictivos.
+     * Devuelve true si tuvo que reinstaurar el rol base.
+     * Llamar después de cualquier operación que quite roles.
+     */
+    public function garantizarRolMinimo(int $companiaDefault = 1): bool
+    {
+        $tieneRol = DB::table('seg_usuarios_roles')
             ->where('model_type', self::class)
             ->where('model_id', $this->id)
             ->exists();
 
-        if ($yaTieneRol) {
-            return;
+        if ($tieneRol || $this->tieneAsignacionGlobal()) {
+            return false;
         }
 
-        $rolId = DB::table('seg_roles')->where('name', 'usuario')->value('id');
-        $companiaExiste = DB::table('core_companias')->where('id', $companiaId)->exists();
+        $rolId = DB::table('seg_roles')->where('name', self::ROL_BASE)->value('id');
+        $companiaExiste = DB::table('core_companias')->where('id', $companiaDefault)->exists();
 
         if (! $rolId || ! $companiaExiste) {
-            return; // entorno sin datos (ej. tests) — no hay default que asignar
+            return false; // entorno sin datos (ej. tests) — no hay default que asignar
         }
 
         DB::table('seg_usuarios_roles')->insert([
             'rol_id' => $rolId,
             'model_type' => self::class,
             'model_id' => $this->id,
-            'compania_id' => $companiaId,
+            'compania_id' => $companiaDefault,
         ]);
 
         app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+
+        return true;
     }
 
     /**

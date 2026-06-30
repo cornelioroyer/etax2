@@ -97,8 +97,12 @@ class UsuarioCompaniaController extends Controller
         app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
         $user->olvidarPermisosGlobales();
 
+        $reinstaurado = $user->garantizarRolMinimo();
+
         return redirect()->route('admin.usuarios-compania.index')
-            ->with('status', "Acceso global de {$user->email} eliminado.");
+            ->with('status', $reinstaurado
+                ? "Acceso global de {$user->email} eliminado. Quedaba sin roles, así que se le reasignó el rol base «Usuario» en la compañía por defecto."
+                : "Acceso global de {$user->email} eliminado.");
     }
 
     /**
@@ -190,8 +194,14 @@ class UsuarioCompaniaController extends Controller
             ->where('compania_id', $compania->id)
             ->delete();
 
+        app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $reinstaurado = $user->garantizarRolMinimo();
+
         return redirect()->route('admin.usuarios-compania.index')
-            ->with('status', "Acceso de {$user->email} a {$compania->nombre} eliminado.");
+            ->with('status', $reinstaurado
+                ? "Acceso de {$user->email} a {$compania->nombre} eliminado. Quedaba sin roles, así que se le reasignó el rol base «Usuario» en la compañía por defecto."
+                : "Acceso de {$user->email} a {$compania->nombre} eliminado.");
     }
 
     /**
