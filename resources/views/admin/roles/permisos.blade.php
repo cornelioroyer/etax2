@@ -44,9 +44,15 @@
 
                 <div class="space-y-6">
                     @foreach ($matriz as $grupo)
-                        <div class="rounded-lg bg-white shadow-sm overflow-hidden">
-                            <div class="bg-gray-100 px-4 py-2 border-b border-gray-200">
+                        <div class="rounded-lg bg-white shadow-sm overflow-hidden" data-grupo-permisos>
+                            <div class="bg-gray-100 px-4 py-2 border-b border-gray-200 flex items-center justify-between gap-4">
                                 <h3 class="text-sm font-bold text-gray-700">{{ $grupo['titulo'] }}</h3>
+                                <label class="inline-flex items-center gap-2 text-xs font-medium text-gray-600 cursor-pointer select-none">
+                                    <input type="checkbox" data-grupo-todos
+                                           title="Marcar/desmarcar todos los permisos de este grupo"
+                                           class="h-4 w-4 rounded border-gray-400 text-indigo-600 focus:ring-indigo-500">
+                                    Todo el grupo
+                                </label>
                             </div>
                             <div class="overflow-x-auto">
                                 <table class="min-w-full text-sm">
@@ -130,13 +136,52 @@
                 todos.addEventListener('change', function () {
                     checks.forEach(function (c) { c.checked = todos.checked; });
                     todos.indeterminate = false;
+                    fila.dispatchEvent(new CustomEvent('permisos:cambio', { bubbles: true }));
                 });
 
                 checks.forEach(function (c) {
-                    c.addEventListener('change', sincronizarTodos);
+                    c.addEventListener('change', function () {
+                        sincronizarTodos();
+                        fila.dispatchEvent(new CustomEvent('permisos:cambio', { bubbles: true }));
+                    });
                 });
 
                 sincronizarTodos();
+            });
+
+            // Toggle a nivel de grupo: marca/desmarca todos los permisos de la tarjeta.
+            document.querySelectorAll('[data-grupo-permisos]').forEach(function (grupo) {
+                var todos  = grupo.querySelector('input[data-grupo-todos]');
+                var checks = grupo.querySelectorAll('input[data-permiso]');
+                var filas  = grupo.querySelectorAll('input[data-todos]');
+
+                if (! todos) {
+                    return;
+                }
+
+                // Sin acciones marcables en todo el grupo: deshabilita el toggle.
+                if (checks.length === 0) {
+                    todos.disabled = true;
+                    return;
+                }
+
+                function sincronizarGrupo() {
+                    var marcadas = Array.prototype.filter.call(checks, function (c) { return c.checked; }).length;
+                    todos.checked       = marcadas === checks.length;
+                    todos.indeterminate = marcadas > 0 && marcadas < checks.length;
+                }
+
+                todos.addEventListener('change', function () {
+                    checks.forEach(function (c) { c.checked = todos.checked; });
+                    // Sincroniza también los "Todos" por fila.
+                    filas.forEach(function (f) { f.checked = todos.checked; f.indeterminate = false; });
+                    todos.indeterminate = false;
+                });
+
+                // Cuando cambia cualquier permiso/fila del grupo, recalcula el toggle de grupo.
+                grupo.addEventListener('permisos:cambio', sincronizarGrupo);
+
+                sincronizarGrupo();
             });
         });
     </script>
