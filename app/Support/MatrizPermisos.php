@@ -77,6 +77,24 @@ class MatrizPermisos
             ];
         }
 
+        // Secciones y, dentro de cada una, sus opciones ordenadas alfabéticamente
+        // (plegando acentos/ñ para un orden correcto en español sin depender de la
+        // extensión intl).
+        foreach ($grupos as &$grupo) {
+            usort($grupo['opciones'], fn ($a, $b) => strcmp(self::claveOrden($a['etiqueta']), self::claveOrden($b['etiqueta'])));
+        }
+        unset($grupo);
+
+        uasort($grupos, fn ($a, $b) => strcmp(self::claveOrden($a['titulo']), self::claveOrden($b['titulo'])));
+
         return array_values($grupos);
+    }
+
+    /** Normaliza un título para ordenar: minúsculas y acentos/ñ plegados. */
+    private static function claveOrden(string $titulo): string
+    {
+        return strtr(mb_strtolower($titulo, 'UTF-8'), [
+            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u', 'ñ' => 'nz',
+        ]);
     }
 }
