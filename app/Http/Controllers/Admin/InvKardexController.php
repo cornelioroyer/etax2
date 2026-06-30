@@ -271,20 +271,31 @@ class InvKardexController extends Controller
         $usuario    = $request->user();
 
         $plan = $recalc->analizar($companiaId, $itemId, $almacenId);
+        $noReconciliables = $this->resumenNoReconciliables($plan);
         if ($plan['sinCambios']) {
-            return response()->json(['sinCambios' => true, 'mensaje' => 'Los costos ya están correctos. No había nada que recalcular.']);
+            return response()->json([
+                'sinCambios'       => true,
+                'mensaje'          => 'Los costos ya están correctos. No había nada que recalcular.',
+                'noReconciliables' => $noReconciliables,
+            ]);
         }
 
         $fecha   = $recalc->fechaAjuste($companiaId, $plan, null, $usuario);
         $asiento = DB::transaction(fn () => $recalc->aplicar($companiaId, $plan, $fecha, $usuario));
 
+        $mensaje = $asiento
+            ? "Recalculado. Asiento de ajuste {$asiento->numero} posteado el {$fecha}."
+            : 'Recalculado: costos y existencias corregidos (sin asiento, neto cero).';
+        if (! empty($noReconciliables)) {
+            $mensaje .= ' '.count($noReconciliables).' ítem(s) con historial incompleto no se tocaron (revisar manualmente).';
+        }
+
         return response()->json([
-            'sinCambios' => false,
-            'corregidas' => count($plan['cambios']),
-            'asiento'    => $asiento ? ['numero' => $asiento->numero, 'fecha' => $fecha] : null,
-            'mensaje'    => $asiento
-                ? "Recalculado. Asiento de ajuste {$asiento->numero} posteado el {$fecha}."
-                : 'Recalculado: costos y existencias corregidos (sin asiento, neto cero).',
+            'sinCambios'       => false,
+            'corregidas'       => count($plan['cambios']),
+            'asiento'          => $asiento ? ['numero' => $asiento->numero, 'fecha' => $fecha] : null,
+            'mensaje'          => $mensaje,
+            'noReconciliables' => $noReconciliables,
         ]);
     }
 
@@ -294,8 +305,14 @@ class InvKardexController extends Controller
      */
     private function resumenPlan(array $plan, int $companiaId, $usuario, RecalculadorCostosInventario $recalc): array
     {
+        $noReconciliables = $this->resumenNoReconciliables($plan);
+
         if ($plan['sinCambios']) {
-            return ['sinCambios' => true, 'mensaje' => 'Los costos ya están correctos. No hay nada que recalcular.'];
+            return [
+                'sinCambios'       => true,
+                'mensaje'          => 'Los costos ya están correctos. No hay nada que recalcular.',
+                'noReconciliables' => $noReconciliables,
+            ];
         }
 
         $itemIds = array_values(array_unique(array_map(fn ($c) => $c->item_id, $plan['cambios'])));
@@ -331,6 +348,24 @@ class InvKardexController extends Controller
                 'debito'      => (float) $l['debito'],
                 'credito'     => (float) $l['credito'],
             ], array_values($plan['ajusteLineas'])),
+            'noReconciliables' => $noReconciliables,
         ];
+    }
+
+    /**
+     * Resume, con código de ítem legible, los pares (item, almacén) que el
+     * recálculo no pudo verificar automáticamente (saldo sin AJUSTE que lo
+     * respalde) — ver RecalculadorCostosInventario::analizar().
+     */
+    private function resumenNoReconciliables(array $plan): array
+    {
+        $itemIds = array_column($plan['noReconciliables'], 'item_id');
+        $nombres = ItemProducto::whereIn('id', $itemIds)->pluck('codigo', 'id');
+
+        return array_map(fn ($n) => [
+            'item'               => $nombres[$n['item_id']] ?? (string) $n['item_id'],
+            'cantidad_actual'    => $n['cantidad_actual'],
+            'cantidad_calculada' => $n['cantidad_calculada'],
+        ], $plan['noReconciliables']);
     }
 }

@@ -141,6 +141,24 @@
                                         </div>
                                     </div>
                                 </template>
+
+                                {{-- Ítems con historial de movimientos incompleto: la salvaguarda de
+                                     RecalculadorCostosInventario los excluyó del plan (no se tocan) en
+                                     vez de pisar su saldo a ciegas. Se muestra sin importar sinCambios. --}}
+                                <template x-if="data && data.noReconciliables && data.noReconciliables.length">
+                                    <div class="mt-4 rounded-md p-3 text-xs" style="background-color:#fef3c7;color:#92400e">
+                                        <p class="font-semibold mb-1">Atención: ítems con historial de movimientos incompleto (no se tocaron, requieren revisión manual)</p>
+                                        <ul class="list-disc list-inside">
+                                            <template x-for="(n,i) in data.noReconciliables" :key="i">
+                                                <li>
+                                                    <span x-text="n.item"></span>:
+                                                    existencia actual <span x-text="fmt(n.cantidad_actual)"></span>,
+                                                    según movimientos <span x-text="fmt(n.cantidad_calculada)"></span>
+                                                </li>
+                                            </template>
+                                        </ul>
+                                    </div>
+                                </template>
                             </div>
 
                             <div class="flex justify-end gap-2 px-5 py-3 border-t bg-gray-50">

@@ -48,15 +48,30 @@ class RecalcularCostosInventario extends Command
 
         $plan = $recalc->analizar($companiaId, $itemId, $almacenId);
 
+        // Etiquetas para el reporte (incluye ítems no reconciliables, que pueden
+        // quedar fuera de netoPorItem si sinCambios termina siendo true).
+        $itemNombres = ItemProducto::whereIn('id', array_unique(array_merge(
+            array_keys($plan['netoPorItem']),
+            array_column($plan['noReconciliables'], 'item_id'),
+        )))->pluck('codigo', 'id');
+
+        if (! empty($plan['noReconciliables'])) {
+            $this->warn('Ítems con historial de movimientos incompleto (NO se tocaron; revisar manualmente):');
+            $this->table(
+                ['ítem', 'almacén', 'cantidad actual', 'cantidad según movimientos'],
+                array_map(fn ($n) => [
+                    $itemNombres[$n['item_id']] ?? $n['item_id'], $n['almacen_id'],
+                    number_format($n['cantidad_actual'], 4), number_format($n['cantidad_calculada'], 4),
+                ], $plan['noReconciliables']),
+            );
+            $this->line('');
+        }
+
         if ($plan['sinCambios']) {
             $this->info('Sin diferencias: los costos de salida ya están correctos. Nada que hacer.');
 
             return self::SUCCESS;
         }
-
-        // Etiquetas para el reporte.
-        $itemNombres = ItemProducto::whereIn('id', array_keys($plan['netoPorItem']))
-            ->pluck('codigo', 'id');
 
         $this->line('');
         $this->line('<comment>Salidas a corregir:</comment>');

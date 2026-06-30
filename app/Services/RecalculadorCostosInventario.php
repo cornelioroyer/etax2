@@ -10,6 +10,7 @@ use App\Models\PeriodoContable;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Recalcula el costo de las SALIDAS de inventario por PROMEDIO PONDERADO en
@@ -34,6 +35,16 @@ use Illuminate\Support\Facades\DB;
  * salidas descargan al promedio vigente y no lo cambian); por eso recalcular el
  * orden de las entradas frente a las salidas corrige tanto el costo de cada
  * salida como el promedio final.
+ *
+ * SALVAGUARDA: el replay asume que TODA la cantidad de `inv_existencias` está
+ * respaldada por `inv_movimientos` (arranca cada par item/almacén en 0/0). Si
+ * un ítem tiene saldo que nunca se registró como movimiento (saldo inicial
+ * migrado/sembrado directo en inv_existencias) y su historial no tiene un
+ * AJUSTE que ancle el reinicio, el replay jamás cuadrará con la realidad.
+ * `analizar()` detecta ese descuadre y EXCLUYE el ítem/almacén del plan (no
+ * toca su existencia ni el costo de sus salidas) en vez de pisarlo con un
+ * resultado incompleto; lo reporta en `noReconciliables` y registra un
+ * Log::warning para revisión manual.
  */
 class RecalculadorCostosInventario
 {
@@ -48,6 +59,7 @@ class RecalculadorCostosInventario
      *   ajusteLineas: array<int, array{cuenta_id:int, descripcion:string, debito:float, credito:float}>,
      *   netoPorItem: array<int, float>,
      *   itemsSinCuenta: array<int, int>,
+     *   noReconciliables: array<int, array{item_id:int, almacen_id:int, cantidad_actual:float, cantidad_calculada:float}>,
      *   sinCambios: bool
      * }
      *
@@ -71,8 +83,9 @@ class RecalculadorCostosInventario
                 'd.item_id', 'm.almacen_id', 'd.cantidad', 'd.costo_unitario',
             ]);
 
-        $estado  = []; // key => ['qty'=>, 'prom'=>]
-        $cambios = [];
+        $estado      = []; // key => ['qty'=>, 'prom'=>]
+        $cambios     = [];
+        $tieneAjuste = []; // key => true si el trail tiene un AJUSTE (ancla de reset confiable)
 
         foreach ($movs as $r) {
             $key   = $r->item_id.'|'.$r->almacen_id;
@@ -106,7 +119,10 @@ class RecalculadorCostosInventario
                     break;
 
                 case 'AJUSTE':
-                    // El ajuste fija cantidad y costo absolutos.
+                    // El ajuste fija cantidad y costo absolutos: ancla confiable que
+                    // resincroniza el replay con la realidad física sin importar lo que
+                    // haya antes (ver salvaguarda de "no reconciliables" más abajo).
+                    $tieneAjuste[$key] = true;
                     $st['qty']  = round($cant, 4);
                     $st['prom'] = $costo;
                     break;
@@ -124,18 +140,65 @@ class RecalculadorCostosInventario
             $estado[$key] = $st;
         }
 
+        // Existencias actuales de los pares tocados por el replay, en UNA sola
+        // consulta (se reutiliza para detectar saldos no respaldados y para el
+        // costo promedio vigente que se informa en el plan).
+        $itemIdsEstado    = array_values(array_unique(array_map(fn ($k) => (int) explode('|', $k)[0], array_keys($estado))));
+        $almacenIdsEstado = array_values(array_unique(array_map(fn ($k) => (int) explode('|', $k)[1], array_keys($estado))));
+        $existenciasActuales = empty($itemIdsEstado) ? collect() : InvExistencia::whereIn('item_id', $itemIdsEstado)
+            ->whereIn('almacen_id', $almacenIdsEstado)
+            ->get(['item_id', 'almacen_id', 'cantidad', 'costo_promedio'])
+            ->keyBy(fn ($e) => $e->item_id.'|'.$e->almacen_id);
+
+        // Salvaguarda: un ítem/almacén sin AJUSTE que ancle su historial DEBE
+        // reproducir exactamente la cantidad real (sumar entradas/salidas es
+        // conmutativo, así que el orden de fecha nunca cambia el total — solo el
+        // costo). Si no cuadra, es que `inv_movimientos` no captura toda la
+        // historia (típico de saldo inicial migrado/sembrado directo en
+        // inv_existencias). Se excluye ese ítem/almacén del plan en vez de pisar
+        // su saldo a ciegas.
+        $noReconciliables = [];
+        foreach (array_keys($estado) as $key) {
+            if (! empty($tieneAjuste[$key])) {
+                continue;
+            }
+            $actual = $existenciasActuales->get($key);
+            if (! $actual) {
+                continue; // no hay existencia real que proteger
+            }
+            if (abs((float) $actual->cantidad - $estado[$key]['qty']) > 0.001) {
+                [$iid, $aid] = array_map('intval', explode('|', $key));
+                $noReconciliables[$key] = [
+                    'item_id'            => $iid,
+                    'almacen_id'         => $aid,
+                    'cantidad_actual'    => (float) $actual->cantidad,
+                    'cantidad_calculada' => round($estado[$key]['qty'], 4),
+                ];
+                unset($estado[$key]);
+            }
+        }
+        if (! empty($noReconciliables)) {
+            Log::warning('RecalculadorCostosInventario: existencias con historial de movimientos incompleto, no se auto-reconciliaron', [
+                'compania_id' => $companiaId,
+                'items'       => array_values($noReconciliables),
+            ]);
+            $cambios = array_values(array_filter(
+                $cambios,
+                fn ($c) => ! isset($noReconciliables[$c->item_id.'|'.$c->almacen_id]),
+            ));
+        }
+
         // Estado final por (item, almacén) → objetivo para inv_existencias.
         $existencias = [];
         foreach ($estado as $key => $st) {
             [$iid, $aid] = array_map('intval', explode('|', $key));
-            $actual = InvExistencia::where('almacen_id', $aid)->where('item_id', $iid)
-                ->value('costo_promedio');
+            $actual = $existenciasActuales->get($key);
             $existencias[$key] = [
                 'item_id'               => $iid,
                 'almacen_id'            => $aid,
                 'cantidad'              => round($st['qty'], 4),
                 'costo_promedio'        => round($st['prom'], 4),
-                'costo_promedio_actual' => $actual !== null ? (float) $actual : null,
+                'costo_promedio_actual' => $actual !== null ? (float) $actual->costo_promedio : null,
             ];
         }
 
@@ -190,12 +253,13 @@ class RecalculadorCostosInventario
         }
 
         return [
-            'cambios'        => $cambios,
-            'existencias'    => $existencias,
-            'ajusteLineas'   => $ajusteLineas,
-            'netoPorItem'    => $netoPorItem,
-            'itemsSinCuenta' => array_values($itemsSinCuenta),
-            'sinCambios'     => empty($cambios),
+            'cambios'          => $cambios,
+            'existencias'      => $existencias,
+            'ajusteLineas'     => $ajusteLineas,
+            'netoPorItem'      => $netoPorItem,
+            'itemsSinCuenta'   => array_values($itemsSinCuenta),
+            'noReconciliables' => array_values($noReconciliables),
+            'sinCambios'       => empty($cambios),
         ];
     }
 
