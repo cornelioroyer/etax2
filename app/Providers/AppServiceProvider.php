@@ -54,11 +54,24 @@ class AppServiceProvider extends ServiceProvider
             // (con rol o sin él) puede ver el módulo Compañías y crear una
             // compañía nueva, quedando como admin_compania de ella (ver
             // CompaniaController::store). Decisión de producto: no depende del
-            // rol ni de la matriz de permisos. Solo se conceden estas dos
-            // habilidades; eliminar/editar compañías y zonas siguen restringidos.
+            // rol ni de la matriz de permisos. Solo se conceden lectura y crear;
+            // eliminar/editar compañías y zonas siguen restringidos.
             // Crear no modifica datos de otra compañía y el directorio sigue
             // filtrado a las compañías accesibles (CompaniaController::index).
+            //
+            // Se cubren AMBOS modelos de permisos porque el enforcement nuevo
+            // (AutorizarOpcion, global sobre el grupo web) consulta los abilities
+            // por opción × acción, no los viejos:
+            //   - viejo:  companias.ver | companias.crear
+            //   - nuevo:  companias.*.acceder (ver directorio/formulario) y
+            //             companias.crear.insertar (crear).
+            // Quedan FUERA .actualizar/.borrar/.exportar/.imprimir y el reservado
+            // companias.eliminar (no terminan en .acceder ni son el insert de crear).
             if ($ability === 'companias.crear' || $ability === 'companias.ver') {
+                return true;
+            }
+            if (str_starts_with($ability, 'companias.')
+                && (str_ends_with($ability, '.acceder') || $ability === 'companias.crear.insertar')) {
                 return true;
             }
 

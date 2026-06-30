@@ -147,6 +147,13 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     Route::get('users/{user}/roles', [UserController::class, 'roles'])->whereNumber('user')->name('users.roles');
     Route::post('users/{user}/roles', [UserController::class, 'asignarRol'])->whereNumber('user')->name('users.roles.asignar');
     Route::delete('users/{user}/roles/{compania}', [UserController::class, 'quitarRol'])->whereNumber('user')->whereNumber('compania')->name('users.roles.quitar');
+    // Quitar UN rol puntual de una compañía (conserva los demás roles de esa compañía).
+    Route::delete('users/{user}/roles/{compania}/{rol}', [UserController::class, 'quitarUnRol'])->whereNumber('user')->whereNumber('compania')->name('users.roles.quitar-rol');
+
+    // Compañías del usuario: pantalla dedicada de alta/baja de acceso (super_admin).
+    Route::get('users/{user}/companias', [UserController::class, 'companias'])->whereNumber('user')->name('users.companias');
+    Route::post('users/{user}/companias', [UserController::class, 'agregarCompania'])->whereNumber('user')->name('users.companias.agregar');
+    Route::delete('users/{user}/companias/{compania}', [UserController::class, 'quitarCompania'])->whereNumber('user')->whereNumber('compania')->name('users.companias.quitar');
 
     // Catálogo de roles globales (solo super_admin).
     Route::resource('roles', RoleController::class)->except(['show']);

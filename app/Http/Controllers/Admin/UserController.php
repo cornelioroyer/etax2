@@ -80,13 +80,23 @@ class UserController extends Controller
      */
     public function roles(User $user): View
     {
+        // Un usuario puede tener VARIOS roles en la misma compañía: se agrupan
+        // por compañía y cada grupo lleva su lista de roles.
         $rolesPorCompania = DB::table('seg_usuarios_roles')
             ->join('seg_roles', 'seg_roles.id', '=', 'seg_usuarios_roles.rol_id')
             ->join('core_companias', 'core_companias.id', '=', 'seg_usuarios_roles.compania_id')
             ->where('seg_usuarios_roles.model_type', User::class)
             ->where('seg_usuarios_roles.model_id', $user->id)
             ->orderBy('core_companias.nombre')
-            ->get(['core_companias.id as compania_id', 'core_companias.nombre as compania', 'seg_roles.name as rol']);
+            ->orderBy('seg_roles.name')
+            ->get(['core_companias.id as compania_id', 'core_companias.nombre as compania', 'seg_roles.name as rol'])
+            ->groupBy('compania_id')
+            ->map(fn ($grupo) => (object) [
+                'compania_id' => $grupo->first()->compania_id,
+                'compania'    => $grupo->first()->compania,
+                'roles'       => $grupo->pluck('rol')->all(),
+            ])
+            ->values();
 
         $rolesGlobales = DB::table('seg_usuarios_roles_globales')
             ->join('seg_roles', 'seg_roles.id', '=', 'seg_usuarios_roles_globales.rol_id')
@@ -111,10 +121,14 @@ class UserController extends Controller
     }
 
     /**
-     * Asigna (o cambia) el rol de un usuario en UNA compañía. Como aquí el
-     * super_admin opera sobre cualquier compañía (no solo la activa), se inserta
-     * directo en seg_usuarios_roles —mismo patrón que User::asegurarAccesoDefault—
-     * en vez de syncRoles, que actúa sobre el "team" (compañía) activo de Spatie.
+     * Agrega un rol a un usuario en UNA compañía. ADITIVO: un usuario puede
+     * acumular varios roles en la misma compañía (sus permisos se UNEN). Como
+     * aquí el super_admin opera sobre cualquier compañía (no solo la activa), se
+     * inserta directo en seg_usuarios_roles —mismo patrón que
+     * User::asegurarAccesoDefault— en vez de syncRoles, que actúa sobre el
+     * "team" (compañía) activo de Spatie. insertOrIgnore respeta la PK compuesta
+     * (compania_id, rol_id, model_id, model_type): re-asignar el mismo rol no
+     * duplica ni falla.
      */
     public function asignarRol(Request $request, User $user): RedirectResponse
     {
@@ -125,21 +139,12 @@ class UserController extends Controller
 
         $rolId = DB::table('seg_roles')->whereNull('compania_id')->where('name', $data['rol'])->value('id');
 
-        DB::transaction(function () use ($user, $data, $rolId) {
-            // Un solo rol por compañía: se reemplaza el anterior si existía.
-            DB::table('seg_usuarios_roles')
-                ->where('model_type', User::class)
-                ->where('model_id', $user->id)
-                ->where('compania_id', $data['compania_id'])
-                ->delete();
-
-            DB::table('seg_usuarios_roles')->insert([
-                'rol_id'      => $rolId,
-                'model_type'  => User::class,
-                'model_id'    => $user->id,
-                'compania_id' => $data['compania_id'],
-            ]);
-        });
+        DB::table('seg_usuarios_roles')->insertOrIgnore([
+            'rol_id'      => $rolId,
+            'model_type'  => User::class,
+            'model_id'    => $user->id,
+            'compania_id' => $data['compania_id'],
+        ]);
 
         app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
 
@@ -147,7 +152,7 @@ class UserController extends Controller
     }
 
     /**
-     * Quita el acceso (rol) de un usuario en una compañía concreta.
+     * Quita TODOS los roles de un usuario en una compañía (revoca el acceso).
      */
     public function quitarRol(Request $request, User $user, int $compania): RedirectResponse
     {
@@ -160,6 +165,105 @@ class UserController extends Controller
         app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
 
         return redirect()->route('admin.users.roles', $user)->with('status', 'Acceso a la compañía quitado.');
+    }
+
+    /**
+     * Quita UN rol puntual de un usuario en una compañía, conservando los demás
+     * roles que tenga en esa misma compañía.
+     */
+    public function quitarUnRol(Request $request, User $user, int $compania, string $rol): RedirectResponse
+    {
+        $rolId = DB::table('seg_roles')->whereNull('compania_id')->where('name', $rol)->value('id');
+
+        if ($rolId) {
+            DB::table('seg_usuarios_roles')
+                ->where('model_type', User::class)
+                ->where('model_id', $user->id)
+                ->where('compania_id', $compania)
+                ->where('rol_id', $rolId)
+                ->delete();
+
+            app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+        }
+
+        return redirect()->route('admin.users.roles', $user)->with('status', 'Rol quitado.');
+    }
+
+    /**
+     * Pantalla dedicada a las COMPAÑÍAS de un usuario (alta/baja de acceso sin
+     * el detalle de roles). "Tener acceso a una compañía" = tener al menos un
+     * rol en seg_usuarios_roles con ese compania_id. El detalle fino de roles
+     * se administra en la pantalla de Roles.
+     */
+    public function companias(User $user): View
+    {
+        $companiasConAcceso = DB::table('seg_usuarios_roles')
+            ->join('core_companias', 'core_companias.id', '=', 'seg_usuarios_roles.compania_id')
+            ->where('seg_usuarios_roles.model_type', User::class)
+            ->where('seg_usuarios_roles.model_id', $user->id)
+            ->whereNotNull('seg_usuarios_roles.compania_id')
+            ->distinct()
+            ->orderBy('core_companias.nombre')
+            ->get(['core_companias.id as compania_id', 'core_companias.nombre as compania']);
+
+        // Compañías a las que el usuario AÚN no tiene acceso (para el alta).
+        $idsAsignadas = $companiasConAcceso->pluck('compania_id')->all();
+        $companiasDisponibles = Compania::query()
+            ->when($idsAsignadas, fn ($q) => $q->whereNotIn('id', $idsAsignadas))
+            ->orderBy('nombre')
+            ->get(['id', 'nombre']);
+
+        return view('admin.users.companias', [
+            'user'                  => $user,
+            'companiasConAcceso'    => $companiasConAcceso,
+            'companiasDisponibles'  => $companiasDisponibles,
+            'tieneAsignacionGlobal' => $user->tieneAsignacionGlobal(),
+        ]);
+    }
+
+    /**
+     * Da acceso a UNA compañía otorgando el rol base "usuario". Mismo patrón
+     * que asignarRol/asegurarAccesoDefault: insertOrIgnore respeta la PK
+     * compuesta, así que re-agregar no duplica ni falla. Para más permisos, se
+     * ajustan los roles en la pantalla de Roles.
+     */
+    public function agregarCompania(Request $request, User $user): RedirectResponse
+    {
+        $data = $request->validate([
+            'compania_id' => ['required', 'integer', 'exists:core_companias,id'],
+        ]);
+
+        $rolId = DB::table('seg_roles')->whereNull('compania_id')->where('name', 'usuario')->value('id');
+
+        DB::table('seg_usuarios_roles')->insertOrIgnore([
+            'rol_id'      => $rolId,
+            'model_type'  => User::class,
+            'model_id'    => $user->id,
+            'compania_id' => $data['compania_id'],
+        ]);
+
+        app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+
+        return redirect()->route('admin.users.companias', $user)
+            ->with('status', 'Compañía agregada con el rol «Usuario». Ajusta los roles si necesita más permisos.');
+    }
+
+    /**
+     * Quita el acceso de un usuario a una compañía: borra TODOS sus roles en
+     * ella (mismo efecto que "Quitar acceso" en la pantalla de Roles).
+     */
+    public function quitarCompania(Request $request, User $user, int $compania): RedirectResponse
+    {
+        DB::table('seg_usuarios_roles')
+            ->where('model_type', User::class)
+            ->where('model_id', $user->id)
+            ->where('compania_id', $compania)
+            ->delete();
+
+        app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+
+        return redirect()->route('admin.users.companias', $user)
+            ->with('status', 'Compañía quitada del usuario.');
     }
 
     /**

@@ -60,7 +60,7 @@
                                 <td class="px-6 py-4 text-sm text-gray-700">@fechaHora($user->created_at)</td>
                                 <td class="px-6 py-4 text-right text-sm font-medium">
                                     <a href="{{ route('admin.users.roles', $user) }}" class="text-sky-600 hover:text-sky-900" title="Roles del usuario por compañía">Roles</a>
-                                    <a href="{{ route('admin.users.roles', $user) }}" class="ms-3 text-teal-600 hover:text-teal-900" title="Compañías a las que el usuario tiene acceso">Compañías</a>
+                                    <a href="{{ route('admin.users.companias', $user) }}" class="ms-3 text-teal-600 hover:text-teal-900" title="Compañías a las que el usuario tiene acceso">Compañías</a>
                                     @unless ($user->is(auth()->user()))
                                         <a href="{{ route('admin.usuarios-compania.permisos.edit', $user) }}" class="ms-3 text-emerald-600 hover:text-emerald-900" title="Permisos en la compañía activa">Permisos</a>
                                     @endunless

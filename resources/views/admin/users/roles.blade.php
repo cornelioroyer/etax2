@@ -34,7 +34,7 @@
                 Acceso de plataforma:
                 <span class="font-semibold">{{ $user->is_admin ? 'Super administrador' : 'Usuario' }}</span>
                 &mdash; Estado: <span class="font-semibold">{{ $user->is_active ? 'Activo' : 'Inactivo' }}</span>.
-                <div class="mt-1 text-blue-600">El rol real es <span class="font-semibold">por compañía</span>: un usuario puede tener un rol distinto en cada empresa.</div>
+                <div class="mt-1 text-blue-600">El rol real es <span class="font-semibold">por compañía</span>: un usuario puede tener <span class="font-semibold">uno o varios roles</span> en cada empresa (sus permisos se suman).</div>
             </div>
 
             {{-- Roles globales (aplican a todas las compañías) --}}
@@ -77,27 +77,49 @@
                     <thead class="bg-gray-50">
                         <tr>
                             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Compañía</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Rol</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Roles</th>
                             <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Acciones</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200 bg-white">
                         @forelse ($rolesPorCompania as $fila)
+                            @php
+                                // Roles que el usuario AÚN no tiene en esta compañía (para agregar).
+                                $rolesAgregables = $rolesAsignables->whereNotIn('name', $fila->roles);
+                            @endphp
                             <tr>
-                                <td class="px-6 py-4 text-sm font-medium text-gray-900">{{ $fila->compania }}</td>
-                                <td class="px-6 py-4 text-sm text-gray-700">
-                                    <form method="POST" action="{{ route('admin.users.roles.asignar', $user) }}" class="inline">
-                                        @csrf
-                                        <input type="hidden" name="compania_id" value="{{ $fila->compania_id }}">
-                                        <select name="rol" onchange="this.form.submit()" class="rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                            @foreach ($rolesAsignables as $rol)
-                                                <option value="{{ $rol->name }}" @selected($fila->rol === $rol->name)>{{ $rol->etiqueta() }}</option>
-                                            @endforeach
-                                        </select>
-                                    </form>
+                                <td class="px-6 py-4 align-top text-sm font-medium text-gray-900">{{ $fila->compania }}</td>
+                                <td class="px-6 py-4 align-top text-sm text-gray-700">
+                                    {{-- Chips: cada rol con su botón de quitar (conserva los demás) --}}
+                                    <div class="flex flex-wrap gap-2">
+                                        @foreach ($fila->roles as $rol)
+                                            <span class="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">
+                                                {{ $nombreRol($rol) }}
+                                                <form method="POST" action="{{ route('admin.users.roles.quitar-rol', [$user, $fila->compania_id, $rol]) }}" class="inline" onsubmit="return confirm('¿Quitar el rol &quot;{{ $nombreRol($rol) }}&quot; en {{ $fila->compania }}?')">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="submit" class="leading-none text-indigo-400 hover:text-indigo-700" title="Quitar este rol">&times;</button>
+                                                </form>
+                                            </span>
+                                        @endforeach
+                                    </div>
+
+                                    {{-- Agregar otro rol a esta compañía --}}
+                                    @if ($rolesAgregables->isNotEmpty())
+                                        <form method="POST" action="{{ route('admin.users.roles.asignar', $user) }}" class="mt-2 inline-flex items-center gap-2">
+                                            @csrf
+                                            <input type="hidden" name="compania_id" value="{{ $fila->compania_id }}">
+                                            <select name="rol" required class="rounded-md border-gray-300 text-xs shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                                @foreach ($rolesAgregables as $rol)
+                                                    <option value="{{ $rol->name }}">{{ $rol->etiqueta() }}</option>
+                                                @endforeach
+                                            </select>
+                                            <button class="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">+ Agregar rol</button>
+                                        </form>
+                                    @endif
                                 </td>
-                                <td class="px-6 py-4 text-right text-sm font-medium">
-                                    <form method="POST" action="{{ route('admin.users.roles.quitar', [$user, $fila->compania_id]) }}" class="inline" onsubmit="return confirm('¿Quitar el acceso de este usuario a {{ $fila->compania }}?')">
+                                <td class="px-6 py-4 align-top text-right text-sm font-medium">
+                                    <form method="POST" action="{{ route('admin.users.roles.quitar', [$user, $fila->compania_id]) }}" class="inline" onsubmit="return confirm('¿Quitar TODO el acceso de este usuario a {{ $fila->compania }}?')">
                                         @csrf
                                         @method('DELETE')
                                         <button class="text-red-600 hover:text-red-900">Quitar acceso</button>
