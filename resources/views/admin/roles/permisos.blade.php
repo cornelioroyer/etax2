@@ -56,11 +56,12 @@
                                             @foreach (\App\Support\MatrizPermisos::ACCIONES as $etiqueta)
                                                 <th class="px-3 py-2 text-center font-medium">{{ $etiqueta }}</th>
                                             @endforeach
+                                            <th class="px-3 py-2 text-center font-medium">Todos</th>
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-gray-100">
                                         @foreach ($grupo['opciones'] as $op)
-                                            <tr class="hover:bg-gray-50">
+                                            <tr class="hover:bg-gray-50" data-fila-permisos>
                                                 <td class="px-4 py-2 text-gray-800">{{ $op['etiqueta'] }}</td>
                                                 @foreach ($op['acciones'] as $accion)
                                                     @php
@@ -72,10 +73,16 @@
                                                         @else
                                                             <input type="checkbox" name="permisos[]" value="{{ $accion['name'] }}"
                                                                    @checked($tiene)
+                                                                   data-permiso
                                                                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
                                                         @endif
                                                     </td>
                                                 @endforeach
+                                                <td class="px-3 py-2 text-center">
+                                                    <input type="checkbox" data-todos
+                                                           title="Marcar/desmarcar todas las acciones de esta fila"
+                                                           class="h-4 w-4 rounded border-gray-400 text-indigo-600 focus:ring-indigo-500">
+                                                </td>
                                             </tr>
                                         @endforeach
                                     </tbody>
@@ -97,4 +104,40 @@
 
         </div>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('tr[data-fila-permisos]').forEach(function (fila) {
+                var todos  = fila.querySelector('input[data-todos]');
+                var checks = fila.querySelectorAll('input[data-permiso]');
+
+                if (! todos) {
+                    return;
+                }
+
+                // Si la fila no tiene acciones marcables, deshabilita el "Todos".
+                if (checks.length === 0) {
+                    todos.disabled = true;
+                    return;
+                }
+
+                function sincronizarTodos() {
+                    var marcadas = Array.prototype.filter.call(checks, function (c) { return c.checked; }).length;
+                    todos.checked       = marcadas === checks.length;
+                    todos.indeterminate = marcadas > 0 && marcadas < checks.length;
+                }
+
+                todos.addEventListener('change', function () {
+                    checks.forEach(function (c) { c.checked = todos.checked; });
+                    todos.indeterminate = false;
+                });
+
+                checks.forEach(function (c) {
+                    c.addEventListener('change', sincronizarTodos);
+                });
+
+                sincronizarTodos();
+            });
+        });
+    </script>
 </x-app-layout>
