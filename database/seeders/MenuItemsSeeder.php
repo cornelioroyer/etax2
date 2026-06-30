@@ -163,6 +163,7 @@ class MenuItemsSeeder extends Seeder
                     ['clave' => 'reportes.flujo', 'etiqueta' => 'Flujo de Efectivo', 'permiso' => 'reportes.ver', 'ruta_nombre' => 'admin.reportes.flujo-caja', 'ruta_activa_patron' => 'admin.reportes.flujo-caja'],
                     ['clave' => 'reportes.itbms', 'etiqueta' => 'Liquidación ITBMS', 'permiso' => 'reportes.ver', 'ruta_nombre' => 'admin.reportes.liquidacion-itbms', 'ruta_activa_patron' => 'admin.reportes.liquidacion-itbms'],
                     ['clave' => 'reportes.cuadre', 'etiqueta' => 'Cuadre de Auxiliares', 'permiso' => 'reportes.ver', 'ruta_nombre' => 'admin.reportes.cuadre-auxiliares', 'ruta_activa_patron' => 'admin.reportes.cuadre-auxiliares'],
+                    ['clave' => 'reportes.existencias-cuenta', 'etiqueta' => 'Existencia por Cuenta', 'permiso' => 'reportes.ver', 'ruta_nombre' => 'admin.reportes.existencias-por-cuenta', 'ruta_activa_patron' => 'admin.reportes.existencias-por-cuenta'],
                 ],
             ],
             [
