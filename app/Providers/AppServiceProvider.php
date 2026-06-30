@@ -20,8 +20,11 @@ use Illuminate\Support\ServiceProvider;
 class AppServiceProvider extends ServiceProvider
 {
     /**
-     * Compañía del sistema (WIN SOFT CORP). Reservada: solo el super_admin
-     * tiene privilegios plenos en ella; cualquier otro usuario solo puede ver.
+     * Compañía del sistema (id 1). Ya NO restringe privilegios por sí misma:
+     * el bloqueo de escritura se controla ahora por la bandera configurable
+     * core_companias.solo_lectura (ver el Gate más abajo). Se conserva como
+     * ancla del consecutivo de folios FEL demo, donde una sola fila lleva el
+     * correlativo compartido (ver FelConfiguracion::siguienteNumeroFiscal).
      */
     public const COMPANIA_SISTEMA = 1;
 
@@ -42,7 +45,8 @@ class AppServiceProvider extends ServiceProvider
         // spatie/permission (desactivado en config/permission.php con
         // register_permission_check_method=false) para controlar el orden:
         //   1) super_admin (is_admin) pasa todo;
-        //   2) en la compañía 1 (sistema) los no-super-admin solo pueden VER;
+        //   2) en compañías marcadas como solo_lectura, los no-super-admin
+        //      solo pueden VER (acciones de lectura);
         //   3) resolución normal de permisos por rol/compañía (igual que Spatie).
         Gate::before(function (Authorizable $user, string $ability, array &$args = []) {
             // 1) Super admin (creadores de la plataforma).
