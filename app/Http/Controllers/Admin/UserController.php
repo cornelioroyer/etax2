@@ -52,14 +52,17 @@ class UserController extends Controller
             'is_active' => ['nullable', 'boolean'],
         ]);
 
-        $user = User::create([
+        $user = (new User([
             'name' => $data['name'],
             'email' => $data['email'],
             'password' => Hash::make($data['password']),
-            // El flag super_admin solo lo puede otorgar otro super_admin.
+        ]))->forceFill([
+            // is_admin/is_active están guardados (no mass-assignable): se fijan
+            // explícito. El flag super_admin solo lo puede otorgar otro super_admin.
             'is_admin' => $request->user()->is_admin ? $request->boolean('is_admin') : false,
             'is_active' => $request->boolean('is_active'),
         ]);
+        $user->save();
 
         // Por defecto, todo usuario nuevo queda en la compañía 1 con rol "usuario".
         $user->asegurarAccesoDefault(1);
@@ -304,7 +307,11 @@ class UserController extends Controller
         $user->fill([
             'name' => $data['name'],
             'email' => $data['email'],
-            // Solo un super_admin puede cambiar el flag super_admin; si no, se conserva el valor actual.
+        ]);
+        $user->forceFill([
+            // is_admin/is_active están guardados (no mass-assignable): se fijan
+            // explícito. Solo un super_admin puede cambiar el flag super_admin;
+            // si no, se conserva el valor actual.
             'is_admin' => $request->user()->is_admin ? $request->boolean('is_admin') : $user->is_admin,
             'is_active' => $request->boolean('is_active'),
         ]);

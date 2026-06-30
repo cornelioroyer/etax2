@@ -33,13 +33,17 @@ class RegisteredUserController extends Controller
 
         $isFirstUser = User::query()->doesntExist();
 
-        $user = User::create([
+        $user = (new User([
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->password),
+        ]))->forceFill([
+            // El primer usuario del sistema es super_admin; is_admin/is_active
+            // están guardados (no son mass-assignable) → se fijan explícito.
             'is_admin' => $isFirstUser,
             'is_active' => true,
         ]);
+        $user->save();
 
         event(new Registered($user));
 

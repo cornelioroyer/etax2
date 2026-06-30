@@ -47,13 +47,15 @@ class GoogleLoginController extends Controller
         $user = User::whereRaw('lower(email) = ?', [$email])->first();
 
         if (! $user) {
-            $user = User::create([
+            $user = (new User([
                 'name' => $googleUser->getName() ?: $email,
                 'email' => $email,
                 'password' => Hash::make(Str::random(64)),
+            ]))->forceFill([
                 'is_admin' => false,
                 'is_active' => true,
             ]);
+            $user->save();
 
             session(['compania_activa_id' => 1]);
         }

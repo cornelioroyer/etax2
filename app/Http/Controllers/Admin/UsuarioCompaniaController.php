@@ -141,13 +141,15 @@ class UsuarioCompaniaController extends Controller
                 ])->withInput();
             }
 
-            $user = User::create([
+            $user = (new User([
                 'name' => $data['name'],
                 'email' => $data['email'],
                 'password' => Hash::make($data['password']),
+            ]))->forceFill([
                 'is_admin' => false,
                 'is_active' => true,
             ]);
+            $user->save();
         }
 
         // El team activo ya es la compañía actual (middleware), el rol se asigna en ella.
@@ -162,7 +164,8 @@ class UsuarioCompaniaController extends Controller
      */
     public function update(Request $request, User $user): RedirectResponse
     {
-        $this->companiaActiva($request);
+        $compania = $this->companiaActiva($request);
+        $this->asegurarUsuarioEnCompania($user, $compania);
 
         $data = $request->validate([
             'rol' => ['required', 'in:'.$this->rolesAsignables()->pluck('name')->implode(',')],
@@ -183,6 +186,7 @@ class UsuarioCompaniaController extends Controller
     public function destroy(Request $request, User $user): RedirectResponse
     {
         $compania = $this->companiaActiva($request);
+        $this->asegurarUsuarioEnCompania($user, $compania);
 
         if ($user->is($request->user())) {
             return back()->withErrors(['usuario' => 'No puedes quitarte tu propio acceso.']);
@@ -210,6 +214,7 @@ class UsuarioCompaniaController extends Controller
     public function editarPermisos(Request $request, User $user): View
     {
         $compania = $this->companiaActiva($request);
+        $this->asegurarUsuarioEnCompania($user, $compania);
 
         // Permisos que tiene el usuario por su rol en esta compañía
         $rolNombre = DB::table('seg_usuarios_roles')
@@ -264,6 +269,7 @@ class UsuarioCompaniaController extends Controller
     public function actualizarPermisos(Request $request, User $user): RedirectResponse
     {
         $compania = $this->companiaActiva($request);
+        $this->asegurarUsuarioEnCompania($user, $compania);
 
         if ($user->is($request->user())) {
             return back()->withErrors(['permisos' => 'No puedes editar tus propios permisos.']);
@@ -294,6 +300,24 @@ class UsuarioCompaniaController extends Controller
             $denegadosSeleccionados,
             $idsReservados
         ));
+
+        // Fix de seguridad (auditoría 2026-06-29 #2): nadie puede CONCEDER un
+        // permiso que él mismo no posee (escalada intra-tenant). Acota los
+        // permisos extra a la intersección con los permisos efectivos del
+        // otorgante en esta compañía. El super_admin queda exento (su can()
+        // resuelve todo vía el bypass del Gate). Las denegaciones NO se acotan:
+        // solo reducen privilegio, no escalan.
+        $otorgante = $request->user();
+        if (! $otorgante->is_admin && $permisosSeleccionados) {
+            $nombrePorId = DB::table('seg_permisos')
+                ->whereIn('id', $permisosSeleccionados)
+                ->pluck('name', 'id');
+
+            $permisosSeleccionados = array_values(array_filter(
+                $permisosSeleccionados,
+                fn ($id) => isset($nombrePorId[$id]) && $otorgante->can($nombrePorId[$id])
+            ));
+        }
 
         DB::transaction(function () use ($user, $compania, $permisosSeleccionados, $denegadosSeleccionados) {
             // Permisos directos extra (más allá del rol).
@@ -335,6 +359,26 @@ class UsuarioCompaniaController extends Controller
 
         return redirect()->route('admin.usuarios-compania.index')
             ->with('status', "Permisos de {$user->email} actualizados.");
+    }
+
+    /**
+     * Blindaje multiempresa: el usuario objetivo de una operación de gestión
+     * (cambiar rol, editar permisos, quitar acceso) DEBE pertenecer ya a la
+     * compañía activa, es decir, tener al menos un rol en ella. Sin esto, un
+     * admin de compañía podría manipular —usando el id que viaja en la URL—
+     * a CUALQUIER usuario del sistema sobre su propia compañía (otorgarle
+     * acceso, cambiarle el rol o quitárselo). El alta (store) queda fuera
+     * porque ahí incorporar a un usuario nuevo es justamente la intención.
+     */
+    private function asegurarUsuarioEnCompania(User $user, $compania): void
+    {
+        $perteneceACompania = DB::table('seg_usuarios_roles')
+            ->where('model_type', User::class)
+            ->where('model_id', $user->id)
+            ->where('compania_id', $compania->id)
+            ->exists();
+
+        abort_unless($perteneceACompania, 403, 'El usuario no pertenece a esta compañía.');
     }
 
     /**

@@ -25,6 +25,21 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+    ];
+
+    /**
+     * Atributos sensibles que NUNCA deben asignarse en masa (fix de seguridad
+     * 2026-06-29 #3): is_admin = super_admin de plataforma (bypass total),
+     * is_active = cuenta habilitada. Quedan fuera de $fillable para que ningún
+     * fill()/create()/update() con datos de un formulario pueda elevarlos por
+     * accidente (p. ej. ProfileController::update hace fill(validated())). Los
+     * flujos legítimos los fijan de forma explícita con forceFill() tras validar
+     * el privilegio del actor (UserController, registro, Google, alta por
+     * compañía).
+     *
+     * @var list<string>
+     */
+    protected $guarded = [
         'is_admin',
         'is_active',
     ];
