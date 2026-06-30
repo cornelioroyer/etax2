@@ -48,10 +48,14 @@
                                     @endif
                                 </td>
                                 <td class="px-4 py-4 font-mono text-xs text-gray-400">{{ $rol->name }}</td>
-                                <td class="px-4 py-4 text-center text-sm text-gray-700">{{ $rol->permissions_count }}</td>
+                                <td class="px-4 py-4 text-center text-sm">
+                                    <a href="{{ route('admin.roles.permisos.edit', $rol) }}"
+                                       class="font-medium text-indigo-600 hover:text-indigo-900" title="Ver y editar permisos del rol">
+                                        {{ $rol->permissions_count }}
+                                    </a>
+                                </td>
                                 <td class="px-4 py-4 text-center text-sm text-gray-700">{{ $usuariosPorRol[$rol->id] ?? 0 }}</td>
                                 <td class="px-4 py-4 text-right text-sm font-medium sm:px-6">
-                                    <a href="{{ route('admin.roles.edit', $rol) }}#permisos" class="mr-4 text-indigo-600 hover:text-indigo-900" title="Asignar o quitar permisos de este rol">Permisos</a>
                                     <a href="{{ route('admin.roles.edit', $rol) }}" class="mr-4 text-indigo-600 hover:text-indigo-900">Editar</a>
                                     @if (! $rol->esProtegido())
                                         <form method="POST" action="{{ route('admin.roles.destroy', $rol) }}" class="inline"

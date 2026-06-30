@@ -157,6 +157,9 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
 
     // Catálogo de roles globales (solo super_admin).
     Route::resource('roles', RoleController::class)->except(['show']);
+    // Matriz de permisos del rol (opción × acción).
+    Route::get('roles/{role}/permisos', [RoleController::class, 'permisos'])->whereNumber('role')->name('roles.permisos.edit');
+    Route::put('roles/{role}/permisos', [RoleController::class, 'actualizarPermisos'])->whereNumber('role')->name('roles.permisos.update');
 
     // Administración del menú lateral (core_menu_items, catálogo global).
     Route::get('menu-items', [MenuItemController::class, 'index'])->name('menu-items.index');

@@ -33,57 +33,6 @@
         </div>
     </div>
 
-    <div id="permisos" class="space-y-4" style="scroll-margin-top: 6rem;">
-        <h3 class="text-sm font-semibold text-gray-700">Permisos del rol</h3>
-        <p class="text-xs text-gray-500">Marca las acciones que tendrá el rol en cada opción. Las acciones reservadas de plataforma se muestran como «&mdash;».</p>
-
-        @foreach ($matriz as $grupo)
-            <div class="rounded-lg bg-white shadow-sm overflow-hidden" x-data="{}">
-                <div class="flex items-center justify-between bg-gray-100 px-4 py-2 border-b border-gray-200">
-                    <h4 class="text-sm font-bold text-gray-700">{{ $grupo['titulo'] }}</h4>
-                    <button type="button" class="text-xs text-indigo-600 hover:text-indigo-800"
-                            @click="$root.querySelectorAll('input[type=checkbox]:not(:disabled)').forEach(c => c.checked = true)">Marcar todo</button>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full text-sm">
-                        <thead class="bg-gray-50 text-xs uppercase text-gray-500">
-                            <tr>
-                                <th class="px-4 py-2 text-left font-medium">Opción</th>
-                                @foreach (\App\Support\MatrizPermisos::ACCIONES as $etiqueta)
-                                    <th class="px-3 py-2 text-center font-medium">{{ $etiqueta }}</th>
-                                @endforeach
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-100">
-                            @foreach ($grupo['opciones'] as $op)
-                                <tr class="hover:bg-gray-50">
-                                    <td class="px-4 py-2 text-gray-800">
-                                        <div class="flex items-center justify-between gap-2">
-                                            <span>{{ $op['etiqueta'] }}</span>
-                                            <button type="button" class="text-xs text-indigo-600 hover:text-indigo-800 whitespace-nowrap"
-                                                    @click="(() => { const cbs = $el.closest('tr').querySelectorAll('input[type=checkbox]:not(:disabled)'); const todas = cbs.length && [...cbs].every(c => c.checked); cbs.forEach(c => c.checked = !todas); })()">Todos</button>
-                                        </div>
-                                    </td>
-                                    @foreach ($op['acciones'] as $accion)
-                                        <td class="px-3 py-2 text-center">
-                                            @if ($accion['reservado'] || ! $accion['id'])
-                                                <span class="text-gray-300">&mdash;</span>
-                                            @else
-                                                <input type="checkbox" name="permisos[]" value="{{ $accion['name'] }}"
-                                                       @checked(in_array($accion['name'], $permisosDelRol, true))
-                                                       class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                                            @endif
-                                        </td>
-                                    @endforeach
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        @endforeach
-    </div>
-
     <div class="flex items-center gap-4">
         <button type="submit" class="rounded-md bg-gray-900 px-5 py-2 text-sm font-semibold text-white hover:bg-gray-700">
             {{ $role ? 'Guardar cambios' : 'Crear rol' }}

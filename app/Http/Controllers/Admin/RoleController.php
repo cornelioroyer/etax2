@@ -11,7 +11,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
-use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
@@ -51,10 +50,7 @@ class RoleController extends Controller
 
     public function create(): View
     {
-        return view('admin.roles.create', [
-            'matriz'         => \App\Support\MatrizPermisos::grupos(),
-            'permisosDelRol' => [],
-        ]);
+        return view('admin.roles.create');
     }
 
     public function store(Request $request): RedirectResponse
@@ -86,9 +82,7 @@ class RoleController extends Controller
         abort_unless($this->esGlobal($role), 404);
 
         return view('admin.roles.edit', [
-            'role'           => $role,
-            'matriz'         => \App\Support\MatrizPermisos::grupos(),
-            'permisosDelRol' => $role->permissions->pluck('name')->all(),
+            'role' => $role,
         ]);
     }
 
@@ -97,15 +91,6 @@ class RoleController extends Controller
         abort_unless($this->esGlobal($role), 404);
 
         $data = $this->validar($request, $role);
-        $permisos = $this->permisosAdministrables($data['permisos'] ?? []);
-
-        // Nunca tocar los permisos reservados que el rol ya pudiera tener: se
-        // preservan aunque no aparezcan en la matriz.
-        $reservadosVigentes = array_intersect(
-            $role->permissions->pluck('name')->all(),
-            Role::PERMISOS_RESERVADOS
-        );
-        $permisosFinales = array_values(array_unique(array_merge($permisos, $reservadosVigentes)));
 
         // El nombre de los roles protegidos es inmutable (referenciado en código).
         $nombre = $role->name;
@@ -116,15 +101,107 @@ class RoleController extends Controller
             }
         }
 
-        $this->enContextoGlobal(function () use ($role, $nombre, $data, $permisosFinales) {
+        // La pantalla de edición ya NO incluye la matriz de permisos: solo cambia
+        // nombre y descripción. Los permisos solo se sincronizan si la petición los
+        // trae explícitamente (vía programática/API); en su ausencia se dejan intactos.
+        $this->enContextoGlobal(function () use ($request, $role, $nombre, $data) {
             $role->update([
                 'name'        => $nombre,
                 'descripcion' => $data['descripcion'] ?? null,
             ]);
-            $role->syncPermissions($permisosFinales);
+
+            if ($request->has('permisos')) {
+                $permisos = $this->permisosAdministrables($data['permisos'] ?? []);
+
+                // Preservar los permisos reservados de plataforma que el rol ya tuviera.
+                $reservadosVigentes = array_intersect(
+                    $role->permissions->pluck('name')->all(),
+                    Role::PERMISOS_RESERVADOS
+                );
+                $role->syncPermissions(array_values(array_unique(array_merge($permisos, $reservadosVigentes))));
+            }
         });
 
         return redirect()->route('admin.roles.index')->with('status', 'Rol actualizado.');
+    }
+
+    /**
+     * Matriz de permisos del rol (opción × acción), reutilizando MatrizPermisos.
+     */
+    public function permisos(Role $role): View
+    {
+        abort_unless($this->esGlobal($role), 404);
+
+        $matriz = \App\Support\MatrizPermisos::grupos();
+        $permisosDelRol = $this->enContextoGlobal(
+            fn () => $role->permissions->pluck('name')->all()
+        );
+
+        // Permisos que el rol tiene pero que esta matriz NO administra (legacy de
+        // módulo, reservados, etc.). Se muestran como informativos y se preservan
+        // intactos al guardar: la matriz solo togglea las celdas que muestra.
+        $otrosPermisos = array_values(array_diff(
+            $permisosDelRol,
+            $this->nombresGestionables($matriz)
+        ));
+        sort($otrosPermisos);
+
+        return view('admin.roles.permisos', [
+            'role'           => $role,
+            'matriz'         => $matriz,
+            'permisosDelRol' => $permisosDelRol,
+            'otrosPermisos'  => $otrosPermisos,
+        ]);
+    }
+
+    /**
+     * Sincroniza SOLO los permisos administrados por la matriz (celdas opción.acción
+     * visibles). Todo permiso que el rol tenga fuera de la matriz —legacy de módulo,
+     * reservados de plataforma, etc.— se preserva intacto: nunca se borra desde aquí.
+     */
+    public function actualizarPermisos(Request $request, Role $role): RedirectResponse
+    {
+        abort_unless($this->esGlobal($role), 404);
+
+        $data = $request->validate([
+            'permisos'   => ['nullable', 'array'],
+            'permisos.*' => ['string', Rule::exists('seg_permisos', 'name')],
+        ]);
+
+        $gestionables = $this->nombresGestionables(\App\Support\MatrizPermisos::grupos());
+
+        // De la selección, aceptar solo lo que es realmente una celda de la matriz.
+        $seleccionMatriz = array_values(array_intersect(
+            $this->permisosAdministrables($data['permisos'] ?? []),
+            $gestionables
+        ));
+
+        $this->enContextoGlobal(function () use ($role, $seleccionMatriz, $gestionables) {
+            $actuales = $role->permissions->pluck('name')->all();
+            // Preservar TODO lo que la matriz no administra (legacy, reservados, …).
+            $preservados = array_values(array_diff($actuales, $gestionables));
+            $role->syncPermissions(array_values(array_unique(array_merge($seleccionMatriz, $preservados))));
+        });
+
+        return redirect()->route('admin.roles.permisos.edit', $role)
+            ->with('status', 'Permisos del rol actualizados.');
+    }
+
+    /** Nombres de permiso que la matriz puede otorgar/quitar (celdas con id, no reservadas). */
+    private function nombresGestionables(array $matriz): array
+    {
+        $names = [];
+        foreach ($matriz as $grupo) {
+            foreach ($grupo['opciones'] as $op) {
+                foreach ($op['acciones'] as $accion) {
+                    if (! $accion['reservado'] && $accion['id']) {
+                        $names[] = $accion['name'];
+                    }
+                }
+            }
+        }
+
+        return $names;
     }
 
     public function destroy(Role $role): RedirectResponse
@@ -184,35 +261,6 @@ class RoleController extends Controller
         $reservados = array_merge(Role::PERMISOS_RESERVADOS, \App\Support\MatrizPermisos::RESERVADOS);
 
         return array_values(array_diff(array_unique($nombres), $reservados));
-    }
-
-    /**
-     * Prefijos de permiso que se muestran reunidos bajo el encabezado lógico
-     * "Seguridad" en la matriz de roles (agrupación solo visual; no son permisos
-     * nuevos ni cambian el modelo de seguridad).
-     */
-    private const GRUPO_SEGURIDAD = ['usuarios_compania', 'respaldos'];
-
-    /** Permisos agrupados por módulo, sin los reservados de plataforma. */
-    private function catalogoPermisos(): array
-    {
-        $permisos = Permission::query()
-            ->where('guard_name', 'web')
-            ->orderBy('name')
-            ->get(['id', 'name']);
-
-        $grupos = [];
-        foreach ($permisos as $p) {
-            if (in_array($p->name, Role::PERMISOS_RESERVADOS, true)) {
-                continue;
-            }
-            $prefijo = explode('.', $p->name)[0];
-            $modulo = in_array($prefijo, self::GRUPO_SEGURIDAD, true) ? 'seguridad' : $prefijo;
-            $grupos[$modulo][] = $p;
-        }
-        ksort($grupos);
-
-        return $grupos;
     }
 
     private function esGlobal(Role $role): bool
