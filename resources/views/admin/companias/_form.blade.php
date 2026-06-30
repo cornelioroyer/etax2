@@ -42,6 +42,20 @@
                 @error('activa') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
             </div>
 
+            @if (auth()->user()->is_admin)
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Acceso</label>
+                    <label class="mt-2 inline-flex items-start gap-2">
+                        <input type="hidden" name="solo_lectura" value="0">
+                        <input type="checkbox" id="solo_lectura" name="solo_lectura" value="1"
+                               @checked(old('solo_lectura', $c->solo_lectura ?? false))
+                               class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                        <span class="text-sm text-gray-700">Solo lectura: los usuarios que no son super-administradores solo podrán consultar (no registrar ni modificar) en esta compañía.</span>
+                    </label>
+                    @error('solo_lectura') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                </div>
+            @endif
+
             <div>
                 <label for="correlativo_ss" class="block text-sm font-medium text-gray-700">Correlativo</label>
                 <input id="correlativo_ss" name="correlativo_ss" type="number" min="0" value="{{ old('correlativo_ss', $c->correlativo_ss ?? 0) }}" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">

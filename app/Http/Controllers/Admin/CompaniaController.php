@@ -168,7 +168,7 @@ class CompaniaController extends Controller
 
     private function validated(Request $request, ?Compania $compania = null): array
     {
-        $data = $request->validate([
+        $reglas = [
             'nombre' => ['required', 'string', 'max:255'],
             'ruc' => [
                 'required', 'string', 'max:255',
@@ -200,11 +200,27 @@ class CompaniaController extends Controller
             'sello' => ['nullable', 'image', 'max:2048'],
             'municipio' => ['nullable', 'string', 'max:200'],
             'clave_municipio' => ['nullable', 'string', 'max:200'],
-        ], [
+        ];
+
+        // Marcar una compañía como SOLO LECTURA es una restricción de plataforma:
+        // solo el super_admin puede fijarla (un admin de compañía no debe poder
+        // (des)bloquearse a sí mismo). Para los demás ni se valida ni se persiste,
+        // así que el valor actual se preserva.
+        if ($request->user()->is_admin) {
+            $reglas['solo_lectura'] = ['nullable', 'boolean'];
+        }
+
+        $data = $request->validate($reglas, [
             'ruc.unique' => 'El RUC ya está registrado en otra compañía.',
         ]);
 
         $data['nombre'] = mb_strtoupper($data['nombre'], 'UTF-8');
+
+        if ($request->user()->is_admin) {
+            $data['solo_lectura'] = $request->boolean('solo_lectura');
+        } else {
+            unset($data['solo_lectura']);
+        }
 
         unset($data['logo'], $data['sello']);
 

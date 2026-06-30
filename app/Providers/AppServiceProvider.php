@@ -75,15 +75,18 @@ class AppServiceProvider extends ServiceProvider
                 return true;
             }
 
-            // 2) Compañía 1 (sistema): solo lectura para no-super-admin, aunque
-            // sean admin de otras compañías. El team de permisos (compañía activa)
-            // lo fija el middleware EstablecerCompaniaActiva.
+            // 2) Compañías en SOLO LECTURA: solo lectura para no-super-admin,
+            // aunque sean admin de esa u otra compañía. La marca es por compañía
+            // (core_companias.solo_lectura), configurable por super_admin; por
+            // defecto NINGUNA lo es, así que los permisos aplican uniformemente en
+            // todas. El team de permisos (compañía activa) lo fija el middleware
+            // EstablecerCompaniaActiva.
             $companiaActiva = app(\Spatie\Permission\PermissionRegistrar::class)->getPermissionsTeamId();
 
             // companias.crear se exceptúa: crear una compañía nueva no modifica
-            // datos de la compañía 1, y todos los usuarios pueden crearlas.
-            // Acciones de lectura permitidas en la compañía sistema: el modelo
-            // viejo usa ".ver"; el nuevo (por opción) usa ".acceder" y, como
+            // datos de la compañía activa, y todos los usuarios pueden crearlas.
+            // Acciones de lectura permitidas en una compañía de solo lectura: el
+            // modelo viejo usa ".ver"; el nuevo (por opción) usa ".acceder" y, como
             // exportar/imprimir no modifican datos, también se consideran lectura.
             $sufijosLectura = ['.ver', '.acceder', '.exportar', '.imprimir'];
             $esLectura = false;
@@ -93,7 +96,8 @@ class AppServiceProvider extends ServiceProvider
                     break;
                 }
             }
-            if ((int) $companiaActiva === self::COMPANIA_SISTEMA
+            if ($companiaActiva !== null
+                && in_array((int) $companiaActiva, \App\Models\Compania::idsSoloLectura(), true)
                 && str_contains($ability, '.')
                 && ! $esLectura
                 && $ability !== 'companias.crear') {
