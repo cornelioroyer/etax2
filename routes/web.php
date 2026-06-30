@@ -90,6 +90,7 @@ use App\Http\Controllers\Admin\CompraOrdenController;
 use App\Http\Controllers\Admin\CompraRecepcionController;
 use App\Http\Controllers\Admin\InvAlmacenController;
 use App\Http\Controllers\Admin\InvExistenciasConsolidadoController;
+use App\Http\Controllers\Admin\ReporteExistenciasPorCuentaController;
 use App\Http\Controllers\Admin\InvMovimientoController;
 use App\Http\Controllers\Admin\ItemProductoController;
 use App\Http\Controllers\Admin\ZonaController;
@@ -463,6 +464,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::get('inventario/almacenes', [InvAlmacenController::class, 'index'])->name('inventario.almacenes.index');
         Route::get('inventario/almacenes/{almacen}/existencias', [InvAlmacenController::class, 'existencias'])->whereNumber('almacen')->name('inventario.almacenes.existencias');
         Route::get('inventario/existencias', InvExistenciasConsolidadoController::class)->name('inventario.existencias.consolidado');
+        Route::get('reportes/existencias-por-cuenta', ReporteExistenciasPorCuentaController::class)->name('reportes.existencias-por-cuenta');
         Route::get('inventario/movimientos', [InvMovimientoController::class, 'index'])->name('inventario.movimientos.index');
         Route::get('inventario/movimientos/{movimiento}', [InvMovimientoController::class, 'show'])->whereNumber('movimiento')->name('inventario.movimientos.show');
         Route::get('items', [ItemProductoController::class, 'index'])->name('items.index');
