@@ -29,11 +29,76 @@ class UsuarioCompaniaController extends Controller
             ->orderBy('users.name')
             ->get(['users.id', 'users.name', 'users.email', 'users.is_active', 'seg_roles.name as rol']);
 
+        // Accesos GLOBALES (a todas las compañías): solo los administra y ve el
+        // super_admin, porque dan acceso a compañías que el admin de compañía no
+        // necesariamente controla.
+        $usuariosGlobales = $request->user()->is_admin
+            ? DB::table('seg_usuarios_roles_globales')
+                ->join('users', 'users.id', '=', 'seg_usuarios_roles_globales.user_id')
+                ->join('seg_roles', 'seg_roles.id', '=', 'seg_usuarios_roles_globales.rol_id')
+                ->orderBy('users.name')
+                ->get(['users.id', 'users.name', 'users.email', 'seg_roles.name as rol'])
+            : collect();
+
         return view('admin.usuarios-compania.index', [
             'usuarios' => $filas,
             'compania' => $compania,
             'roles' => $this->rolesAsignables(),
+            'usuariosGlobales' => $usuariosGlobales,
         ]);
+    }
+
+    /**
+     * Otorga un rol GLOBAL (compania_id NULL): aplica en todas las compañías,
+     * presentes y futuras. Solo super_admin (da acceso transversal).
+     */
+    public function storeGlobal(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()->is_admin, 403);
+
+        $data = $request->validate([
+            'email' => ['required', 'string', 'lowercase', 'email', 'max:255'],
+            'rol' => ['required', 'in:'.$this->rolesAsignables()->pluck('name')->implode(',')],
+        ]);
+
+        $user = User::where('email', $data['email'])->first();
+
+        if (! $user) {
+            return back()->withErrors([
+                'email_global' => 'El usuario no existe. Créalo primero dándole acceso a una compañía.',
+            ])->withInput();
+        }
+
+        $rolId = DB::table('seg_roles')->whereNull('compania_id')->where('name', $data['rol'])->value('id');
+
+        // Un solo rol global por usuario: se reemplaza el anterior.
+        DB::table('seg_usuarios_roles_globales')->where('user_id', $user->id)->delete();
+        DB::table('seg_usuarios_roles_globales')->insert([
+            'user_id' => $user->id,
+            'rol_id' => $rolId,
+        ]);
+
+        app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+        $user->olvidarPermisosGlobales();
+
+        return redirect()->route('admin.usuarios-compania.index')
+            ->with('status', "Acceso GLOBAL (todas las compañías) otorgado a {$user->email}.");
+    }
+
+    /**
+     * Quita el acceso global de un usuario.
+     */
+    public function destroyGlobal(Request $request, User $user): RedirectResponse
+    {
+        abort_unless($request->user()->is_admin, 403);
+
+        DB::table('seg_usuarios_roles_globales')->where('user_id', $user->id)->delete();
+
+        app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+        $user->olvidarPermisosGlobales();
+
+        return redirect()->route('admin.usuarios-compania.index')
+            ->with('status', "Acceso global de {$user->email} eliminado.");
     }
 
     /**
@@ -170,22 +235,8 @@ class UsuarioCompaniaController extends Controller
             ->pluck('seg_permisos.name')
             ->all();
 
-        // Se excluyen los permisos reservados de plataforma (companias.eliminar,
-        // zonas.*): un admin de compañía no los tiene y no debe poder otorgarlos
-        // ni denegarlos a otros (evita escalada de privilegios). Igual criterio
-        // que RoleController::permisosAdministrables().
-        $todosLosPermisos = DB::table('seg_permisos')
-            ->whereNotIn('name', Role::PERMISOS_RESERVADOS)
-            ->orderBy('name')
-            ->get(['id', 'name']);
-
-        // Agrupar por módulo (prefijo antes del primer punto)
-        $grupos = [];
-        foreach ($todosLosPermisos as $p) {
-            $modulo = explode('.', $p->name)[0];
-            $grupos[$modulo][] = $p;
-        }
-
+        // Matriz por opción × acción (excluye solo_admin y reservados de
+        // plataforma: un admin de compañía no debe otorgarlos ni denegarlos).
         return view('admin.usuarios-compania.permisos', [
             'usuario'          => $user,
             'compania'         => $compania,
@@ -193,7 +244,7 @@ class UsuarioCompaniaController extends Controller
             'permisosDelRol'   => $permisosDelRol,
             'permisosDirectos' => $permisosDirectos,
             'permisosDenegados'=> $permisosDenegados,
-            'grupos'           => $grupos,
+            'matriz'           => \App\Support\MatrizPermisos::grupos(),
         ]);
     }
 
@@ -219,7 +270,7 @@ class UsuarioCompaniaController extends Controller
         // aunque venga manipulado en el POST (no confiar solo en ocultarlo en la
         // vista). Un admin de compañía nunca puede otorgar/denegar estos permisos.
         $idsReservados = DB::table('seg_permisos')
-            ->whereIn('name', Role::PERMISOS_RESERVADOS)
+            ->whereIn('name', array_merge(Role::PERMISOS_RESERVADOS, \App\Support\MatrizPermisos::RESERVADOS))
             ->pluck('id')
             ->all();
 

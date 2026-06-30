@@ -14,13 +14,9 @@
     </div>
 
     <div>
-        <label for="cuenta_padre_id" class="block text-sm font-medium text-gray-700">Cuenta padre</label>
-        <select id="cuenta_padre_id" name="cuenta_padre_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-            <option value="">— Sin padre (nivel 1) —</option>
-            @foreach ($padres as $padre)
-                <option value="{{ $padre->id }}" @selected(old('cuenta_padre_id', $q->cuenta_padre_id ?? null) == $padre->id)>{{ $padre->codigo }} — {{ $padre->nombre }}</option>
-            @endforeach
-        </select>
+        <x-buscador-contacto name="cuenta_padre_id" label="Cuenta padre" :opciones="$padres"
+            :selected="old('cuenta_padre_id', $q->cuenta_padre_id ?? null)"
+            placeholder="Buscar cuenta por código o nombre" empty-label="— Sin padre (nivel 1) —" />
         @error('cuenta_padre_id') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
     </div>
 

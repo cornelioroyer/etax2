@@ -143,6 +143,10 @@ Route::middleware('auth')->group(function () {
 // Usuarios de plataforma (flag is_admin): solo super-admin.
 Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::resource('users', UserController::class)->except(['show']);
+    // Roles del usuario por compañía (+ globales): consulta y administración (super_admin).
+    Route::get('users/{user}/roles', [UserController::class, 'roles'])->whereNumber('user')->name('users.roles');
+    Route::post('users/{user}/roles', [UserController::class, 'asignarRol'])->whereNumber('user')->name('users.roles.asignar');
+    Route::delete('users/{user}/roles/{compania}', [UserController::class, 'quitarRol'])->whereNumber('user')->whereNumber('compania')->name('users.roles.quitar');
 
     // Catálogo de roles globales (solo super_admin).
     Route::resource('roles', RoleController::class)->except(['show']);

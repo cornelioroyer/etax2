@@ -49,13 +49,8 @@
                         <label class="block text-sm font-medium text-gray-700">Cuenta contrapartida <span class="text-red-500">*</span>
                             <span class="font-normal text-gray-400">(cuenta que se acredita al recibir el inventario)</span>
                         </label>
-                        <select name="cuenta_contrapartida_id" :required="tipo === 'ENTRADA'"
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 text-sm">
-                            <option value="">Seleccionar cuenta…</option>
-                            @foreach ($cuentasContables as $c)
-                                <option value="{{ $c->id }}" @selected(old('cuenta_contrapartida_id') == $c->id)>{{ $c->codigo }} — {{ $c->nombre }}</option>
-                            @endforeach
-                        </select>
+                        <x-buscador-contacto name="cuenta_contrapartida_id" label="" :opciones="$cuentasContables"
+                            :selected="old('cuenta_contrapartida_id')" placeholder="Buscar cuenta por código o nombre" empty-label="Seleccionar cuenta…" />
                         @error('cuenta_contrapartida_id')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
                     </div>
                 </div>

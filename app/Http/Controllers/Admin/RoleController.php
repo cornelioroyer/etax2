@@ -52,8 +52,8 @@ class RoleController extends Controller
     public function create(): View
     {
         return view('admin.roles.create', [
-            'grupos'             => $this->catalogoPermisos(),
-            'permisosDelRol'     => [],
+            'matriz'         => \App\Support\MatrizPermisos::grupos(),
+            'permisosDelRol' => [],
         ]);
     }
 
@@ -87,7 +87,7 @@ class RoleController extends Controller
 
         return view('admin.roles.edit', [
             'role'           => $role,
-            'grupos'         => $this->catalogoPermisos(),
+            'matriz'         => \App\Support\MatrizPermisos::grupos(),
             'permisosDelRol' => $role->permissions->pluck('name')->all(),
         ]);
     }
@@ -181,7 +181,9 @@ class RoleController extends Controller
     /** Deja solo permisos del catálogo administrable (excluye los reservados). */
     private function permisosAdministrables(array $nombres): array
     {
-        return array_values(array_diff(array_unique($nombres), Role::PERMISOS_RESERVADOS));
+        $reservados = array_merge(Role::PERMISOS_RESERVADOS, \App\Support\MatrizPermisos::RESERVADOS);
+
+        return array_values(array_diff(array_unique($nombres), $reservados));
     }
 
     /**

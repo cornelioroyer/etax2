@@ -81,13 +81,9 @@
     {{-- Cuentas contables --}}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-            <label class="block text-sm font-medium text-gray-700">Cuenta de ingreso</label>
-            <select name="cuenta_ingreso_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 text-sm">
-                <option value="">Sin cuenta</option>
-                @foreach ($cuentas as $c)
-                    <option value="{{ $c->id }}" @selected(old('cuenta_ingreso_id', isset($item) ? ($item->cuenta_ingreso_id ?? '') : ($cuentaIngresoDefaultId ?? '')) == $c->id)>{{ $c->codigo }} — {{ $c->nombre }}</option>
-                @endforeach
-            </select>
+            <x-buscador-contacto name="cuenta_ingreso_id" label="Cuenta de ingreso" :opciones="$cuentas"
+                :selected="old('cuenta_ingreso_id', isset($item) ? ($item->cuenta_ingreso_id ?? '') : ($cuentaIngresoDefaultId ?? ''))"
+                placeholder="Buscar cuenta por código o nombre" empty-label="Sin cuenta" />
         </div>
         <div>
             <x-buscador-contacto name="cuenta_gasto_id" label="Cuenta de gasto/costo" :opciones="$cuentas"

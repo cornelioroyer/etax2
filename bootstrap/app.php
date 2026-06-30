@@ -2,6 +2,7 @@
 
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
+use App\Http\Middleware\AutorizarOpcion;
 use App\Http\Middleware\EnsureUserIsAdmin;
 use App\Http\Middleware\EstablecerCompaniaActiva;
 use Illuminate\Console\Scheduling\Schedule;
@@ -62,6 +63,10 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->appendToGroup('web', EstablecerCompaniaActiva::class);
+        // Enforcement del modelo de permisos "por opción × acción". Se monta
+        // después de EstablecerCompaniaActiva (necesita el team = compañía activa)
+        // y es fail-open para rutas sin opción asociada.
+        $middleware->appendToGroup('web', AutorizarOpcion::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

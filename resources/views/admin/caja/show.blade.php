@@ -46,16 +46,9 @@
                             <x-text-input id="nombre" name="nombre" type="text" class="mt-1 block w-full" :value="$caja->nombre" required />
                         </div>
                         <div class="sm:col-span-2">
-                            <x-input-label for="cuenta_contable_id" value="Cuenta de efectivo (GL)" />
-                            <div class="flex gap-2">
-                                <select id="cuenta_contable_id" name="cuenta_contable_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                    <option value="">— Cuenta contable —</option>
-                                    @foreach ($cuentas as $cuenta)
-                                        <option value="{{ $cuenta->id }}" @selected($caja->cuenta_contable_id == $cuenta->id)>{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
-                                    @endforeach
-                                </select>
-                                <button class="mt-1 rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-700 hover:bg-gray-50">Guardar</button>
-                            </div>
+                            <x-buscador-contacto name="cuenta_contable_id" label="Cuenta de efectivo (GL)" :opciones="$cuentas"
+                                :selected="$caja->cuenta_contable_id" placeholder="Buscar cuenta por código o nombre" empty-label="— Cuenta contable —" />
+                            <button class="mt-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">Guardar</button>
                         </div>
                     </form>
                 @endcan
@@ -92,13 +85,8 @@
                                 </div>
                             </div>
                             <div>
-                                <x-input-label value="Cuenta contrapartida (gasto/origen) *" />
-                                <select name="cuenta_contable_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm" required>
-                                    <option value="">— Cuenta —</option>
-                                    @foreach ($cuentas as $cuenta)
-                                        <option value="{{ $cuenta->id }}">{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
-                                    @endforeach
-                                </select>
+                                <x-buscador-contacto name="cuenta_contable_id" label="Cuenta contrapartida (gasto/origen) *" :opciones="$cuentas"
+                                    required placeholder="Buscar cuenta por código o nombre" />
                             </div>
                             <div class="grid grid-cols-2 gap-3">
                                 <div>
@@ -142,13 +130,8 @@
                                     </div>
                                 </div>
                                 <div>
-                                    <x-input-label value="Cuenta de origen (banco) *" />
-                                    <select name="cuenta_banco_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm" required>
-                                        <option value="">— Cuenta —</option>
-                                        @foreach ($cuentas as $cuenta)
-                                            <option value="{{ $cuenta->id }}">{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
-                                        @endforeach
-                                    </select>
+                                    <x-buscador-contacto name="cuenta_banco_id" label="Cuenta de origen (banco) *" :opciones="$cuentas"
+                                        required placeholder="Buscar cuenta por código o nombre" />
                                 </div>
                                 <button class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500">Registrar reembolso</button>
                             </form>
@@ -201,12 +184,8 @@
                                             <form method="POST" action="{{ route('admin.caja.vale.liquidar', $vale) }}" class="flex flex-wrap items-center gap-2" enctype="multipart/form-data">
                                                 @csrf
                                                 <input type="hidden" name="fecha" value="{{ now()->format('Y-m-d') }}">
-                                                <select name="cuenta_contable_id" class="rounded-md border-gray-300 text-xs shadow-sm" required>
-                                                    <option value="">— Cuenta gasto —</option>
-                                                    @foreach ($cuentas as $cuenta)
-                                                        <option value="{{ $cuenta->id }}">{{ $cuenta->codigo }}</option>
-                                                    @endforeach
-                                                </select>
+                                                <x-buscador-contacto name="cuenta_contable_id" label="" :input-id="'cuenta_vale_'.$vale->id"
+                                                    :opciones="$cuentas" required compact width="w-44" placeholder="Cuenta gasto" />
                                                 <input type="number" name="itbms_monto" step="0.01" min="0" placeholder="ITBMS" title="ITBMS incluido (crédito fiscal)" class="w-20 rounded-md border-gray-300 text-xs shadow-sm">
                                                 <input type="text" name="documento_ref" maxlength="60" placeholder="N° comp." title="N° de comprobante" class="w-24 rounded-md border-gray-300 text-xs shadow-sm">
                                                 <input type="file" name="comprobante" accept="image/*,application/pdf" title="Comprobante (recibo)" class="w-40 text-xs text-gray-600 file:mr-2 file:rounded file:border-0 file:bg-gray-100 file:px-2 file:py-1 file:text-xs file:text-gray-700">

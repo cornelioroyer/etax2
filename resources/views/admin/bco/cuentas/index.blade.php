@@ -134,13 +134,8 @@
                         <input type="number" name="saldo_inicial" value="0" step="0.01" min="0" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm">
                     </div>
                     <div class="col-span-2">
-                        <label class="block text-sm font-medium text-gray-700">Cuenta contable</label>
-                        <select name="cuenta_contable_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm">
-                            <option value="">— Sin mapeo contable —</option>
-                            @foreach ($cuentasContables as $cc)
-                                <option value="{{ $cc->id }}">{{ $cc->codigo }} — {{ $cc->nombre }}</option>
-                            @endforeach
-                        </select>
+                        <x-buscador-contacto name="cuenta_contable_id" label="Cuenta contable" :opciones="$cuentasContables"
+                            placeholder="Buscar cuenta por código o nombre" empty-label="— Sin mapeo contable —" />
                     </div>
                 </div>
                 <div class="flex gap-3 pt-2">

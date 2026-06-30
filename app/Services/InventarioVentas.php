@@ -179,6 +179,16 @@ class InventarioVentas
             ]);
         }
 
+        // Si una compra back-dated entró DESPUÉS de costear esta venta, el costo de
+        // salida quedaría mal valuado; reconciliar lo recostea en orden de fecha.
+        app(ReconciliadorCostosInventario::class)->reconciliar(
+            $companiaId,
+            array_map(fn ($d) => (int) $d['item_id'], $detalle),
+            $almacenId,
+            $fecha,
+            $usuario,
+        );
+
         return $mov;
     }
 
@@ -232,6 +242,14 @@ class InventarioVentas
             }
 
             $mov->update(['estado' => 'ANULADO', 'updated_by' => $usuario->email]);
+        }
+
+        // Reponer una salida cambia el costo de las salidas posteriores: reconcilia.
+        if ($movimientos->isNotEmpty()) {
+            $itemIds = $movimientos->flatMap(fn ($m) => $m->detalle->pluck('item_id'))->all();
+            app(ReconciliadorCostosInventario::class)->reconciliar(
+                $movimientos->first()->compania_id, $itemIds, null, null, $usuario,
+            );
         }
     }
 
@@ -356,6 +374,16 @@ class InventarioVentas
             $this->reponerExistencia($companiaId, $almacenId, $itemId, $cantidad, $costo, $usuario);
         }
 
+        // La devolución es una entrada; si quedó back-dated respecto a salidas ya
+        // costeadas, recostea y reajusta.
+        app(ReconciliadorCostosInventario::class)->reconciliar(
+            $companiaId,
+            array_map(fn ($d) => (int) $d['item_id'], $detalle),
+            $almacenId,
+            $fecha,
+            $usuario,
+        );
+
         return $mov;
     }
 
@@ -401,6 +429,14 @@ class InventarioVentas
             }
 
             $mov->update(['estado' => 'ANULADO', 'updated_by' => $usuario->email]);
+        }
+
+        // Quitar la entrada por devolución cambia el costo de salidas posteriores.
+        if ($movimientos->isNotEmpty()) {
+            $itemIds = $movimientos->flatMap(fn ($m) => $m->detalle->pluck('item_id'))->all();
+            app(ReconciliadorCostosInventario::class)->reconciliar(
+                $movimientos->first()->compania_id, $itemIds, null, null, $usuario,
+            );
         }
     }
 

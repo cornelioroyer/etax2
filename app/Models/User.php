@@ -98,6 +98,11 @@ class User extends Authenticatable
             return Compania::orderBy('nombre')->get();
         }
 
+        // Asignación GLOBAL (rol con compania_id NULL): acceso a todas.
+        if ($this->tieneAsignacionGlobal()) {
+            return Compania::orderBy('nombre')->get();
+        }
+
         $ids = DB::table('seg_usuarios_roles')
             ->where('model_type', self::class)
             ->where('model_id', $this->id)
@@ -106,6 +111,14 @@ class User extends Authenticatable
             ->unique();
 
         return Compania::whereIn('id', $ids)->orderBy('nombre')->get();
+    }
+
+    /** ¿El usuario tiene algún rol asignado de forma global (todas las compañías)? */
+    public function tieneAsignacionGlobal(): bool
+    {
+        return DB::table('seg_usuarios_roles_globales')
+            ->where('user_id', $this->id)
+            ->exists();
     }
 
     /**
@@ -156,6 +169,49 @@ class User extends Authenticatable
     }
 
     /**
+     * Permisos otorgados de forma GLOBAL (a todas las compañías): vía roles
+     * asignados con compania_id NULL, o permisos directos con compania_id NULL.
+     * Memoizado por petición. Aplica en CUALQUIER compañía (incl. futuras).
+     *
+     * @var array<int, string>|null
+     */
+    protected ?array $cachePermisosGlobales = null;
+
+    /**
+     * @return array<int, string>
+     */
+    public function permisosGlobales(): array
+    {
+        if ($this->cachePermisosGlobales === null) {
+            $rolIds = DB::table('seg_usuarios_roles_globales')
+                ->where('user_id', $this->id)
+                ->pluck('rol_id');
+
+            $this->cachePermisosGlobales = $rolIds->isEmpty() ? [] : DB::table('seg_roles_permisos')
+                ->join('seg_permisos', 'seg_permisos.id', '=', 'seg_roles_permisos.permiso_id')
+                ->whereIn('seg_roles_permisos.rol_id', $rolIds)
+                ->pluck('seg_permisos.name')
+                ->unique()
+                ->values()
+                ->all();
+        }
+
+        return $this->cachePermisosGlobales;
+    }
+
+    /** ¿El usuario tiene este permiso de forma global (todas las compañías)? */
+    public function tienePermisoGlobal(string $permiso): bool
+    {
+        return in_array($permiso, $this->permisosGlobales(), true);
+    }
+
+    /** Limpia la memoización de permisos globales (tras cambiarlos). */
+    public function olvidarPermisosGlobales(): void
+    {
+        $this->cachePermisosGlobales = null;
+    }
+
+    /**
      * Compañías que este usuario administra (rol admin_compania).
      */
     public function companiasAdministradas(): Collection
@@ -165,6 +221,16 @@ class User extends Authenticatable
         }
 
         $rolAdminId = DB::table('seg_roles')->where('name', 'admin_compania')->value('id');
+
+        // admin_compania asignado de forma global → administra todas.
+        $adminGlobal = DB::table('seg_usuarios_roles_globales')
+            ->where('user_id', $this->id)
+            ->where('rol_id', $rolAdminId)
+            ->exists();
+
+        if ($adminGlobal) {
+            return Compania::orderBy('nombre')->get();
+        }
 
         $ids = DB::table('seg_usuarios_roles')
             ->where('model_type', self::class)

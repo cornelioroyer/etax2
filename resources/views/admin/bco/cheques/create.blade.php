@@ -61,16 +61,9 @@
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Cuenta contable (contrapartida)
-                            <span class="font-normal text-gray-400">— gasto o pasivo que se debita</span>
-                        </label>
-                        <select name="cuenta_contable_id" class="w-full rounded-md border-gray-300 text-sm shadow-sm">
-                            <option value="">Sin asiento contable</option>
-                            @foreach ($cuentasContables as $c)
-                                <option value="{{ $c->id }}" @selected(old('cuenta_contable_id') == $c->id)>{{ $c->codigo }} — {{ $c->nombre }}</option>
-                            @endforeach
-                        </select>
-                        <p class="mt-1 text-xs text-gray-500">Si se selecciona, se genera el asiento Dr Contrapartida / Cr Banco. Requiere que la cuenta bancaria tenga cuenta GL configurada.</p>
+                        <x-buscador-contacto name="cuenta_contable_id" label="Cuenta contable (contrapartida)" :opciones="$cuentasContables"
+                            :selected="old('cuenta_contable_id')" placeholder="Buscar cuenta por código o nombre" empty-label="Sin asiento contable" />
+                        <p class="mt-1 text-xs text-gray-500">Gasto o pasivo que se debita. Si se selecciona, se genera el asiento Dr Contrapartida / Cr Banco. Requiere que la cuenta bancaria tenga cuenta GL configurada.</p>
                     </div>
 
                     <div class="flex justify-end gap-3 pt-2">

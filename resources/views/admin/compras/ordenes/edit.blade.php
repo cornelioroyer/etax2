@@ -123,13 +123,11 @@
                                                 </select>
                                             </td>
                                             <td class="py-2 pr-2">
-                                                <select :name="`lineas[${idx}][cuenta_id]`" x-model.number="linea.cuenta_id"
-                                                        class="block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                                    <option value="">— Default —</option>
-                                                    @foreach ($cuentas as $cuenta)
-                                                        <option value="{{ $cuenta->id }}" :selected="linea.cuenta_id == {{ $cuenta->id }}">{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
-                                                    @endforeach
-                                                </select>
+                                                @include('admin.partials.cuenta-combo', [
+                                                    'cuentas' => $cuentas,
+                                                    'nameExpr' => '`lineas[${idx}][cuenta_id]`',
+                                                    'emptyLabel' => '— Default —',
+                                                ])
                                             </td>
                                             <td class="py-2 pr-2 text-right whitespace-nowrap" x-text="fmt(totalLinea(linea))"></td>
                                             <td class="py-2 text-right">

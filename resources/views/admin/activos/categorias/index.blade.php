@@ -41,34 +41,16 @@
                     </div>
                     <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
                         <div>
-                            <x-input-label for="c_cuenta_activo_id" value="Cuenta activo" />
-                            <select id="c_cuenta_activo_id" name="cuenta_activo_id"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                <option value="">— ninguna —</option>
-                                @foreach ($cuentas as $c)
-                                    <option value="{{ $c->id }}" @selected(old('cuenta_activo_id') == $c->id)>{{ $c->codigo }} {{ $c->nombre }}</option>
-                                @endforeach
-                            </select>
+                            <x-buscador-contacto name="cuenta_activo_id" label="Cuenta activo" :opciones="$cuentas"
+                                :selected="old('cuenta_activo_id')" placeholder="Buscar cuenta por código o nombre" empty-label="— ninguna —" />
                         </div>
                         <div>
-                            <x-input-label for="c_cuenta_dep_acum_id" value="Dep. acumulada" />
-                            <select id="c_cuenta_dep_acum_id" name="cuenta_depreciacion_acum_id"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                <option value="">— ninguna —</option>
-                                @foreach ($cuentas as $c)
-                                    <option value="{{ $c->id }}" @selected(old('cuenta_depreciacion_acum_id') == $c->id)>{{ $c->codigo }} {{ $c->nombre }}</option>
-                                @endforeach
-                            </select>
+                            <x-buscador-contacto name="cuenta_depreciacion_acum_id" label="Dep. acumulada" :opciones="$cuentas"
+                                :selected="old('cuenta_depreciacion_acum_id')" placeholder="Buscar cuenta por código o nombre" empty-label="— ninguna —" />
                         </div>
                         <div>
-                            <x-input-label for="c_cuenta_gasto_dep_id" value="Gasto depreciación" />
-                            <select id="c_cuenta_gasto_dep_id" name="cuenta_gasto_depreciacion_id"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                <option value="">— ninguna —</option>
-                                @foreach ($cuentas as $c)
-                                    <option value="{{ $c->id }}" @selected(old('cuenta_gasto_depreciacion_id') == $c->id)>{{ $c->codigo }} {{ $c->nombre }}</option>
-                                @endforeach
-                            </select>
+                            <x-buscador-contacto name="cuenta_gasto_depreciacion_id" label="Gasto depreciación" :opciones="$cuentas"
+                                :selected="old('cuenta_gasto_depreciacion_id')" placeholder="Buscar cuenta por código o nombre" empty-label="— ninguna —" />
                         </div>
                     </div>
                     <div class="mt-4">

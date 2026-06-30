@@ -7,7 +7,7 @@
     </x-slot>
 
     <div class="py-8">
-        <div class="max-w-4xl mx-auto sm:px-6 lg:px-8 space-y-6">
+        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
 
             @if (session('status'))
                 <div class="rounded-md bg-green-50 p-4 text-sm text-green-700">{{ session('status') }}</div>
@@ -20,100 +20,63 @@
             <div class="rounded-lg bg-blue-50 p-4 text-sm text-blue-700">
                 <strong>{{ $usuario->email }}</strong> &mdash;
                 Rol: <span class="font-semibold">{{ $rolNombre === 'admin_compania' ? 'Administrador de compañía' : ($rolNombre === 'usuario' ? 'Usuario' : ($rolNombre ? ucfirst(str_replace('_', ' ', $rolNombre)) : 'Sin rol')) }}</span>
-                <br>
-                <span class="text-blue-500">
-                    Los permisos con fondo gris vienen del rol. Marca la casilla para <strong>denegárselos</strong> solo a este usuario
-                    (sin afectar a los demás ni cambiar el rol). Los permisos sin fondo son <strong>extras</strong>: márcalos para agregárselos
-                    además de su rol. Todo aplica únicamente a esta compañía.
-                </span>
+                <div class="mt-1 text-blue-600">
+                    Cada opción tiene 6 acciones. Las casillas con <span class="font-semibold">fondo gris</span> ya las da el rol:
+                    márcalas para <span class="font-semibold text-red-600">denegárselas</span> solo a este usuario. Las casillas
+                    en blanco son <span class="font-semibold">extras</span>: márcalas para agregárselas además del rol. Todo aplica solo a esta compañía.
+                </div>
             </div>
 
             <form method="POST" action="{{ route('admin.usuarios-compania.permisos.update', $usuario) }}">
                 @csrf
                 @method('PUT')
 
-                <div class="space-y-4">
-                    @php
-                        $etiquetas = [
-                            'activos'           => 'Activos',
-                            'bancos'            => 'Bancos',
-                            'companias'         => 'Compañías',
-                            'compras'           => 'Compras',
-                            'contabilidad'      => 'Contabilidad',
-                            'contactos'         => 'Contactos',
-                            'cxc'               => 'Cuentas por Cobrar (CxC)',
-                            'cxp'               => 'Cuentas por Pagar (CxP)',
-                            'ia'                => 'Inteligencia Artificial',
-                            'inventario'        => 'Inventario',
-                            'reportes'          => 'Reportes',
-                            'usuarios_compania' => 'Usuarios de compañía',
-                            'ventas'            => 'Ventas',
-                            'zonas'             => 'Zonas',
-                        ];
-                        $accionEtiqueta = [
-                            'ver'                      => 'Ver',
-                            'crear'                    => 'Crear',
-                            'editar'                   => 'Editar',
-                            'eliminar'                 => 'Eliminar',
-                            'gestionar'                => 'Gestionar (crear, editar, anular)',
-                            'campo.facturacion_fiscal' => 'Campo: Facturación Fiscal',
-                        ];
-                    @endphp
-
-                    @foreach ($grupos as $modulo => $permisos)
+                <div class="space-y-6">
+                    @foreach ($matriz as $grupo)
                         <div class="rounded-lg bg-white shadow-sm overflow-hidden">
-                            <div class="bg-gray-50 px-4 py-2 border-b border-gray-200">
-                                <h3 class="text-sm font-semibold text-gray-700">{{ $etiquetas[$modulo] ?? ucfirst($modulo) }}</h3>
+                            <div class="bg-gray-100 px-4 py-2 border-b border-gray-200">
+                                <h3 class="text-sm font-bold text-gray-700">{{ $grupo['titulo'] }}</h3>
                             </div>
-                            <div class="divide-y divide-gray-100">
-                                @foreach ($permisos as $permiso)
-                                    @php
-                                        $delRol   = in_array($permiso->name, $permisosDelRol);
-                                        $directo  = in_array($permiso->name, $permisosDirectos);
-                                        $denegado = in_array($permiso->name, $permisosDenegados);
-                                        $sufijo   = implode('.', array_slice(explode('.', $permiso->name), 1));
-                                        $etiqueta = $accionEtiqueta[$sufijo] ?? ucfirst(str_replace('.', ' ', $sufijo));
-                                    @endphp
-                                    @if ($delRol)
-                                        {{-- Permiso heredado del rol: se puede DENEGAR puntualmente a este usuario --}}
-                                        <label class="flex items-center gap-3 px-4 py-3 cursor-pointer {{ $denegado ? 'bg-red-50' : 'bg-gray-50' }}">
-                                            <input
-                                                type="checkbox"
-                                                name="denegados[]"
-                                                value="{{ $permiso->id }}"
-                                                @checked($denegado)
-                                                class="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
-                                            >
-                                            <span class="text-sm {{ $denegado ? 'text-red-600 line-through' : 'text-gray-700' }}">
-                                                {{ $etiqueta }}
-                                                @if ($denegado)
-                                                    <span class="ml-1 text-xs text-red-500 no-underline">(denegado a este usuario)</span>
-                                                @else
-                                                    <span class="ml-1 text-xs text-gray-400">(del rol — marcar para denegar)</span>
-                                                @endif
-                                            </span>
-                                            <span class="ml-auto text-xs text-gray-300 font-mono">{{ $permiso->name }}</span>
-                                        </label>
-                                    @else
-                                        {{-- Permiso fuera del rol: se puede AGREGAR como extra --}}
-                                        <label class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-indigo-50">
-                                            <input
-                                                type="checkbox"
-                                                name="permisos[]"
-                                                value="{{ $permiso->id }}"
-                                                @checked($directo)
-                                                class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                                            >
-                                            <span class="text-sm text-gray-800">
-                                                {{ $etiqueta }}
-                                                @if ($directo)
-                                                    <span class="ml-1 text-xs text-indigo-500">(extra)</span>
-                                                @endif
-                                            </span>
-                                            <span class="ml-auto text-xs text-gray-300 font-mono">{{ $permiso->name }}</span>
-                                        </label>
-                                    @endif
-                                @endforeach
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full text-sm">
+                                    <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                                        <tr>
+                                            <th class="px-4 py-2 text-left font-medium">Opción</th>
+                                            @foreach (\App\Support\MatrizPermisos::ACCIONES as $etiqueta)
+                                                <th class="px-3 py-2 text-center font-medium">{{ $etiqueta }}</th>
+                                            @endforeach
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100">
+                                        @foreach ($grupo['opciones'] as $op)
+                                            <tr class="hover:bg-gray-50">
+                                                <td class="px-4 py-2 text-gray-800">{{ $op['etiqueta'] }}</td>
+                                                @foreach ($op['acciones'] as $accion)
+                                                    @php
+                                                        $delRol   = in_array($accion['name'], $permisosDelRol, true);
+                                                        $directo  = in_array($accion['name'], $permisosDirectos, true);
+                                                        $denegado = in_array($accion['name'], $permisosDenegados, true);
+                                                    @endphp
+                                                    <td class="px-3 py-2 text-center {{ $delRol ? ($denegado ? 'bg-red-50' : 'bg-gray-50') : '' }}">
+                                                        @if ($accion['reservado'] || ! $accion['id'])
+                                                            <span class="text-gray-300">&mdash;</span>
+                                                        @elseif ($delRol)
+                                                            {{-- Permiso heredado del rol: marcar = denegar a este usuario --}}
+                                                            <input type="checkbox" name="denegados[]" value="{{ $accion['id'] }}"
+                                                                   @checked($denegado) title="Del rol — marcar para denegar"
+                                                                   class="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500">
+                                                        @else
+                                                            {{-- Permiso fuera del rol: marcar = agregar como extra --}}
+                                                            <input type="checkbox" name="permisos[]" value="{{ $accion['id'] }}"
+                                                                   @checked($directo) title="Extra — marcar para agregar"
+                                                                   class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                                        @endif
+                                                    </td>
+                                                @endforeach
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     @endforeach

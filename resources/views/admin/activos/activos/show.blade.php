@@ -156,14 +156,8 @@
                                         class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"></textarea>
                                 </div>
                                 <div>
-                                    <x-input-label for="baja_cuenta_resultado_id" value="Cuenta pérdida / ganancia en baja *" />
-                                    <select id="baja_cuenta_resultado_id" name="cuenta_resultado_id" required
-                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm">
-                                        <option value="">— seleccionar —</option>
-                                        @foreach ($cuentas as $c)
-                                            <option value="{{ $c->id }}">{{ $c->codigo }} {{ $c->nombre }}</option>
-                                        @endforeach
-                                    </select>
+                                    <x-buscador-contacto name="cuenta_resultado_id" label="Cuenta pérdida / ganancia en baja *" :opciones="$cuentas"
+                                        required placeholder="Buscar cuenta por código o nombre" />
                                 </div>
                             </div>
                             <div class="mt-3 flex gap-2">

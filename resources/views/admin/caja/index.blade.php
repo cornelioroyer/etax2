@@ -33,14 +33,8 @@
                                 <x-text-input id="nombre" name="nombre" type="text" class="mt-1 block w-full" :value="old('nombre')" required />
                             </div>
                             <div class="sm:col-span-2">
-                                <x-input-label for="cuenta_contable_id" value="Cuenta de efectivo (GL)" />
-                                <select id="cuenta_contable_id" name="cuenta_contable_id"
-                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                    <option value="">— Cuenta contable —</option>
-                                    @foreach ($cuentas as $cuenta)
-                                        <option value="{{ $cuenta->id }}" @selected(old('cuenta_contable_id') == $cuenta->id)>{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
-                                    @endforeach
-                                </select>
+                                <x-buscador-contacto name="cuenta_contable_id" label="Cuenta de efectivo (GL)" :opciones="$cuentas"
+                                    :selected="old('cuenta_contable_id')" placeholder="Buscar cuenta por código o nombre" empty-label="— Cuenta contable —" />
                             </div>
                         </div>
                         <div class="mt-4">

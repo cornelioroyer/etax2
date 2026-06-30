@@ -119,34 +119,16 @@
                     <h3 class="mt-6 mb-4 text-sm font-semibold text-gray-700">Cuentas contables <span class="font-normal text-gray-400">(se heredan de la categoría si están vacías)</span></h3>
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
-                            <x-input-label for="cuenta_activo_id" value="Cuenta del activo" />
-                            <select id="cuenta_activo_id" name="cuenta_activo_id"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                <option value="">— heredar de categoría —</option>
-                                @foreach ($cuentas as $c)
-                                    <option value="{{ $c->id }}" @selected(old('cuenta_activo_id') == $c->id)>{{ $c->codigo }} {{ $c->nombre }}</option>
-                                @endforeach
-                            </select>
+                            <x-buscador-contacto name="cuenta_activo_id" label="Cuenta del activo" :opciones="$cuentas"
+                                :selected="old('cuenta_activo_id')" placeholder="Buscar cuenta por código o nombre" empty-label="— heredar de categoría —" />
                         </div>
                         <div>
-                            <x-input-label for="cuenta_depreciacion_acum_id" value="Dep. acumulada" />
-                            <select id="cuenta_depreciacion_acum_id" name="cuenta_depreciacion_acum_id"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                <option value="">— heredar de categoría —</option>
-                                @foreach ($cuentas as $c)
-                                    <option value="{{ $c->id }}" @selected(old('cuenta_depreciacion_acum_id') == $c->id)>{{ $c->codigo }} {{ $c->nombre }}</option>
-                                @endforeach
-                            </select>
+                            <x-buscador-contacto name="cuenta_depreciacion_acum_id" label="Dep. acumulada" :opciones="$cuentas"
+                                :selected="old('cuenta_depreciacion_acum_id')" placeholder="Buscar cuenta por código o nombre" empty-label="— heredar de categoría —" />
                         </div>
                         <div>
-                            <x-input-label for="cuenta_gasto_depreciacion_id" value="Gasto depreciación" />
-                            <select id="cuenta_gasto_depreciacion_id" name="cuenta_gasto_depreciacion_id"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                <option value="">— heredar de categoría —</option>
-                                @foreach ($cuentas as $c)
-                                    <option value="{{ $c->id }}" @selected(old('cuenta_gasto_depreciacion_id') == $c->id)>{{ $c->codigo }} {{ $c->nombre }}</option>
-                                @endforeach
-                            </select>
+                            <x-buscador-contacto name="cuenta_gasto_depreciacion_id" label="Gasto depreciación" :opciones="$cuentas"
+                                :selected="old('cuenta_gasto_depreciacion_id')" placeholder="Buscar cuenta por código o nombre" empty-label="— heredar de categoría —" />
                         </div>
 
                         @if ($desdeCxp)
@@ -157,14 +139,8 @@
                             </div>
                         @else
                             <div>
-                                <x-input-label for="cuenta_contrapartida_id" value="Cuenta contrapartida (compra) *" />
-                                <select id="cuenta_contrapartida_id" name="cuenta_contrapartida_id" required
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                    <option value="">— seleccionar —</option>
-                                    @foreach ($cuentas as $c)
-                                        <option value="{{ $c->id }}" @selected(old('cuenta_contrapartida_id') == $c->id)>{{ $c->codigo }} {{ $c->nombre }}</option>
-                                    @endforeach
-                                </select>
+                                <x-buscador-contacto name="cuenta_contrapartida_id" label="Cuenta contrapartida (compra) *" :opciones="$cuentas"
+                                    required :selected="old('cuenta_contrapartida_id')" placeholder="Buscar cuenta por código o nombre" />
                                 <p class="mt-1 text-xs text-gray-500">Cuenta que se acredita al comprar el activo (ej: banco, proveedor CxP).</p>
                                 <x-input-error :messages="$errors->get('cuenta_contrapartida_id')" class="mt-1" />
                             </div>

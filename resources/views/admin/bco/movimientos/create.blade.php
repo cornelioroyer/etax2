@@ -80,13 +80,8 @@
                                 placeholder="Buscar por código o nombre" empty-label="— Ninguno —" mostrar-ruc />
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Cuenta contable contrapartida</label>
-                            <select name="cuenta_contable_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 text-sm">
-                                <option value="">— Sin asiento automático —</option>
-                                @foreach ($cuentasContables as $cc)
-                                    <option value="{{ $cc->id }}" @selected(old('cuenta_contable_id') == $cc->id)>{{ $cc->codigo }} — {{ $cc->nombre }}</option>
-                                @endforeach
-                            </select>
+                            <x-buscador-contacto name="cuenta_contable_id" label="Cuenta contable contrapartida" :opciones="$cuentasContables"
+                                :selected="old('cuenta_contable_id')" placeholder="Buscar cuenta por código o nombre" empty-label="— Sin asiento automático —" />
                             <p class="mt-1 text-xs text-gray-400">Si se selecciona, se genera asiento automático.</p>
                         </div>
                     </div>

@@ -10,6 +10,7 @@
     'submitOnSelect' => false,
     'emptyLabel' => 'Todos',
     'mostrarRuc' => false,
+    'inputId' => null,
 ])
 @php
     $col = collect($opciones ?? []);
@@ -25,7 +26,7 @@
         ? trim((((string) ($sel->codigo ?? '') !== '') ? $sel->codigo.' — ' : '').($sel->nombre ?? '')
             .($mostrarRuc && ($sel->identificacion ?? '') !== '' ? ' — RUC '.$sel->identificacion.(($sel->dv ?? '') !== '' ? ' DV '.$sel->dv : '') : ''))
         : '';
-    $cid = $name.'_buscar';
+    $cid = $inputId ?? $name.'_buscar';
 @endphp
 {{-- Combobox buscable (por nombre, código o RUC). Envía $name vía <input hidden>; el
      campo de texto no tiene name. Alpine inline → no requiere recompilar el bundle JS.
@@ -69,10 +70,12 @@
         })"
      @endif
      @click.outside="open = false" {{ $attributes }}>
-    @if ($compact)
-        <label for="{{ $cid }}" class="block text-xs text-gray-500 mb-1">{{ $label }}</label>
-    @else
-        <x-input-label :for="$cid" :value="$label" />
+    @if ($label !== '')
+        @if ($compact)
+            <label for="{{ $cid }}" class="block text-xs text-gray-500 mb-1">{{ $label }}</label>
+        @else
+            <x-input-label :for="$cid" :value="$label" />
+        @endif
     @endif
     <div class="relative {{ $compact ? '' : 'mt-1' }}">
         <input type="hidden" name="{{ $name }}" :value="sel">

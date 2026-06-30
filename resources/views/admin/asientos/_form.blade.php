@@ -62,13 +62,12 @@
                     <template x-for="(linea, idx) in lineas" :key="idx">
                         <tr class="border-t border-gray-100 align-top">
                             <td class="py-2 pr-2">
-                                <select :name="`lineas[${idx}][cuenta_id]`" x-model="linea.cuenta_id" required
-                                        class="block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                    <option value="">— Cuenta —</option>
-                                    @foreach ($cuentas as $cuenta)
-                                        <option value="{{ $cuenta->id }}">{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
-                                    @endforeach
-                                </select>
+                                @include('admin.partials.cuenta-combo', [
+                                    'cuentas' => $cuentas,
+                                    'nameExpr' => '`lineas[${idx}][cuenta_id]`',
+                                    'required' => true,
+                                    'emptyLabel' => '— Cuenta —',
+                                ])
                             </td>
                             <td class="py-2 pr-2">
                                 <input type="text" :name="`lineas[${idx}][descripcion]`" x-model="linea.descripcion"

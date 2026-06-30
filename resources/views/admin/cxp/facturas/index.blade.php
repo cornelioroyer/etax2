@@ -410,14 +410,8 @@
                            class="block w-full text-sm text-gray-700 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Cuenta de contrapartida (apertura)</label>
-                    <select name="cuenta_apertura_id" required
-                            class="block w-full text-sm text-gray-700 border border-gray-300 rounded-md px-2 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                        <option value="">— Elegir cuenta —</option>
-                        @foreach ($cuentasApertura as $c)
-                            <option value="{{ $c->id }}" @selected(old('cuenta_apertura_id') == $c->id)>{{ $c->codigo }} — {{ $c->nombre }}</option>
-                        @endforeach
-                    </select>
+                    <x-buscador-contacto name="cuenta_apertura_id" label="Cuenta de contrapartida (apertura)" :opciones="$cuentasApertura"
+                        required :selected="old('cuenta_apertura_id')" placeholder="Buscar cuenta por código o nombre" />
                 </div>
             </div>
             <div class="mb-4">

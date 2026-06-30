@@ -57,9 +57,20 @@ class AppServiceProvider extends ServiceProvider
 
             // companias.crear se exceptúa: crear una compañía nueva no modifica
             // datos de la compañía 1, y todos los usuarios pueden crearlas.
+            // Acciones de lectura permitidas en la compañía sistema: el modelo
+            // viejo usa ".ver"; el nuevo (por opción) usa ".acceder" y, como
+            // exportar/imprimir no modifican datos, también se consideran lectura.
+            $sufijosLectura = ['.ver', '.acceder', '.exportar', '.imprimir'];
+            $esLectura = false;
+            foreach ($sufijosLectura as $sufijo) {
+                if (str_ends_with($ability, $sufijo)) {
+                    $esLectura = true;
+                    break;
+                }
+            }
             if ((int) $companiaActiva === self::COMPANIA_SISTEMA
                 && str_contains($ability, '.')
-                && ! str_ends_with($ability, '.ver')
+                && ! $esLectura
                 && $ability !== 'companias.crear') {
                 return false;
             }
@@ -70,6 +81,31 @@ class AppServiceProvider extends ServiceProvider
             if (str_contains($ability, '.')
                 && method_exists($user, 'tienePermisoDenegado')
                 && $user->tienePermisoDenegado($ability, $companiaActiva ? (int) $companiaActiva : null)) {
+                return false;
+            }
+
+            // 2.6) Asignación GLOBAL: un rol/permiso otorgado con compania_id NULL
+            // aplica en TODAS las compañías (presentes y futuras). Se evalúa
+            // después de los denegados (una denegación por compañía sí lo bloquea).
+            if (str_contains($ability, '.')
+                && method_exists($user, 'tienePermisoGlobal')
+                && $user->tienePermisoGlobal($ability)) {
+                return true;
+            }
+
+            // 2.7) Compatibilidad del modelo viejo: los permisos por módulo
+            // (modulo.ver|gestionar|crear|editar|eliminar y cxp.registrar_qr) se
+            // evalúan contra el modelo nuevo (por opción × acción), que es la
+            // fuente de verdad. Así el código que aún usa nombres viejos
+            // (permission: en rutas, @can en vistas) sigue funcionando sin
+            // reescribirse. Los RESERVADOS de plataforma NO se traducen.
+            if (\App\Support\PermisoLegacy::esLegacy($ability)) {
+                foreach (\App\Support\PermisoLegacy::candidatos($ability) as $permisoNuevo) {
+                    if ($user->can($permisoNuevo)) {
+                        return true;
+                    }
+                }
+
                 return false;
             }
 

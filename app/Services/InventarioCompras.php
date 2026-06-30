@@ -88,6 +88,16 @@ class InventarioCompras
             ]);
         }
 
+        // Si esta entrada quedó con fecha anterior a salidas ya costeadas
+        // (compra back-dated), recostea y reajusta automáticamente.
+        app(ReconciliadorCostosInventario::class)->reconciliar(
+            $companiaId,
+            array_map(fn ($l) => (int) $l['item_id'], $lineas),
+            $almacenId,
+            $fecha,
+            $usuario,
+        );
+
         return $mov;
     }
 
@@ -188,6 +198,13 @@ class InventarioCompras
 
             $mov->update(['estado' => 'ANULADO', 'updated_by' => $usuario->email]);
         }
+
+        // Quitar una entrada del medio de la línea de tiempo cambia el costo de las
+        // salidas posteriores: recostea y reajusta los ítems afectados.
+        $itemIds = $movimientos->flatMap(fn ($m) => $m->detalle->pluck('item_id'))->all();
+        app(ReconciliadorCostosInventario::class)->reconciliar(
+            $movimientos->first()->compania_id, $itemIds, null, null, $usuario,
+        );
     }
 
     /**

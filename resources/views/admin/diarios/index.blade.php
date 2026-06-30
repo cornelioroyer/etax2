@@ -132,14 +132,8 @@
                                       placeholder="Ej: Diario de Ventas" required maxlength="100" />
                     </div>
                     <div>
-                        <x-input-label for="n_cuenta" value="Cuenta asociada (opcional)" />
-                        <select id="n_cuenta" name="cuenta_default_id"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="">— Sin asignar —</option>
-                            @foreach ($cuentas as $cuenta)
-                                <option value="{{ $cuenta->id }}">{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
-                            @endforeach
-                        </select>
+                        <x-buscador-contacto name="cuenta_default_id" label="Cuenta asociada (opcional)" :opciones="$cuentas"
+                            placeholder="Buscar cuenta por código o nombre" empty-label="— Sin asignar —" />
                     </div>
                     <div class="flex items-center gap-2">
                         <input id="n_aprobacion" name="requiere_aprobacion" type="checkbox" value="1"
@@ -180,14 +174,13 @@
                                       x-model="editNombre" required maxlength="100" />
                     </div>
                     <div>
-                        <x-input-label for="e_cuenta" value="Cuenta asociada (opcional)" />
-                        <select id="e_cuenta" name="cuenta_default_id" x-model="editCuentaId"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="">— Sin asignar —</option>
-                            @foreach ($cuentas as $cuenta)
-                                <option value="{{ $cuenta->id }}">{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
-                            @endforeach
-                        </select>
+                        <x-input-label value="Cuenta asociada (opcional)" />
+                        @include('admin.partials.cuenta-combo', [
+                            'cuentas' => $cuentas,
+                            'refExpr' => 'editCuentaId',
+                            'nameExpr' => "'cuenta_default_id'",
+                            'emptyLabel' => '— Sin asignar —',
+                        ])
                     </div>
                     <div class="flex items-center gap-2">
                         <input id="e_aprobacion" name="requiere_aprobacion" type="checkbox" value="1"

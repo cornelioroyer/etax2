@@ -188,13 +188,9 @@
                                        class="mt-1 block w-full rounded-md border-gray-300 text-right shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                 <x-input-error :messages="$errors->get('retencion')" class="mt-1" />
                                 <div x-show="retencion > 0" x-cloak class="mt-2">
-                                    <select name="retencion_cuenta_id"
-                                            class="block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                        <option value="">— Cuenta de retención ITBMS por pagar —</option>
-                                        @foreach ($cuentasPago as $cuenta)
-                                            <option value="{{ $cuenta->id }}" @selected(old('retencion_cuenta_id', $cuentaRetencionItbmsId) == $cuenta->id)>{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
-                                        @endforeach
-                                    </select>
+                                    <x-buscador-contacto name="retencion_cuenta_id" label="" :opciones="$cuentasPago"
+                                        :selected="old('retencion_cuenta_id', $cuentaRetencionItbmsId)"
+                                        placeholder="Cuenta de retención ITBMS por pagar" empty-label="— Sin cuenta —" />
                                     <x-input-error :messages="$errors->get('retencion_cuenta_id')" class="mt-1" />
                                 </div>
                             </div>
@@ -206,13 +202,9 @@
                                        class="mt-1 block w-full rounded-md border-gray-300 text-right shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                 <x-input-error :messages="$errors->get('retencion_isr')" class="mt-1" />
                                 <div x-show="retencionIsr > 0" x-cloak class="mt-2">
-                                    <select name="retencion_isr_cuenta_id"
-                                            class="block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                        <option value="">— Cuenta de retención ISR por pagar —</option>
-                                        @foreach ($cuentasPago as $cuenta)
-                                            <option value="{{ $cuenta->id }}" @selected(old('retencion_isr_cuenta_id', $cuentaRetencionIsrId) == $cuenta->id)>{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
-                                        @endforeach
-                                    </select>
+                                    <x-buscador-contacto name="retencion_isr_cuenta_id" label="" :opciones="$cuentasPago"
+                                        :selected="old('retencion_isr_cuenta_id', $cuentaRetencionIsrId)"
+                                        placeholder="Cuenta de retención ISR por pagar" empty-label="— Sin cuenta —" />
                                     <x-input-error :messages="$errors->get('retencion_isr_cuenta_id')" class="mt-1" />
                                 </div>
                             </div>
@@ -224,13 +216,9 @@
                                        class="mt-1 block w-full rounded-md border-gray-300 text-right shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                 <x-input-error :messages="$errors->get('descuento')" class="mt-1" />
                                 <div x-show="descuento > 0" x-cloak class="mt-2">
-                                    <select name="descuento_cuenta_id"
-                                            class="block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                        <option value="">— Cuenta de ingreso por descuento —</option>
-                                        @foreach ($cuentasPago as $cuenta)
-                                            <option value="{{ $cuenta->id }}" @selected(old('descuento_cuenta_id', $cuentaDescuentoId) == $cuenta->id)>{{ $cuenta->codigo }} — {{ $cuenta->nombre }}</option>
-                                        @endforeach
-                                    </select>
+                                    <x-buscador-contacto name="descuento_cuenta_id" label="" :opciones="$cuentasPago"
+                                        :selected="old('descuento_cuenta_id', $cuentaDescuentoId)"
+                                        placeholder="Cuenta de ingreso por descuento" empty-label="— Sin cuenta —" />
                                     <x-input-error :messages="$errors->get('descuento_cuenta_id')" class="mt-1" />
                                 </div>
                                 <p class="mt-1 text-xs text-gray-500">Liquida la factura completa pagando menos; el descuento se registra como ingreso.</p>
