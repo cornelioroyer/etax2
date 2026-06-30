@@ -33,7 +33,7 @@
         </div>
     </div>
 
-    <div class="space-y-4">
+    <div id="permisos" class="space-y-4" style="scroll-margin-top: 6rem;">
         <h3 class="text-sm font-semibold text-gray-700">Permisos del rol</h3>
         <p class="text-xs text-gray-500">Marca las acciones que tendrá el rol en cada opción. Las acciones reservadas de plataforma se muestran como «&mdash;».</p>
 
