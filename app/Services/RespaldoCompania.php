@@ -82,6 +82,12 @@ class RespaldoCompania
             'cgl_asientos_recurrentes_detalle' => ['fk' => 'recurrente_id', 'padre' => 'cgl_asientos_recurrentes'],
             'cxp_recurrentes_detalle' => ['fk' => 'recurrente_id', 'padre' => 'cxp_recurrentes'],
             'ph_pagos' => ['fk' => 'cuota_id', 'padre' => 'ph_cuotas'],
+            // contact_contactos_tipos SÍ declara el FK en Postgres (esquema maestro),
+            // pero la migración local usada solo por los tests SQLite no lo declara
+            // (unsignedBigInteger suelto, sin ->foreign()) -> PRAGMA foreign_key_list
+            // no lo detecta ahí. Override explícito para que el respaldo no la omita
+            // bajo SQLite; en Postgres es redundante con el FK real (mismo resultado).
+            'contact_contactos_tipos' => ['fk' => 'contacto_id', 'padre' => 'contact_contactos'],
         ];
     }
 

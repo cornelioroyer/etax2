@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\Compania;
 use App\Models\Role;
 use App\Models\User;
+use Database\Seeders\MenuItemsSeeder;
+use Database\Seeders\PermisosPorOpcionSeeder;
 use Database\Seeders\RolesYPermisosSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -31,6 +33,13 @@ class PermisoDenegadoTest extends TestCase
         parent::setUp();
 
         $this->seed(RolesYPermisosSeeder::class);
+        // El Gate::before traduce CUALQUIER ability con forma vieja (modulo.ver,
+        // .gestionar...) al modelo nuevo por opción × acción leyendo
+        // core_menu_items (PermisoLegacy::candidatos); sin estos 2 seeders esa
+        // traducción siempre da [] y can() resuelve false aunque el rol tenga el
+        // permiso viejo asignado literalmente.
+        $this->seed(MenuItemsSeeder::class);
+        $this->seed(PermisosPorOpcionSeeder::class);
 
         $this->superAdmin = User::factory()->create(['is_admin' => true, 'is_active' => true]);
         // La compañía 1 es la "sistema" (solo lectura para no-super-admin en el Gate).
@@ -38,10 +47,24 @@ class PermisoDenegadoTest extends TestCase
         Compania::create(['nombre' => 'SISTEMA', 'activa' => true]);
         $this->compania = Compania::create(['nombre' => 'COMPANIA PRUEBA', 'activa' => true]);
 
-        // Rol con dos permisos, asignado a un usuario normal en la compañía.
+        // Rol global: la pantalla de creación ya NO tiene matriz de permisos
+        // (solo nombre/descripción); los permisos se asignan aparte.
         $this->actuar()->post(route('admin.roles.store'), [
             'name' => 'Operador',
-            'permisos' => ['ventas.ver', 'ventas.gestionar'],
+        ])->assertSessionHasNoErrors();
+
+        // Permisos POR OPCIÓN (modelo nuevo, fuente de verdad) equivalentes a
+        // "ventas.ver" + "ventas.gestionar": una opción cualquiera de ventas
+        // basta, porque el Gate traduce el permiso viejo a un OR sobre TODAS
+        // las opciones del módulo (PermisoLegacy::candidatos).
+        $rolOperador = Role::whereNull('compania_id')->where('name', 'operador')->firstOrFail();
+        $verVentas = DB::table('seg_permisos')->where('name', 'like', 'ventas.%.acceder')->value('name');
+        $gestionarVentas = DB::table('seg_permisos')->where('name', 'like', 'ventas.%.insertar')->value('name');
+        $this->assertNotNull($verVentas, 'Debe existir al menos una opción de ventas en el catálogo.');
+        $this->assertNotNull($gestionarVentas, 'Debe existir al menos una opción de ventas en el catálogo.');
+
+        $this->actuar()->put(route('admin.roles.permisos.update', $rolOperador), [
+            'permisos' => [$verVentas, $gestionarVentas],
         ])->assertSessionHasNoErrors();
 
         $this->actuar()->post(route('admin.usuarios-compania.store'), [
@@ -99,8 +122,14 @@ class PermisoDenegadoTest extends TestCase
 
     public function test_agregar_extra_y_denegar_del_rol_conviven(): void
     {
+        // Extra fuera del rol: un permiso POR OPCIÓN (modelo nuevo) de cxc, no
+        // el nombre viejo "cxc.ver" — ese es solo un alias que el Gate traduce
+        // leyendo el catálogo nuevo, nunca se concede ni se consulta literal.
+        $permisoCxcVer = DB::table('seg_permisos')->where('name', 'like', 'cxc.%.acceder')->value('id');
+        $this->assertNotNull($permisoCxcVer, 'Debe existir al menos una opción de cxc en el catálogo.');
+
         $this->actuar()->put(route('admin.usuarios-compania.permisos.update', $this->usuario), [
-            'permisos' => [$this->permisoId('cxc.ver')],          // extra fuera del rol
+            'permisos' => [$permisoCxcVer],          // extra fuera del rol
             'denegados' => [$this->permisoId('ventas.gestionar')],    // quitar uno del rol
         ])->assertSessionHasNoErrors();
 

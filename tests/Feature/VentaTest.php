@@ -18,6 +18,7 @@ use App\Models\User;
 use App\Models\VentaCotizacion;
 use App\Models\VentaFactura;
 use App\Models\VentaNotaCredito;
+use App\Services\InventarioCompras;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
@@ -612,10 +613,15 @@ class VentaTest extends TestCase
             'tipo' => ItemProducto::TIPO_PRODUCTO, 'precio_venta' => 50, 'costo' => 5,
             'cuenta_inventario_id' => $inv->id, 'cuenta_costo_venta_id' => $costo->id, 'activo' => true,
         ]);
-        InvExistencia::create([
-            'compania_id' => $this->compania->id, 'almacen_id' => $almacen->id, 'item_id' => $item->id,
-            'cantidad' => 10, 'costo_promedio' => 5,
-        ]);
+        // Entrada real (no un InvExistencia::create suelto): ReconciliadorCostosInventario
+        // reproduce el kárdex desde inv_movimientos en cualquier reversa forzada (p.ej.
+        // anular una NC con devolución), así que el saldo inicial necesita su propio
+        // movimiento o la reconciliación lo descarta como si nunca hubiera existido.
+        app(InventarioCompras::class)->registrarEntrada(
+            $this->compania->id, $almacen->id, '2026-06-01',
+            [['item_id' => $item->id, 'cantidad' => 10, 'costo_unitario' => 5]],
+            null, 'cxp_documentos', 9000, $this->admin,
+        );
 
         return [$item, $almacen, $inv, $costo, $devol];
     }

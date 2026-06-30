@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\Compania;
 use App\Models\Role;
 use App\Models\User;
+use Database\Seeders\MenuItemsSeeder;
+use Database\Seeders\PermisosPorOpcionSeeder;
 use Database\Seeders\RolesYPermisosSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +26,13 @@ class RoleTest extends TestCase
         parent::setUp();
 
         $this->seed(RolesYPermisosSeeder::class);
+        // El Gate::before traduce CUALQUIER ability con forma vieja (modulo.ver,
+        // .gestionar...) al modelo nuevo por opción × acción leyendo
+        // core_menu_items (PermisoLegacy::candidatos); sin estos 2 seeders esa
+        // traducción siempre da [] y can() resuelve false aunque el rol tenga el
+        // permiso viejo asignado literalmente.
+        $this->seed(MenuItemsSeeder::class);
+        $this->seed(PermisosPorOpcionSeeder::class);
 
         $this->superAdmin = User::factory()->create(['is_admin' => true, 'is_active' => true]);
         $this->compania = Compania::create(['nombre' => 'COMPANIA PRUEBA', 'activa' => true]);
@@ -121,10 +130,26 @@ class RoleTest extends TestCase
 
     public function test_rol_nuevo_es_asignable_a_un_usuario_y_resuelve_permisos(): void
     {
-        // 1) super_admin crea el rol
+        // 1) super_admin crea el rol. La pantalla de creación ya NO tiene matriz
+        // de permisos (solo nombre/descripción, ver RoleController::store); los
+        // permisos se asignan aparte, en la pantalla dedicada del rol.
         $this->actuar()->post(route('admin.roles.store'), [
             'name' => 'Solo Lectura',
-            'permisos' => ['cxc.ver', 'ventas.ver'],
+        ])->assertSessionHasNoErrors();
+
+        $rol = $this->buscarRol('solo_lectura');
+
+        // Permisos POR OPCIÓN (modelo nuevo, fuente de verdad) que dan "ver" en
+        // cxc/ventas: cualquier opción de cada módulo sirve, porque el Gate
+        // traduce el permiso viejo .ver a un OR sobre TODAS las opciones del
+        // módulo (PermisoLegacy::candidatos).
+        $verCxc = DB::table('seg_permisos')->where('name', 'like', 'cxc.%.acceder')->value('name');
+        $verVentas = DB::table('seg_permisos')->where('name', 'like', 'ventas.%.acceder')->value('name');
+        $this->assertNotNull($verCxc, 'Debe existir al menos una opción de cxc en el catálogo.');
+        $this->assertNotNull($verVentas, 'Debe existir al menos una opción de ventas en el catálogo.');
+
+        $this->actuar()->put(route('admin.roles.permisos.update', $rol), [
+            'permisos' => [$verCxc, $verVentas],
         ])->assertSessionHasNoErrors();
 
         // 2) se asigna a un usuario nuevo en la compañía activa

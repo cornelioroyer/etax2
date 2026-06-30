@@ -443,9 +443,16 @@ class AsientoTest extends TestCase
 
     public function test_usuario_solo_consulta_ve_pero_no_crea(): void
     {
-        Permission::findOrCreate('contabilidad.ver', 'web');
-        $rol = Role::findOrCreate('usuario', 'web');
-        $rol->givePermissionTo('contabilidad.ver');
+        // El Gate::before traduce CUALQUIER ability con forma vieja (modulo.ver,
+        // .gestionar, ...) al modelo nuevo por opción × acción leyendo
+        // core_menu_items (PermisoLegacy::candidatos) — nunca consulta un permiso
+        // legacy literal aunque exista. Por eso hace falta el catálogo real
+        // (MenuItemsSeeder + PermisosPorOpcionSeeder), no un Permission::findOrCreate
+        // suelto. El rol 'usuario' ya trae 'contabilidad.ver' de fábrica
+        // (RolesYPermisosSeeder) y PermisosPorOpcionSeeder lo traduce solo.
+        $this->seed(\Database\Seeders\RolesYPermisosSeeder::class);
+        $this->seed(\Database\Seeders\MenuItemsSeeder::class);
+        $this->seed(\Database\Seeders\PermisosPorOpcionSeeder::class);
 
         $lector = User::factory()->create(['is_admin' => false]);
         app(PermissionRegistrar::class)->setPermissionsTeamId($this->compania->id);
