@@ -50,6 +50,18 @@ class AppServiceProvider extends ServiceProvider
                 return true;
             }
 
+            // 1.5) Crear compañías es UNIVERSAL: cualquier usuario autenticado
+            // (con rol o sin él) puede ver el módulo Compañías y crear una
+            // compañía nueva, quedando como admin_compania de ella (ver
+            // CompaniaController::store). Decisión de producto: no depende del
+            // rol ni de la matriz de permisos. Solo se conceden estas dos
+            // habilidades; eliminar/editar compañías y zonas siguen restringidos.
+            // Crear no modifica datos de otra compañía y el directorio sigue
+            // filtrado a las compañías accesibles (CompaniaController::index).
+            if ($ability === 'companias.crear' || $ability === 'companias.ver') {
+                return true;
+            }
+
             // 2) Compañía 1 (sistema): solo lectura para no-super-admin, aunque
             // sean admin de otras compañías. El team de permisos (compañía activa)
             // lo fija el middleware EstablecerCompaniaActiva.
