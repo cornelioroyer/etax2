@@ -914,20 +914,28 @@ class CxpTest extends TestCase
 
         $pago = CxpDocumento::where('tipo_documento', 'PAGO')->firstOrFail();
 
-        $mov = \App\Models\BcoMovimiento::where('documento_origen', 'cxp_documentos')
-            ->where('documento_id', $pago->id)->first();
+        // El movimiento lo refleja BancoSync automáticamente al postear el
+        // asiento (documento_origen=cgl_asientos, ligado al asiento, no al
+        // documento CxP): CxpPagoController ya no crea un segundo movimiento
+        // manual (antes duplicaba el egreso; ver commit de este fix).
+        $mov = \App\Models\BcoMovimiento::where('asiento_id', $pago->asiento_id)
+            ->where('cuenta_bancaria_id', $cuentaBancaria->id)->first();
         $this->assertNotNull($mov);
-        $this->assertSame($cuentaBancaria->id, $mov->cuenta_bancaria_id);
+        $this->assertSame('cgl_asientos', $mov->documento_origen);
         $this->assertSame('107.00', (string) $mov->debito);
-        $this->assertSame('PAGO', $mov->tipo_movimiento);
+        $this->assertSame('ASIENTO', $mov->tipo_movimiento);
         $this->assertFalse((bool) $mov->conciliado);
+
+        // Exactamente un movimiento para este asiento+cuenta bancaria (nunca dos).
+        $this->assertSame(1, \App\Models\BcoMovimiento::where('asiento_id', $pago->asiento_id)
+            ->where('cuenta_bancaria_id', $cuentaBancaria->id)->count());
 
         // Al anular el pago se elimina el movimiento bancario.
         $this->actuar()->post(route('admin.cxp.pagos.anular', $pago))
             ->assertSessionHasNoErrors();
 
-        $this->assertSame(0, \App\Models\BcoMovimiento::where('documento_origen', 'cxp_documentos')
-            ->where('documento_id', $pago->id)->count());
+        $this->assertSame(0, \App\Models\BcoMovimiento::where('asiento_id', $pago->asiento_id)
+            ->where('cuenta_bancaria_id', $cuentaBancaria->id)->count());
     }
 
     public function test_no_se_puede_anular_pago_con_movimiento_conciliado(): void
@@ -943,10 +951,13 @@ class CxpTest extends TestCase
         ])->assertSessionHasNoErrors();
 
         $pago = CxpDocumento::where('tipo_documento', 'PAGO')->firstOrFail();
-        \App\Models\BcoMovimiento::where('documento_id', $pago->id)->update(['conciliado' => true]);
+        \App\Models\BcoMovimiento::where('asiento_id', $pago->asiento_id)->update(['conciliado' => true]);
 
+        // El bloqueo ahora lo lanza BancoSync::revertir (vía AsientoObserver),
+        // con clave de error 'asiento' en vez de 'documento'; las vistas
+        // renderizan $errors->all() sin distinguir la clave.
         $this->actuar()->post(route('admin.cxp.pagos.anular', $pago))
-            ->assertSessionHasErrors('documento');
+            ->assertSessionHasErrors('asiento');
 
         $this->assertSame('PAGADO', $pago->fresh()->estado);
         $this->assertSame('0.00', (string) $factura->fresh()->saldo);

@@ -10,7 +10,6 @@ use App\Http\Controllers\Controller;
 use App\Imports\CxpPagosGenericoImport;
 use App\Models\Asiento;
 use App\Models\BcoCuenta;
-use App\Models\BcoMovimiento;
 use App\Models\Compania;
 use App\Models\Contacto;
 use App\Models\CuentaContable;
@@ -492,10 +491,8 @@ class CxpPagoController extends Controller
                 }
 
                 // Integración con Bancos: si la cuenta de pago es una cuenta
-                // bancaria registrada, refleja el egreso para la conciliación.
-                if ($efectivo > 0) {
-                    $this->registrarEgresoBancario($companiaId, $pago, (int) $data['cuenta_pago_id'], $efectivo, $asiento, $usuario);
-                }
+                // bancaria registrada, BancoSync ya reflejó el egreso al postear
+                // el asiento (vía AsientoObserver); no crear un segundo movimiento.
             }
 
             // Reduce el saldo de cada factura por el total liquidado (créditos + pago).
@@ -878,8 +875,7 @@ class CxpPagoController extends Controller
             $documento->update(['asiento_id' => $asiento->id]);
 
             // Integración con Bancos: si la cuenta de pago es una cuenta bancaria
-            // registrada, refleja el egreso para la conciliación.
-            $this->registrarEgresoBancario($companiaId, $documento, $pago['cuenta_pago'], $total, $asiento, $usuario);
+            // registrada, BancoSync ya reflejó el egreso al postear el asiento.
         });
     }
 
@@ -973,39 +969,6 @@ class CxpPagoController extends Controller
         return $ids;
     }
 
-    /**
-     * Refleja el egreso en el módulo de Bancos cuando la cuenta de pago es una
-     * cuenta bancaria registrada, para que el pago aparezca en la conciliación.
-     */
-    private function registrarEgresoBancario(int $companiaId, CxpDocumento $pago, int $cuentaPagoId, float $efectivo, Asiento $asiento, $usuario): void
-    {
-        $bancaria = BcoCuenta::where('compania_id', $companiaId)
-            ->where('cuenta_contable_id', $cuentaPagoId)
-            ->where('activa', true)
-            ->first();
-
-        if (! $bancaria) {
-            return;
-        }
-
-        BcoMovimiento::create([
-            'compania_id' => $companiaId,
-            'cuenta_bancaria_id' => $bancaria->id,
-            'fecha' => $pago->fecha->format('Y-m-d'),
-            'tipo_movimiento' => BcoMovimiento::TIPO_PAGO,
-            'descripcion' => "Pago {$pago->numero} — ".($pago->proveedor->nombre ?? ''),
-            'referencia' => $pago->referencia ?: $pago->numero,
-            'debito' => $efectivo,
-            'credito' => 0,
-            'contacto_id' => $pago->proveedor_id,
-            'conciliado' => false,
-            'asiento_id' => $asiento->id,
-            'documento_origen' => 'cxp_documentos',
-            'documento_id' => $pago->id,
-            'created_by' => $usuario->email,
-        ]);
-    }
-
     public function show(Request $request, CxpDocumento $documento): View
     {
         abort_unless($documento->compania_id === $this->companiaActivaId($request), 404);
@@ -1036,9 +999,7 @@ class CxpPagoController extends Controller
             return back()->withErrors(['documento' => 'El pago ya está anulado.']);
         }
 
-        if ($error = $this->revertir($documento, $request->user())) {
-            return back()->withErrors(['documento' => $error]);
-        }
+        $this->revertir($documento, $request->user());
 
         return redirect()->route('admin.cxp.pagos.show', $documento)
             ->with('status', "Pago {$documento->numero} anulado; los saldos de las facturas fueron restaurados.");
@@ -1090,9 +1051,7 @@ class CxpPagoController extends Controller
                 'monto' => number_format((float) $g->sum('monto_aplicado'), 2, '.', ''),
             ])->values()->all();
 
-        if ($error = $this->revertir($documento, $request->user())) {
-            return back()->withErrors(['documento' => $error]);
-        }
+        $this->revertir($documento, $request->user());
 
         return redirect()->route('admin.cxp.pagos.create', ['proveedor_id' => $documento->proveedor_id])
             ->withInput([
@@ -1110,26 +1069,19 @@ class CxpPagoController extends Controller
     }
 
     /**
-     * Reversa un pago como una sola operación: valida que no tenga movimiento
-     * bancario conciliado; restaura los saldos de las facturas; revierte los
-     * créditos aplicados dentro del pago (restaura el disponible del anticipo /
-     * nota de crédito y reversa el asiento de aplicación del anticipo); reversa
-     * el asiento del pago; elimina el movimiento bancario y deja el pago
-     * ANULADO. Devuelve un mensaje de error si no se puede revertir, o null si
-     * se revirtió correctamente.
+     * Reversa un pago como una sola operación: restaura los saldos de las
+     * facturas; revierte los créditos aplicados dentro del pago (restaura el
+     * disponible del anticipo/nota de crédito y reversa el asiento de
+     * aplicación del anticipo); reversa el asiento del pago y deja el pago
+     * ANULADO. El movimiento bancario (reflejado por BancoSync si la cuenta de
+     * pago está registrada en Bancos) lo revierte el propio AsientoObserver al
+     * anular el asiento — incluido el bloqueo si ya está conciliado, que
+     * propaga como ValidationException (el llamador no necesita capturarla,
+     * igual que en CxpNotaController::anular).
      */
-    private function revertir(CxpDocumento $documento, $usuario): ?string
+    private function revertir(CxpDocumento $documento, $usuario): void
     {
-        $movimientos = BcoMovimiento::where('compania_id', $documento->compania_id)
-            ->where('documento_origen', 'cxp_documentos')
-            ->where('documento_id', $documento->id)
-            ->get();
-
-        if ($movimientos->firstWhere('conciliado', true)) {
-            return 'El pago tiene un movimiento bancario conciliado; quita la conciliación antes de anularlo.';
-        }
-
-        DB::transaction(function () use ($documento, $usuario, $movimientos) {
+        DB::transaction(function () use ($documento, $usuario) {
             // 1) Reversa la porción en efectivo (aplicaciones cuyo origen es el pago).
             foreach ($documento->aplicacionesComoOrigen()->with('destino')->lockForUpdate()->get() as $aplicacion) {
                 $factura = $aplicacion->destino;
@@ -1183,11 +1135,8 @@ class CxpPagoController extends Controller
                 app(AsientoAutomatico::class)->anular(Asiento::find($asientoId), $usuario);
             }
 
-            // 3) Reversa el asiento del pago y el movimiento bancario.
-            foreach ($movimientos as $movimiento) {
-                $movimiento->delete();
-            }
-
+            // 3) Reversa el asiento del pago (BancoSync revierte su reflejo en
+            // Bancos, si lo tenía, vía AsientoObserver::updated).
             app(AsientoAutomatico::class)->anular($documento->asiento, $usuario);
 
             $documento->update([
@@ -1196,7 +1145,5 @@ class CxpPagoController extends Controller
                 'updated_by' => $usuario->email,
             ]);
         });
-
-        return null;
     }
 }
