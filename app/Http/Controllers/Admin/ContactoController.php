@@ -556,7 +556,7 @@ class ContactoController extends Controller
                 'nullable', 'integer',
                 Rule::exists('cgl_cuentas', 'id')->where('compania_id', $companiaId),
             ],
-            'concepto' => ['nullable', 'string', 'max:250'],
+            'concepto' => ['nullable', Rule::in(array_keys(Contacto::CONCEPTOS))],
             'activo' => ['required', 'boolean'],
             'tipos' => ['required', 'array', 'min:1'],
             'tipos.*' => ['integer', 'exists:contact_tipos,id'],

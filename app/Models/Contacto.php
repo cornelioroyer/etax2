@@ -10,6 +10,23 @@ class Contacto extends Model
     public const FORMA_PAGO_CONTADO = 'CONTADO';
     public const FORMA_PAGO_CREDITO = 'CREDITO';
 
+    /** Conceptos de compra DGI para proveedores (valor => etiqueta). */
+    public const CONCEPTOS = [
+        '1' => 'Compra o Adquisiciones (1)',
+        '2' => 'Servicios Básicos (2)',
+        '3' => 'Honorarios y Comisiones (3)',
+        '4' => 'Alquileres por Arrendamientos Comerciales (4)',
+        '5' => 'Cargos Bancarios, Intereses y otros Gastos Financieros (5)',
+        '6' => 'Compras o Servicios al Exterior (6)',
+        '7' => 'Compras o Servicios Consolidados (7)',
+    ];
+
+    /** Etiqueta legible del concepto (o el código crudo si no está catalogado). */
+    public function conceptoEtiqueta(): ?string
+    {
+        return $this->concepto ? (self::CONCEPTOS[$this->concepto] ?? $this->concepto) : null;
+    }
+
     protected $table = 'contact_contactos';
 
     protected $fillable = [

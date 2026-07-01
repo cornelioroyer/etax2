@@ -117,8 +117,15 @@
             </div>
 
             <div class="md:col-span-2">
-                <label for="concepto" class="block text-sm font-medium text-gray-700">Concepto <span class="text-xs text-gray-400">(opcional)</span></label>
-                <input id="concepto" name="concepto" maxlength="250" value="{{ old('concepto', $c->concepto ?? '') }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                <label for="concepto" class="block text-sm font-medium text-gray-700">Concepto <span class="text-xs text-gray-400">(proveedor, opcional)</span></label>
+                @php($conceptoSel = (string) old('concepto', $c->concepto ?? ''))
+                <select id="concepto" name="concepto" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    <option value="">— Sin concepto —</option>
+                    @foreach (collect(\App\Models\Contacto::CONCEPTOS)->sortBy(fn ($v) => $v) as $val => $label)
+                        <option value="{{ $val }}" @selected($conceptoSel === (string) $val)>{{ $label }}</option>
+                    @endforeach
+                </select>
+                <p class="mt-1 text-xs text-gray-400">Concepto de compra DGI para los reportes de este proveedor.</p>
                 @error('concepto') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
             </div>
 

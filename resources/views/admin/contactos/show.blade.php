@@ -37,7 +37,7 @@
                     @if ($contacto->forma_pago === \App\Models\Contacto::FORMA_PAGO_CREDITO)
                     <div><span class="text-gray-500">Días de crédito</span><p>{{ $contacto->dias_credito ?? 30 }} días</p></div>
                     @endif
-                    <div><span class="text-gray-500">Concepto</span><p>{{ $contacto->concepto ?? '—' }}</p></div>
+                    <div><span class="text-gray-500">Concepto</span><p>{{ $contacto->conceptoEtiqueta() ?? '—' }}</p></div>
                 </div>
             </div>
 
