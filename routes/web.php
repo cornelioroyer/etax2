@@ -360,6 +360,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::get('cxp/notas/crear', [CxpNotaController::class, 'create'])->name('cxp.notas.create');
         Route::post('cxp/notas', [CxpNotaController::class, 'store'])->name('cxp.notas.store');
         Route::post('cxp/notas/{documento}/anular', [CxpNotaController::class, 'anular'])->whereNumber('documento')->name('cxp.notas.anular');
+        Route::post('cxp/notas/{documento}/reembolsar', [CxpNotaController::class, 'reembolsar'])->whereNumber('documento')->name('cxp.notas.reembolsar');
         Route::post('cxp/notas/{documento}/contabilizar', [CxpNotaController::class, 'contabilizar'])->whereNumber('documento')->name('cxp.notas.contabilizar');
         Route::delete('cxp/notas/{documento}', [CxpNotaController::class, 'destroy'])->whereNumber('documento')->name('cxp.notas.destroy');
         Route::get('cxp/facturas/nueva', [CxpFacturaController::class, 'create'])->name('cxp.facturas.create');

@@ -1135,6 +1135,152 @@ class CxpTest extends TestCase
         $this->assertSame(0, CxpDocumento::where('tipo_documento', CxpDocumento::TIPO_PAGO)->count());
     }
 
+    public function test_reembolsar_nota_credito_reduce_saldo_y_postea_asiento(): void
+    {
+        $nc = $this->crearNotaCreditoConSaldo(30);
+
+        $this->actuar()->post(route('admin.cxp.notas.reembolsar', $nc), [
+            'fecha' => '2026-06-14',
+            'cuenta_pago_id' => $this->banco->id,
+            'monto' => 30,
+        ])->assertSessionHasNoErrors();
+
+        $nc->refresh();
+        $this->assertSame('0.00', (string) $nc->saldo);
+        $this->assertSame('PAGADO', $nc->estado);
+
+        $asientoReembolso = \App\Models\Asiento::where('origen_modulo', 'CXP')
+            ->where('origen_tabla', 'cxp_documentos')
+            ->where('origen_id', $nc->id)
+            ->where('id', '!=', $nc->asiento_id)
+            ->firstOrFail();
+
+        $det = $asientoReembolso->detalle;
+        $this->assertCount(2, $det);
+        $this->assertSame($this->banco->id, $det[0]->cuenta_id);
+        $this->assertSame('30.00', (string) $det[0]->debito);
+        $this->assertSame($this->cxp->id, $det[1]->cuenta_id);
+        $this->assertSame('30.00', (string) $det[1]->credito);
+        $this->assertSame($this->proveedor->id, $det[1]->contacto_id);
+    }
+
+    public function test_reembolsar_nota_credito_parcial_deja_estado_parcial(): void
+    {
+        $nc = $this->crearNotaCreditoConSaldo(50);
+
+        $this->actuar()->post(route('admin.cxp.notas.reembolsar', $nc), [
+            'fecha' => '2026-06-14',
+            'cuenta_pago_id' => $this->banco->id,
+            'monto' => 20,
+        ])->assertSessionHasNoErrors();
+
+        $nc->refresh();
+        $this->assertSame('30.00', (string) $nc->saldo);
+        $this->assertSame('PARCIAL', $nc->estado);
+    }
+
+    public function test_reembolsar_no_puede_exceder_saldo_disponible(): void
+    {
+        $nc = $this->crearNotaCreditoConSaldo(30);
+
+        $this->actuar()->post(route('admin.cxp.notas.reembolsar', $nc), [
+            'fecha' => '2026-06-14',
+            'cuenta_pago_id' => $this->banco->id,
+            'monto' => 30.01,
+        ])->assertSessionHasErrors('monto');
+
+        $this->assertSame('30.00', (string) $nc->fresh()->saldo);
+    }
+
+    public function test_reembolsar_bloqueado_si_nota_anulada(): void
+    {
+        $nc = $this->crearNotaCreditoConSaldo(30);
+        $nc->update(['estado' => CxpDocumento::ESTADO_ANULADO, 'saldo' => 0]);
+
+        $this->actuar()->post(route('admin.cxp.notas.reembolsar', $nc), [
+            'fecha' => '2026-06-14',
+            'cuenta_pago_id' => $this->banco->id,
+            'monto' => 10,
+        ])->assertSessionHasErrors('documento');
+    }
+
+    public function test_reembolsar_con_cuenta_bancaria_refleja_un_solo_movimiento(): void
+    {
+        $cuentaBancaria = $this->crearCuentaBancaria();
+        $nc = $this->crearNotaCreditoConSaldo(30);
+
+        $this->actuar()->post(route('admin.cxp.notas.reembolsar', $nc), [
+            'fecha' => '2026-06-14',
+            'cuenta_pago_id' => $this->banco->id,
+            'monto' => 30,
+        ])->assertSessionHasNoErrors();
+
+        $asientoReembolso = \App\Models\Asiento::where('origen_modulo', 'CXP')
+            ->where('origen_tabla', 'cxp_documentos')
+            ->where('origen_id', $nc->id)
+            ->where('id', '!=', $nc->asiento_id)
+            ->firstOrFail();
+
+        // BancoSync refleja el ingreso (crédito) una sola vez; CxpNotaController
+        // no crea un movimiento manual (mismo principio que el fix de CxpPagoController).
+        $movs = \App\Models\BcoMovimiento::where('asiento_id', $asientoReembolso->id)
+            ->where('cuenta_bancaria_id', $cuentaBancaria->id)->get();
+        $this->assertCount(1, $movs);
+        $this->assertSame('cgl_asientos', $movs[0]->documento_origen);
+        $this->assertSame('30.00', (string) $movs[0]->credito);
+        $this->assertSame('0.00', (string) $movs[0]->debito);
+    }
+
+    public function test_no_se_puede_anular_nota_credito_con_reembolso(): void
+    {
+        $nc = $this->crearNotaCreditoConSaldo(30);
+
+        $this->actuar()->post(route('admin.cxp.notas.reembolsar', $nc), [
+            'fecha' => '2026-06-14',
+            'cuenta_pago_id' => $this->banco->id,
+            'monto' => 30,
+        ])->assertSessionHasNoErrors();
+
+        $this->actuar()->post(route('admin.cxp.notas.anular', $nc))
+            ->assertSessionHasErrors('documento');
+
+        $this->assertNotSame('ANULADO', $nc->fresh()->estado);
+    }
+
+    /** NC de CxP con crédito a favor disponible y asiento real (Dr CXP / Cr contrapartida). */
+    private function crearNotaCreditoConSaldo(float $saldo, string $numero = 'NC-000001'): CxpDocumento
+    {
+        $nc = CxpDocumento::create([
+            'compania_id' => $this->compania->id,
+            'proveedor_id' => $this->proveedor->id,
+            'tipo_documento' => CxpDocumento::TIPO_NOTA_CREDITO,
+            'numero' => $numero,
+            'fecha' => '2026-06-12',
+            'subtotal' => $saldo,
+            'impuesto' => 0,
+            'total' => $saldo,
+            'saldo' => $saldo,
+            'estado' => CxpDocumento::ESTADO_PENDIENTE,
+            'created_by' => $this->admin->email,
+        ]);
+
+        $asiento = app(\App\Services\AsientoAutomatico::class)->postear(
+            $this->compania->id,
+            '2026-06-12',
+            "Nota de crédito de prueba {$numero}",
+            $numero,
+            [
+                ['cuenta_id' => $this->cxp->id, 'contacto_id' => $this->proveedor->id, 'descripcion' => 'NC', 'debito' => $saldo, 'credito' => 0],
+                ['cuenta_id' => $this->gasto->id, 'descripcion' => 'NC', 'debito' => 0, 'credito' => $saldo],
+            ],
+            'CXP', 'cxp_documentos', $nc->id, $this->admin,
+        );
+
+        $nc->update(['asiento_id' => $asiento->id]);
+
+        return $nc->fresh();
+    }
+
     private function crearCuentaBancaria(): \App\Models\BcoCuenta
     {
         $banco = \App\Models\BcoBanco::create(['codigo' => 'BG', 'nombre' => 'Banco General', 'activo' => true]);

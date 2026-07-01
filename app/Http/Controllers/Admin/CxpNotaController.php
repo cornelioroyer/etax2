@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Concerns\ConCompaniaActiva;
 use App\Http\Controllers\Concerns\ExportaReporte;
 use App\Http\Controllers\Controller;
+use App\Models\Asiento;
 use App\Models\Compania;
 use App\Models\Contacto;
 use App\Models\CuentaContable;
@@ -312,7 +313,119 @@ class CxpNotaController extends Controller
 
         $documento->load(['proveedor', 'detalle.cuenta', 'asiento.detalle.cuenta', 'aplicacionesComoOrigen.destino']);
 
-        return view('admin.cxp.notas.show', ['nota' => $documento]);
+        $esCredito = $documento->tipo_documento === CxpDocumento::TIPO_NOTA_CREDITO;
+
+        return view('admin.cxp.notas.show', [
+            'nota' => $documento,
+            'reembolsos' => $esCredito ? $this->reembolsosQuery($documento)->orderBy('fecha')->get() : collect(),
+            'cuentasPago' => $esCredito
+                ? CuentaContable::where('compania_id', $documento->compania_id)
+                    ->where('permite_movimiento', true)
+                    ->where('activa', true)
+                    ->orderBy('codigo')
+                    ->get(['id', 'codigo', 'nombre'])
+                : collect(),
+        ]);
+    }
+
+    /**
+     * Reembolsa en efectivo/banco el crédito a favor disponible de una NC de
+     * proveedor (p. ej. el remanente de una devolución de compra sobre una
+     * factura ya pagada, que hoy solo se podía consumir aplicándolo a facturas
+     * futuras). Dr cuenta de pago (banco/caja) / Cr CXP: cierra, total o
+     * parcialmente, el saldo deudor que la NC dejó a favor de la compañía.
+     * Sin CxpAplicacion (no hay un segundo documento "destino": el destino es
+     * efectivo) — el reembolso queda trazado como un asiento adicional
+     * enlazado a la propia nota (origen_tabla=cxp_documentos, origen_id=nota),
+     * igual que ya hace la aplicación de un anticipo sobre su propio origen.
+     * Si la cuenta de pago está registrada en Bancos, BancoSync refleja el
+     * ingreso automáticamente al postear (mismo mecanismo que un pago; ver
+     * fix de duplicado en CxpPagoController).
+     */
+    public function reembolsar(Request $request, CxpDocumento $documento): RedirectResponse
+    {
+        abort_unless($documento->compania_id === $this->companiaActivaId($request), 404);
+        abort_unless($documento->tipo_documento === CxpDocumento::TIPO_NOTA_CREDITO, 404);
+
+        $companiaId = $documento->compania_id;
+        $usuario = $request->user();
+
+        if ($documento->esBorrador()) {
+            return back()->withErrors(['documento' => 'Contabiliza la nota antes de reembolsarla.']);
+        }
+
+        if ($documento->esAnulado()) {
+            return back()->withErrors(['documento' => 'La nota está anulada.']);
+        }
+
+        $data = $request->validate([
+            'fecha' => ['required', 'date'],
+            'cuenta_pago_id' => [
+                'required', 'integer',
+                Rule::exists('cgl_cuentas', 'id')->where('compania_id', $companiaId),
+            ],
+            'monto' => ['required', 'numeric', 'gt:0', 'max:999999999'],
+            'referencia' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $cuentaCxpId = CuentaDefault::idPara($companiaId, 'CXP');
+
+        if (! $cuentaCxpId) {
+            throw ValidationException::withMessages([
+                'documento' => 'La compañía no tiene configurada la cuenta default CXP.',
+            ]);
+        }
+
+        $monto = round((float) $data['monto'], 2);
+
+        DB::transaction(function () use ($documento, $companiaId, $data, $monto, $cuentaCxpId, $usuario) {
+            // Bloquea y relee el disponible para no chocar con otra aplicación
+            // (pago con créditos, u otro reembolso) concurrente.
+            $nota = CxpDocumento::whereKey($documento->id)->lockForUpdate()->first();
+
+            if ($nota->esAnulado()) {
+                throw ValidationException::withMessages(['documento' => 'La nota está anulada.']);
+            }
+
+            $disponible = round((float) $nota->saldo, 2);
+
+            if ($monto > $disponible + 0.004) {
+                throw ValidationException::withMessages([
+                    'monto' => 'El monto a reembolsar (B/. '.number_format($monto, 2).') excede el disponible de la nota (B/. '.number_format($disponible, 2).').',
+                ]);
+            }
+
+            app(AsientoAutomatico::class)->postear(
+                $companiaId,
+                $data['fecha'],
+                "Reembolso en efectivo — nota de crédito {$nota->numero} — ".($nota->proveedor->nombre ?? ''),
+                $data['referencia'] ?? $nota->numero,
+                [[
+                    'cuenta_id' => (int) $data['cuenta_pago_id'],
+                    'descripcion' => "Reembolso NC {$nota->numero}",
+                    'debito' => $monto,
+                    'credito' => 0,
+                ], [
+                    'cuenta_id' => $cuentaCxpId,
+                    'contacto_id' => $nota->proveedor_id,
+                    'descripcion' => "Reembolso NC {$nota->numero}",
+                    'debito' => 0,
+                    'credito' => $monto,
+                ]],
+                'CXP',
+                'cxp_documentos',
+                $nota->id,
+                $usuario,
+            );
+
+            $nota->saldo = round($disponible - $monto, 2);
+            $nota->estado = $nota->estadoSegunSaldo();
+            $nota->updated_by = $usuario->email;
+            $nota->save();
+        });
+
+        return redirect()->route('admin.cxp.notas.show', $documento)
+            ->with('status', 'Reembolso registrado por B/. '.number_format($monto, 2).'.');
     }
 
     /**
@@ -479,6 +592,11 @@ class CxpNotaController extends Controller
             return back()->withErrors(['documento' => 'La nota de débito tiene pagos aplicados; anúlalos primero.']);
         }
 
+        if ($documento->tipo_documento === CxpDocumento::TIPO_NOTA_CREDITO
+            && $this->reembolsosQuery($documento)->exists()) {
+            return back()->withErrors(['documento' => 'La nota ya tuvo un reembolso en efectivo; no se puede anular.']);
+        }
+
         $usuario = $request->user();
 
         DB::transaction(function () use ($documento, $usuario) {
@@ -508,6 +626,22 @@ class CxpNotaController extends Controller
 
         return redirect()->route('admin.cxp.notas.show', $documento)
             ->with('status', "Nota {$documento->numero} anulada.");
+    }
+
+    /**
+     * Asientos de reembolso en efectivo de una NC: comparten origen (nota)
+     * con el asiento de creación de la nota, así que se excluye ese por id.
+     * No hay CxpAplicacion que los enlace (el "destino" es efectivo, no un
+     * documento), por eso se ubican por origen_tabla/origen_id como único rastro.
+     */
+    private function reembolsosQuery(CxpDocumento $nota)
+    {
+        return Asiento::where('compania_id', $nota->compania_id)
+            ->where('origen_modulo', 'CXP')
+            ->where('origen_tabla', 'cxp_documentos')
+            ->where('origen_id', $nota->id)
+            ->when($nota->asiento_id, fn ($q, $id) => $q->where('id', '!=', $id))
+            ->where('estado', '!=', Asiento::ESTADO_ANULADO);
     }
 
     private function proveedores(int $companiaId)
