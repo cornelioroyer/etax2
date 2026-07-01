@@ -10,6 +10,9 @@ class Contacto extends Model
     public const FORMA_PAGO_CONTADO = 'CONTADO';
     public const FORMA_PAGO_CREDITO = 'CREDITO';
 
+    /** Concepto de compra DGI por defecto: Compra o Adquisiciones. */
+    public const CONCEPTO_DEFAULT = '1';
+
     /** Conceptos de compra DGI para proveedores (valor => etiqueta). */
     public const CONCEPTOS = [
         '1' => 'Compra o Adquisiciones (1)',
