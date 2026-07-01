@@ -30,6 +30,21 @@ class Contacto extends Model
         return $this->concepto ? (self::CONCEPTOS[$this->concepto] ?? $this->concepto) : null;
     }
 
+    /** Tipo de compra DGI por defecto: Local. */
+    public const TIPO_COMPRA_DEFAULT = '1';
+
+    /** Tipos de compra DGI para proveedores (valor => etiqueta). */
+    public const TIPOS_COMPRA = [
+        '1' => 'Local (1)',
+        '2' => 'Importaciones (2)',
+    ];
+
+    /** Etiqueta legible del tipo de compra (o el código crudo si no está catalogado). */
+    public function tipoCompraEtiqueta(): ?string
+    {
+        return $this->tipo_compra ? (self::TIPOS_COMPRA[$this->tipo_compra] ?? $this->tipo_compra) : null;
+    }
+
     protected $table = 'contact_contactos';
 
     protected $fillable = [
@@ -51,6 +66,7 @@ class Contacto extends Model
         'cuenta_gasto_id',
         'concepto',
         'otros_costos_gastos_id',
+        'tipo_compra',
         'activo',
         'created_by',
         'updated_by',

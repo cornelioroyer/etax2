@@ -128,6 +128,17 @@
                 @error('concepto') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
             </div>
 
+            <div>
+                <label for="tipo_compra" class="block text-sm font-medium text-gray-700">Tipo de compra</label>
+                @php($tipoCompraSel = (string) old('tipo_compra', $c->tipo_compra ?? \App\Models\Contacto::TIPO_COMPRA_DEFAULT))
+                <select id="tipo_compra" name="tipo_compra" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    @foreach (\App\Models\Contacto::TIPOS_COMPRA as $val => $label)
+                        <option value="{{ $val }}" @selected($tipoCompraSel === (string) $val)>{{ $label }}</option>
+                    @endforeach
+                </select>
+                @error('tipo_compra') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+            </div>
+
             <div class="md:col-span-2 cuenta-gasto-wrap">
                 <label for="otros_costos_gastos_id" class="block text-sm font-medium text-gray-700">Otros costos y gastos <span class="text-xs text-gray-400">(anexo 94, opcional)</span></label>
                 @php($ocgSel = (string) old('otros_costos_gastos_id', $c->otros_costos_gastos_id ?? ''))

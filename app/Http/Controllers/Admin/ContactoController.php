@@ -561,6 +561,7 @@ class ContactoController extends Controller
             ],
             'concepto' => ['required', Rule::in(array_keys(Contacto::CONCEPTOS))],
             'otros_costos_gastos_id' => ['nullable', 'integer', Rule::exists('core_otros_costos_gastos', 'id')->where('activo', true)],
+            'tipo_compra' => ['required', Rule::in(array_keys(Contacto::TIPOS_COMPRA))],
             'activo' => ['required', 'boolean'],
             'tipos' => ['required', 'array', 'min:1'],
             'tipos.*' => ['integer', 'exists:contact_tipos,id'],

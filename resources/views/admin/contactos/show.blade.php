@@ -38,6 +38,7 @@
                     <div><span class="text-gray-500">Días de crédito</span><p>{{ $contacto->dias_credito ?? 30 }} días</p></div>
                     @endif
                     <div><span class="text-gray-500">Concepto</span><p>{{ $contacto->conceptoEtiqueta() ?? '—' }}</p></div>
+                    <div><span class="text-gray-500">Tipo de compra</span><p>{{ $contacto->tipoCompraEtiqueta() ?? '—' }}</p></div>
                     <div><span class="text-gray-500">Otros costos y gastos</span><p>{{ $contacto->otroCostoGasto->descripcion ?? '—' }}</p></div>
                 </div>
             </div>
