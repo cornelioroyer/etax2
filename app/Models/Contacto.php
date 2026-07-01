@@ -50,6 +50,7 @@ class Contacto extends Model
         'distrito',
         'cuenta_gasto_id',
         'concepto',
+        'otros_costos_gastos_id',
         'activo',
         'created_by',
         'updated_by',
@@ -93,6 +94,11 @@ class Contacto extends Model
     public function cuentaGasto()
     {
         return $this->belongsTo(CuentaContable::class, 'cuenta_gasto_id');
+    }
+
+    public function otroCostoGasto()
+    {
+        return $this->belongsTo(OtroCostoGasto::class, 'otros_costos_gastos_id');
     }
 
     public function esTipo(string $codigo): bool

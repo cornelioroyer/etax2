@@ -11,6 +11,7 @@ use App\Models\CxcDocumento;
 use App\Models\CxcDocumentoDetalle;
 use App\Models\CxpDocumento;
 use App\Models\CxpDocumentoDetalle;
+use App\Models\OtroCostoGasto;
 use App\Models\TipoContacto;
 use App\Services\AsientoAutomatico;
 use Illuminate\Http\RedirectResponse;
@@ -63,6 +64,7 @@ class ContactoController extends Controller
             'tipos' => TipoContacto::orderBy('id')->get(),
             'tipoPreseleccionado' => $tipoPreseleccionado,
             'cuentas' => $this->cuentasGasto($companiaId),
+            'otrosCostosGastos' => OtroCostoGasto::where('activo', true)->orderBy('descripcion')->get(),
             // Solo precarga la cuenta de gasto cuando se crea un proveedor.
             'cuentaGastoDefault' => $tipoPreseleccionado === 'PROVEEDOR'
                 ? CuentaDefault::idPara($companiaId, 'GASTO_DEFAULT')
@@ -98,6 +100,7 @@ class ContactoController extends Controller
             'tipos' => TipoContacto::orderBy('id')->get(),
             'tipoPreseleccionado' => '',
             'cuentas' => $this->cuentasGasto($contacto->compania_id),
+            'otrosCostosGastos' => OtroCostoGasto::where('activo', true)->orderBy('descripcion')->get(),
         ]);
     }
 
@@ -557,6 +560,7 @@ class ContactoController extends Controller
                 Rule::exists('cgl_cuentas', 'id')->where('compania_id', $companiaId),
             ],
             'concepto' => ['required', Rule::in(array_keys(Contacto::CONCEPTOS))],
+            'otros_costos_gastos_id' => ['nullable', 'integer', Rule::exists('core_otros_costos_gastos', 'id')->where('activo', true)],
             'activo' => ['required', 'boolean'],
             'tipos' => ['required', 'array', 'min:1'],
             'tipos.*' => ['integer', 'exists:contact_tipos,id'],
