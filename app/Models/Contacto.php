@@ -29,6 +29,7 @@ class Contacto extends Model
         'provincia',
         'distrito',
         'cuenta_gasto_id',
+        'concepto',
         'activo',
         'created_by',
         'updated_by',

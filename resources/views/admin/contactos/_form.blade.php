@@ -116,6 +116,12 @@
                 @error('cuenta_gasto_id') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
             </div>
 
+            <div class="md:col-span-2">
+                <label for="concepto" class="block text-sm font-medium text-gray-700">Concepto <span class="text-xs text-gray-400">(opcional)</span></label>
+                <input id="concepto" name="concepto" maxlength="250" value="{{ old('concepto', $c->concepto ?? '') }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                @error('concepto') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+            </div>
+
             <div>
                 <label for="activo" class="block text-sm font-medium text-gray-700">Estado</label>
                 <select id="activo" name="activo" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
