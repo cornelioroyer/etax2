@@ -30,6 +30,9 @@ class Contacto extends Model
         return $this->concepto ? (self::CONCEPTOS[$this->concepto] ?? $this->concepto) : null;
     }
 
+    /** Otros costos y gastos DGI por defecto: OTROS GASTOS Y MISCELANEOS VARIOS (62). */
+    public const OTROS_COSTOS_GASTOS_DEFAULT = 60;
+
     /** Tipo de compra DGI por defecto: Local. */
     public const TIPO_COMPRA_DEFAULT = '1';
 

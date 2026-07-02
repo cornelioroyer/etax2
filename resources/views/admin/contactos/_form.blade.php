@@ -140,10 +140,9 @@
             </div>
 
             <div class="md:col-span-2 cuenta-gasto-wrap">
-                <label for="otros_costos_gastos_id" class="block text-sm font-medium text-gray-700">Otros costos y gastos <span class="text-xs text-gray-400">(anexo 94, opcional)</span></label>
-                @php($ocgSel = (string) old('otros_costos_gastos_id', $c->otros_costos_gastos_id ?? ''))
-                <select id="otros_costos_gastos_id" name="otros_costos_gastos_id" class="otros-costos-select mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                    <option value="">— Sin clasificar —</option>
+                <label for="otros_costos_gastos_id" class="block text-sm font-medium text-gray-700">Otros costos y gastos <span class="text-xs text-gray-400">(anexo 94)</span></label>
+                @php($ocgSel = (string) old('otros_costos_gastos_id', $c->otros_costos_gastos_id ?? \App\Models\Contacto::OTROS_COSTOS_GASTOS_DEFAULT))
+                <select id="otros_costos_gastos_id" name="otros_costos_gastos_id" required class="otros-costos-select mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     @foreach (($otrosCostosGastos ?? []) as $ocg)
                         <option value="{{ $ocg->id }}" @selected($ocgSel === (string) $ocg->id)>{{ $ocg->descripcion }}</option>
                     @endforeach
