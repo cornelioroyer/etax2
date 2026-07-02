@@ -538,6 +538,15 @@ class ContactoController extends Controller
 
     private function validated(Request $request, int $companiaId, ?Contacto $contacto = null): array
     {
+        // Los catálogos DGI de compra (concepto/tipo_compra/otros_costos_gastos_id) y la
+        // cuenta de gasto por defecto son propios del PROVEEDOR; solo se exigen si ese tipo está marcado.
+        $tipoProveedorId = TipoContacto::where('codigo', 'PROVEEDOR')->value('id');
+        $esProveedor = $tipoProveedorId && in_array(
+            $tipoProveedorId,
+            array_map('intval', (array) $request->input('tipos', [])),
+            true
+        );
+
         $data = $request->validate([
             'codigo' => [
                 'nullable', 'string', 'max:50',
@@ -559,9 +568,9 @@ class ContactoController extends Controller
                 'nullable', 'integer',
                 Rule::exists('cgl_cuentas', 'id')->where('compania_id', $companiaId),
             ],
-            'concepto' => ['required', Rule::in(array_keys(Contacto::CONCEPTOS))],
-            'otros_costos_gastos_id' => ['required', 'integer', Rule::exists('core_otros_costos_gastos', 'id')->where('activo', true)],
-            'tipo_compra' => ['required', Rule::in(array_keys(Contacto::TIPOS_COMPRA))],
+            'concepto' => ['nullable', Rule::requiredIf($esProveedor), Rule::in(array_keys(Contacto::CONCEPTOS))],
+            'otros_costos_gastos_id' => ['nullable', Rule::requiredIf($esProveedor), 'integer', Rule::exists('core_otros_costos_gastos', 'id')->where('activo', true)],
+            'tipo_compra' => ['nullable', Rule::requiredIf($esProveedor), Rule::in(array_keys(Contacto::TIPOS_COMPRA))],
             'activo' => ['required', 'boolean'],
             'tipos' => ['required', 'array', 'min:1'],
             'tipos.*' => ['integer', 'exists:contact_tipos,id'],
@@ -570,6 +579,15 @@ class ContactoController extends Controller
         // Los días de crédito solo aplican a contactos a crédito.
         if (($data['forma_pago'] ?? null) !== Contacto::FORMA_PAGO_CREDITO) {
             $data['dias_credito'] = null;
+        }
+
+        // Idem para los campos propios del proveedor: si el contacto no tiene ese tipo,
+        // se descarta lo que haya llegado del select oculto (que siempre trae un valor).
+        if (! $esProveedor) {
+            $data['cuenta_gasto_id'] = null;
+            $data['concepto'] = null;
+            $data['otros_costos_gastos_id'] = null;
+            $data['tipo_compra'] = null;
         }
 
         // identificacion + dv unicos por compania (cuando se indican)

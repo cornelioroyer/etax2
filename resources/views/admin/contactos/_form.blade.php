@@ -64,7 +64,7 @@
                 <div class="mt-2 flex flex-wrap gap-3">
                     @foreach ($tipos as $t)
                         <label class="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50">
-                            <input type="checkbox" name="tipos[]" value="{{ $t->id }}" @checked(in_array($t->id, $tiposActuales)) class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                            <input type="checkbox" name="tipos[]" value="{{ $t->id }}" data-codigo="{{ $t->codigo }}" @checked(in_array($t->id, $tiposActuales)) class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
                             {{ $t->nombre }}
                         </label>
                     @endforeach
@@ -103,6 +103,8 @@
                 <input id="distrito" name="distrito" value="{{ old('distrito', $c->distrito ?? '') }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
             </div>
 
+            {{-- Estos 4 campos son propios del PROVEEDOR (catálogos DGI de compras); se ocultan si el contacto no tiene ese tipo marcado. --}}
+            <div id="campos-proveedor-dgi" style="display: contents;">
             <div class="md:col-span-2 cuenta-gasto-wrap">
                 <label for="cuenta_gasto_id" class="block text-sm font-medium text-gray-700">Cuenta de gasto por defecto <span class="text-xs text-gray-400">(proveedor, opcional)</span></label>
                 @php($cuentaGastoSel = old('cuenta_gasto_id', $c->cuenta_gasto_id ?? ($cuentaGastoDefault ?? '')))
@@ -150,6 +152,19 @@
                 <p class="mt-1 text-xs text-gray-400">Clasificación DGI "Otros costos y gastos" de la declaración de renta.</p>
                 @error('otros_costos_gastos_id') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
             </div>
+            </div>
+            <script>
+                function actualizarCamposProveedorDgi() {
+                    var esProveedor = Array.from(document.querySelectorAll('input[name="tipos[]"]'))
+                        .some(function (el) { return el.checked && el.dataset.codigo === 'PROVEEDOR'; });
+                    var wrap = document.getElementById('campos-proveedor-dgi');
+                    if (wrap) { wrap.style.display = esProveedor ? 'contents' : 'none'; }
+                }
+                document.querySelectorAll('input[name="tipos[]"]').forEach(function (el) {
+                    el.addEventListener('change', actualizarCamposProveedorDgi);
+                });
+                actualizarCamposProveedorDgi();
+            </script>
 
             <div>
                 <label for="activo" class="block text-sm font-medium text-gray-700">Estado</label>
