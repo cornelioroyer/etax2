@@ -1,6 +1,6 @@
 <x-app-layout>
     <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight">Nómina — Novedades (ingresos / deducciones / horas)</h2>
+        <h2 class="font-semibold text-xl text-gray-800 leading-tight">Planilla — Novedades (ingresos / deducciones / horas)</h2>
     </x-slot>
 
     <div class="py-8">
