@@ -25,6 +25,13 @@ use App\Http\Controllers\Admin\CxpPagoController;
 use App\Http\Controllers\Admin\CxpRecurrenteController;
 use App\Http\Controllers\Admin\FacturaFelController;
 use App\Http\Controllers\Admin\MenuItemController;
+use App\Http\Controllers\Admin\NomCargoController;
+use App\Http\Controllers\Admin\NomConceptoController;
+use App\Http\Controllers\Admin\NomDepartamentoController;
+use App\Http\Controllers\Admin\NomEmpleadoController;
+use App\Http\Controllers\Admin\NomNovedadController;
+use App\Http\Controllers\Admin\NomPeriodoController;
+use App\Http\Controllers\Admin\NomPlanillaController;
 use App\Http\Controllers\Admin\RespaldoController;
 use App\Http\Controllers\Admin\RestauracionController;
 use App\Http\Controllers\Admin\RoleController;
@@ -677,6 +684,47 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('dimensiones/ubicaciones', [DimUbicacionController::class, 'store'])->name('dimensiones.ubicaciones.store');
         Route::put('dimensiones/ubicaciones/{ubicacion}', [DimUbicacionController::class, 'update'])->whereNumber('ubicacion')->name('dimensiones.ubicaciones.update');
         Route::delete('dimensiones/ubicaciones/{ubicacion}', [DimUbicacionController::class, 'destroy'])->whereNumber('ubicacion')->name('dimensiones.ubicaciones.destroy');
+    });
+
+    // ── Nómina (nom_*) — sistema de planilla nativo para clientes nuevos ────
+    Route::middleware('permission:nomina.ver')->group(function () {
+        Route::get('nomina/empleados', [NomEmpleadoController::class, 'index'])->name('nomina.empleados.index');
+        Route::get('nomina/empleados/crear', [NomEmpleadoController::class, 'create'])->name('nomina.empleados.create');
+        Route::get('nomina/empleados/{empleado}/editar', [NomEmpleadoController::class, 'edit'])->whereNumber('empleado')->name('nomina.empleados.edit');
+        Route::get('nomina/departamentos', [NomDepartamentoController::class, 'index'])->name('nomina.departamentos.index');
+        Route::get('nomina/cargos', [NomCargoController::class, 'index'])->name('nomina.cargos.index');
+        Route::get('nomina/conceptos', [NomConceptoController::class, 'index'])->name('nomina.conceptos.index');
+        Route::get('nomina/periodos', [NomPeriodoController::class, 'index'])->name('nomina.periodos.index');
+        Route::get('nomina/novedades', [NomNovedadController::class, 'index'])->name('nomina.novedades.index');
+        Route::get('nomina/planillas', [NomPlanillaController::class, 'index'])->name('nomina.planillas.index');
+        Route::get('nomina/planillas/crear', [NomPlanillaController::class, 'create'])->name('nomina.planillas.create');
+        Route::get('nomina/planillas/{planilla}', [NomPlanillaController::class, 'show'])->whereNumber('planilla')->name('nomina.planillas.show');
+        Route::get('nomina/planillas/{planilla}/recibo/{empleado}', [NomPlanillaController::class, 'recibo'])->whereNumber('planilla')->whereNumber('empleado')->name('nomina.planillas.recibo');
+    });
+    Route::middleware('permission:nomina.gestionar')->group(function () {
+        Route::post('nomina/empleados', [NomEmpleadoController::class, 'store'])->name('nomina.empleados.store');
+        Route::put('nomina/empleados/{empleado}', [NomEmpleadoController::class, 'update'])->whereNumber('empleado')->name('nomina.empleados.update');
+        Route::post('nomina/departamentos', [NomDepartamentoController::class, 'store'])->name('nomina.departamentos.store');
+        Route::put('nomina/departamentos/{departamento}', [NomDepartamentoController::class, 'update'])->whereNumber('departamento')->name('nomina.departamentos.update');
+        Route::delete('nomina/departamentos/{departamento}', [NomDepartamentoController::class, 'destroy'])->whereNumber('departamento')->name('nomina.departamentos.destroy');
+        Route::post('nomina/cargos', [NomCargoController::class, 'store'])->name('nomina.cargos.store');
+        Route::put('nomina/cargos/{cargo}', [NomCargoController::class, 'update'])->whereNumber('cargo')->name('nomina.cargos.update');
+        Route::delete('nomina/cargos/{cargo}', [NomCargoController::class, 'destroy'])->whereNumber('cargo')->name('nomina.cargos.destroy');
+        Route::post('nomina/conceptos/aplicar-catalogo', [NomConceptoController::class, 'aplicarCatalogo'])->name('nomina.conceptos.aplicar-catalogo');
+        Route::post('nomina/conceptos', [NomConceptoController::class, 'store'])->name('nomina.conceptos.store');
+        Route::put('nomina/conceptos/{concepto}', [NomConceptoController::class, 'update'])->whereNumber('concepto')->name('nomina.conceptos.update');
+        Route::delete('nomina/conceptos/{concepto}', [NomConceptoController::class, 'destroy'])->whereNumber('concepto')->name('nomina.conceptos.destroy');
+        Route::post('nomina/periodos/generar-anio', [NomPeriodoController::class, 'generarAnio'])->name('nomina.periodos.generar-anio');
+        Route::post('nomina/periodos/{periodo}/cerrar', [NomPeriodoController::class, 'cerrar'])->whereNumber('periodo')->name('nomina.periodos.cerrar');
+        Route::post('nomina/periodos/{periodo}/reabrir', [NomPeriodoController::class, 'reabrir'])->whereNumber('periodo')->name('nomina.periodos.reabrir');
+        Route::put('nomina/configuracion', [NomPeriodoController::class, 'actualizarConfiguracion'])->name('nomina.configuracion.update');
+        Route::post('nomina/novedades', [NomNovedadController::class, 'store'])->name('nomina.novedades.store');
+        Route::post('nomina/novedades/{novedad}/toggle', [NomNovedadController::class, 'toggle'])->whereNumber('novedad')->name('nomina.novedades.toggle');
+        Route::delete('nomina/novedades/{novedad}', [NomNovedadController::class, 'destroy'])->whereNumber('novedad')->name('nomina.novedades.destroy');
+        Route::post('nomina/planillas', [NomPlanillaController::class, 'store'])->name('nomina.planillas.store');
+        Route::post('nomina/planillas/{planilla}/recalcular', [NomPlanillaController::class, 'recalcular'])->whereNumber('planilla')->name('nomina.planillas.recalcular');
+        Route::post('nomina/planillas/{planilla}/contabilizar', [NomPlanillaController::class, 'contabilizar'])->whereNumber('planilla')->name('nomina.planillas.contabilizar');
+        Route::post('nomina/planillas/{planilla}/anular', [NomPlanillaController::class, 'anular'])->whereNumber('planilla')->name('nomina.planillas.anular');
     });
 
     // ── Cierre contable ──────────────────────────────────────────────────────
